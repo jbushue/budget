@@ -1,6 +1,25 @@
 [project]
 name = "budget"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Professional personal finance management system with projections, optimization, and persistent SQLite storage"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "flask-cors>=6.0.2",
+    "sqlalchemy>=2.0.46",
+]
+
+[project.optional-dependencies]
+export = [
+    "openpyxl>=3.0.0",  # For Excel export
+    "reportlab>=4.0.0",  # For PDF export
+]
+graphql = [
+    "graphene>=3.3.0",       # GraphQL schema
+    "flask>=2.3.0",          # Web framework
+    "flask-graphql>=0.12.0", # Flask GraphQL integration
+    "flask-cors>=4.0.0",     # CORS support
+]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+]

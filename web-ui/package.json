@@ -1,0 +1,58 @@
+{
+  "name": "budget-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Modern Personal Finance Management Application",
+  "main": "index.js",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "@apollo/client": "3.8.10",
+    "@react-navigation/bottom-tabs": "6.5.8",
+    "@react-navigation/native": "6.1.9",
+    "@react-navigation/stack": "6.3.17",
+    "axios": "1.12.0",
+    "date-fns": "2.30.0",
+    "graphql": "16.8.1",
+    "graphql-tag": "2.12.6",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.72.4",
+    "react-native-gesture-handler": "2.13.4",
+    "react-native-paper": "5.10.0",
+    "react-native-reanimated": "3.5.0",
+    "react-native-safe-area-context": "4.7.2",
+    "react-native-screens": "3.26.0",
+    "react-native-vector-icons": "9.2.0",
+    "react-refresh": "^0.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.8.0",
+    "@types/react": "18.2.38",
+    "@types/react-dom": "18.2.16",
+    "ajv": "^8.17.1",
+    "react-scripts": "5.0.1",
+    "typescript": "5.2.2"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
