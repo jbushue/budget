@@ -5,20 +5,29 @@ import numbers
 class BankTypes(enum.Enum):
     TRADITIONAL = "traditional"
     CREDIT_ISSUER = "credit_issuer"
+    MORTGAGE_LENDER = "mortgage_lender"
 
 class AccountType(enum.Enum):
     CHECKING = "checking"
     SAVINGS = "savings"
+    MORTGAGE = "mortgage"
 
 class CreditAccountStatus(enum.Enum):
     ACTIVE = "active"
     CLOSED = "closed"
     FROZEN = "frozen"
 
+class MortgageStatus(enum.Enum):
+    ACTIVE = "active"
+    PAID_OFF = "paid_off"
+    REFINANCED = "refinanced"
+    SOLD = "sold"
+
 class BillType(enum.Enum):
     FIXED = "fixed"  # Same amount every period
     FLOATING = "floating"  # Variable amount
     CREDIT_PAYMENT = "credit_payment"  # Credit card payment
+    MORTGAGE_PAYMENT = "mortgage_payment"  # Mortgage payment
 
 class BillFrequency(enum.Enum):
     ONCE = "once"
@@ -92,6 +101,8 @@ class DistributionType(object):
     def __fromdict__(cls, dist_dict: dict):
         """Load distribution from dictionary format."""
         distribution = []
+        if dist_dict is None:
+            return None
         for account_name, value, distribution_type in dist_dict.items():
             if distribution_type in DistributionEnumType.__members__:
                 distribution_type = DistributionEnumType[distribution_type]

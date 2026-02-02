@@ -7,11 +7,13 @@ import json
 from sqlalchemy.orm import Session
 from models.database import (
     get_session, BankModel, BankAccountModel, CreditAccountModel,
-    BillModel, IncomeSourceModel, PromoOfferModel
+    BillModel, IncomeSourceModel, PromoOfferModel, MortgageAccountModel,
+    MortgagePaymentModel
 )
 from models.bank import Bank
 from models.bank_account import BankAccount, AccountType
 from models.credit_card_account import CreditAccount, PromoOffer
+from models.mortgage_account import MortgageAccount, EscrowBreakdown
 from models.fixed_bill import Bill, FloatingBill
 from models.income_source import IncomeSource
 
@@ -52,6 +54,10 @@ class DatabaseRepository:
 
         for credit_account in bank.get_all_credit_accounts():
             self.save_credit_account(credit_account, db_bank.id)
+
+        # Save all mortgage accounts
+        for mortgage_account in bank.get_all_mortgage_accounts():
+            self.save_mortgage_account(mortgage_account, db_bank.id)
 
         return db_bank
 
@@ -101,6 +107,30 @@ class DatabaseRepository:
                     credit.active_promos.append(promo)
 
                 bank.credit_accounts[db_credit.account_name] = credit
+
+            # Load mortgage accounts
+            for db_mortgage in db_bank.mortgage_accounts:
+                escrow = EscrowBreakdown(
+                    property_tax_monthly=db_mortgage.escrow_property_tax,
+                    homeowners_insurance_monthly=db_mortgage.escrow_insurance,
+                    pmi_monthly=db_mortgage.escrow_pmi,
+                    hoa_monthly=db_mortgage.escrow_hoa,
+                    other_monthly=db_mortgage.escrow_other
+                )
+                mortgage = MortgageAccount(
+                    account_name=db_mortgage.account_name,
+                    original_principal=db_mortgage.original_principal,
+                    current_principal=db_mortgage.current_principal,
+                    interest_rate=db_mortgage.interest_rate,
+                    loan_term_months=db_mortgage.loan_term_months,
+                    payment_due_date=db_mortgage.payment_due_date,
+                    start_date=db_mortgage.start_date,
+                    escrow=escrow,
+                    preferred_source_bank=db_mortgage.preferred_source_bank,
+                    preferred_source_account=db_mortgage.preferred_source_account
+                )
+                mortgage.escrow_balance = db_mortgage.escrow_balance
+                bank.mortgage_accounts[db_mortgage.account_name] = mortgage
 
             banks.append(bank)
 
@@ -152,6 +182,48 @@ class DatabaseRepository:
                 interest_rate=account.interest_rate,
                 payment_due_date=account.payment_due_date,
                 statement_date=account.statement_date
+            )
+            self.session.add(db_account)
+
+        self.session.commit()
+        return db_account
+
+    def save_mortgage_account(self, account: MortgageAccount, bank_id: int) -> MortgageAccountModel:
+        """Save a mortgage account to the database."""
+        db_account = self.session.query(MortgageAccountModel).filter(
+            MortgageAccountModel.account_name == account.account_name,
+            MortgageAccountModel.bank_id == bank_id
+        ).first()
+
+        if db_account:
+            db_account.current_principal = account.current_principal
+            db_account.interest_rate = account.interest_rate
+            db_account.escrow_property_tax = account.escrow.property_tax_monthly
+            db_account.escrow_insurance = account.escrow.homeowners_insurance_monthly
+            db_account.escrow_pmi = account.escrow.pmi_monthly
+            db_account.escrow_hoa = account.escrow.hoa_monthly
+            db_account.escrow_other = account.escrow.other_monthly
+            db_account.escrow_balance = account.escrow_balance
+            db_account.preferred_source_bank = account.preferred_source_bank
+            db_account.preferred_source_account = account.preferred_source_account
+        else:
+            db_account = MortgageAccountModel(
+                bank_id=bank_id,
+                account_name=account.account_name,
+                original_principal=account.original_principal,
+                current_principal=account.current_principal,
+                interest_rate=account.interest_rate,
+                loan_term_months=account.loan_term_months,
+                payment_due_date=account.payment_due_date,
+                start_date=account.start_date,
+                escrow_property_tax=account.escrow.property_tax_monthly,
+                escrow_insurance=account.escrow.homeowners_insurance_monthly,
+                escrow_pmi=account.escrow.pmi_monthly,
+                escrow_hoa=account.escrow.hoa_monthly,
+                escrow_other=account.escrow.other_monthly,
+                escrow_balance=account.escrow_balance,
+                preferred_source_bank=account.preferred_source_bank,
+                preferred_source_account=account.preferred_source_account
             )
             self.session.add(db_account)
 
@@ -265,12 +337,27 @@ class DatabaseRepository:
         for db_income in db_incomes:
             # Parse distribution JSON
             distribution = json.loads(db_income.distribution) if db_income.distribution else {}
+            
+            # Parse pay_date JSON (supports both list format and legacy integer format)
+            pay_date = None
+            if db_income.pay_date:
+                try:
+                    pay_date = json.loads(db_income.pay_date)
+                    # Ensure it's a list
+                    if isinstance(pay_date, int):
+                        pay_date = [pay_date]
+                except (json.JSONDecodeError, TypeError):
+                    # Handle legacy integer format stored as string
+                    try:
+                        pay_date = [int(db_income.pay_date)]
+                    except ValueError:
+                        pay_date = None
 
             income = IncomeSource(
                 source_name=db_income.source_name,
                 amount=db_income.amount,
                 frequency=db_income.frequency.value,
-                pay_date=db_income.pay_date,
+                pay_date=pay_date,
                 distribution=distribution
             )
             incomes.append(income)

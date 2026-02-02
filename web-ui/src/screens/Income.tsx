@@ -37,6 +37,7 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
   const [amount, setAmount] = useState('');
   const [frequency, setFrequency] = useState<string>('monthly');
   const [payDate, setPayDate] = useState('');
+   const [payDate2, setPayDate2] = useState('');  // Second pay date for semimonthly
 
   const { data: incomeData, loading: incomeLoading, refetch: refetchIncome } = useQuery(GET_ALL_INCOME);
 
@@ -64,6 +65,7 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
     setAmount('');
     setFrequency('monthly');
     setPayDate('');
+    setPayDate2('');
   };
 
   const handleCreateIncome = () => {
@@ -73,12 +75,18 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
       return;
     }
 
+    // Build pay dates array - for semimonthly, include both dates
+    let payDates: number[] = [parseInt(payDate)];
+    if (frequency === 'semimonthly' && payDate2) {
+      payDates = [parseInt(payDate), parseInt(payDate2)].sort((a, b) => a - b);
+    }
+
     createIncome({
       variables: {
         sourceName,
         amount: parseFloat(amount),
         frequency,
-        payDate: parseInt(payDate),
+        payDates,
         distribution: {},
       },
     });
@@ -96,6 +104,7 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
     let multiplier = 1;
     if (freq === 'weekly') multiplier = 52;
     else if (freq === 'biweekly') multiplier = 26;
+    else if (freq === 'semimonthly') multiplier = 24;  // Twice per month
     else if (freq === 'monthly') multiplier = 12;
     else if (freq === 'quarterly') multiplier = 4;
     else if (freq === 'semi_annual') multiplier = 2;
@@ -156,7 +165,11 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
                     <View style={{ flex: 1 }}>
                       <Text style={globalStyles.textBold}>{income.sourceName}</Text>
                       <Text style={[globalStyles.smallText, { marginTop: 4 }]}>
-                        {getFrequencyLabel(income.frequency)} • Pay on {getDayLabel(income.payDate)}
+                        {getFrequencyLabel(income.frequency)} • Pay on {
+                          income.payDates && income.payDates.length > 1
+                            ? income.payDates.map((d: number) => getDayLabel(d)).join(' & ')
+                            : getDayLabel(income.payDates?.[0] || income.payDate)
+                        }
                       </Text>
                     </View>
                     <Text style={[globalStyles.currencyText, { color: theme.colors.success }]}>
@@ -200,6 +213,7 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
               let multiplier = 1;
               if (freq === 'weekly') multiplier = 52;
               else if (freq === 'biweekly') multiplier = 26;
+              else if (freq === 'semimonthly') multiplier = 24;  // Twice per month
               else if (freq === 'monthly') multiplier = 12;
               else if (freq === 'quarterly') multiplier = 4;
               else if (freq === 'semi_annual') multiplier = 2;
@@ -247,13 +261,25 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
             />
 
             <TextInput
-              label="Pay Date (1-31)"
+              label={frequency === 'semimonthly' ? 'First Pay Date (1-31)' : 'Pay Date (1-31)'}
               value={payDate}
               onChangeText={setPayDate}
               mode="outlined"
               keyboardType="number-pad"
               style={{ marginBottom: 12 }}
             />
+
+            {frequency === 'semimonthly' && (
+              <TextInput
+                label="Second Pay Date (1-31)"
+                value={payDate2}
+                onChangeText={setPayDate2}
+                mode="outlined"
+                keyboardType="number-pad"
+                style={{ marginBottom: 12 }}
+                placeholder="e.g., 31 for last day"
+              />
+            )}
 
             <Text style={[globalStyles.textBold, { marginBottom: 8 }]}>Frequency</Text>
             <SegmentedButtons
@@ -262,7 +288,7 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
               buttons={[
                 { value: 'weekly', label: 'Weekly' },
                 { value: 'biweekly', label: 'Bi-weekly' },
-                { value: 'monthly', label: 'Monthly' },
+                { value: 'semimonthly', label: 'Semi-Mo.' },
               ]}
               style={{ marginBottom: 12 }}
             />
@@ -270,8 +296,8 @@ const IncomeScreen: React.FC<IncomeScreenProps> = ({ navigation }) => {
               value={frequency}
               onValueChange={setFrequency}
               buttons={[
+                { value: 'monthly', label: 'Monthly' },
                 { value: 'quarterly', label: 'Quarterly' },
-                { value: 'semi_annual', label: 'Semi-Annual' },
                 { value: 'yearly', label: 'Yearly' },
               ]}
             />

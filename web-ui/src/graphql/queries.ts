@@ -95,7 +95,7 @@ export const GET_ALL_INCOME = gql`
       sourceName
       amount
       frequency
-      payDate
+      payDates
       nextPayDate
     }
   }
@@ -195,14 +195,14 @@ export const CREATE_INCOME = gql`
     $sourceName: String!
     $amount: Float!
     $frequency: String!
-    $payDate: Int!
+    $payDates: [Int]!
     $distribution: JSON
   ) {
     createIncomeSource(
       sourceName: $sourceName
       amount: $amount
       frequency: $frequency
-      payDate: $payDate
+      payDates: $payDates
       distribution: $distribution
     ) {
       success

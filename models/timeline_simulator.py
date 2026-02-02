@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from models.bank import Bank
 from models.fixed_bill import Bill
 from models.income_source import IncomeSource
+from models.mortgage_account import MortgageAccount
 
 
 @dataclass
 class TimelineEvent:
     """Represents a single financial event on a specific date."""
     event_date: date
-    event_type: str  # 'INCOME', 'BILL_PAYMENT', 'INTEREST', 'CREDIT_PAYMENT'
+    event_type: str  # 'INCOME', 'BILL_PAYMENT', 'INTEREST', 'CREDIT_PAYMENT', 'MORTGAGE_PAYMENT'
     amount: float
     description: str
     account_name: str = None
@@ -51,13 +52,20 @@ class TimelineSimulator:
             List of TimelineEvent objects sorted by date
         """
         self.events = []
+        
+        # Pre-calculate all income pay dates in the range using get_pay_dates_in_range
+        # This properly handles semimonthly income with multiple pay dates per month
+        income_pay_dates = {}  # {income_source_name: set of dates}
+        for income in self.income_sources:
+            pay_dates = income.get_pay_dates_in_range(start_date - timedelta(days=1), end_date)
+            income_pay_dates[income.source_name] = set(pay_dates)
+        
         current_date = start_date
 
         while current_date <= end_date:
             # Check for income deposits on this day
             for income in self.income_sources:
-                next_pay_date = income.get_next_pay_date(current_date - timedelta(days=1))
-                if next_pay_date == current_date:
+                if current_date in income_pay_dates.get(income.source_name, set()):
                     self.events.append(TimelineEvent(
                         event_date=current_date,
                         event_type="INCOME",
@@ -79,6 +87,20 @@ class TimelineSimulator:
                         account_name=bill.preferred_source_account or "(unassigned)",
                         bank_name=bill.preferred_source_bank or "(unassigned)"
                     ))
+
+            # Check for mortgage payments on this day
+            for bank in self.banks:
+                for mortgage in bank.get_all_mortgage_accounts():
+                    next_due = mortgage.get_next_due_date(current_date - timedelta(days=1))
+                    if next_due == current_date:
+                        self.events.append(TimelineEvent(
+                            event_date=current_date,
+                            event_type="MORTGAGE_PAYMENT",
+                            amount=mortgage.total_monthly_payment,
+                            description=f"Mortgage: {mortgage.account_name}",
+                            account_name=mortgage.preferred_source_account or "(unassigned)",
+                            bank_name=mortgage.preferred_source_bank or bank.name
+                        ))
 
             # Check for interest accrual on this day
             if include_interest:
@@ -140,6 +162,12 @@ class TimelineSimulator:
         # Build timeline of all events
         self.build_timeline(start_date, end_date, include_interest=True)
 
+        # Pre-calculate all income pay dates in the range for semimonthly support
+        income_pay_dates = {}  # {income_source_name: set of dates}
+        for income in self.income_sources:
+            pay_dates = income.get_pay_dates_in_range(start_date - timedelta(days=1), end_date)
+            income_pay_dates[income.source_name] = set(pay_dates)
+
         # Process events chronologically
         snapshots = []
         cash_flow = []
@@ -151,10 +179,10 @@ class TimelineSimulator:
 
             for event in sorted(day_events, key=lambda e: e.event_type):
                 if event.event_type == "INCOME":
-                    # Distribute income
+                    # Distribute income - find the matching income source for this event
                     for income in self.income_sources:
-                        next_pay = income.get_next_pay_date(current_date - timedelta(days=1))
-                        if next_pay == current_date:
+                        # Only process if this is the matching income event
+                        if event.description == f"Income: {income.source_name}":
                             # Distribute income across accounts (which may be in different banks)
                             if not income.distribution:
                                 # Default: deposit all to the first account of first bank
@@ -218,6 +246,7 @@ class TimelineSimulator:
                                                 "amount": remainder,
                                                 "account": remainder_account
                                             })
+                            break  # Found the matching income, no need to continue
 
                 elif event.event_type == "BILL_DUE":
                     # Find matching bill and pay it
@@ -257,6 +286,69 @@ class TimelineSimulator:
                                         "bank": source_bank.name,
                                         "error": str(e)
                                     })
+
+                elif event.event_type == "MORTGAGE_PAYMENT":
+                    # Find matching mortgage and pay it
+                    for bank in self.banks:
+                        for mortgage in bank.get_all_mortgage_accounts():
+                            next_due = mortgage.get_next_due_date(current_date - timedelta(days=1))
+                            if next_due == current_date and event.description == f"Mortgage: {mortgage.account_name}":
+                                # Choose account to pay from
+                                source_bank_name = mortgage.preferred_source_bank
+                                source_account_name = mortgage.preferred_source_account
+                                
+                                # Find the source bank and account
+                                source_bank = None
+                                if source_bank_name:
+                                    source_bank = self._get_bank_by_name(source_bank_name)
+                                
+                                # If no preferred source, use first checking account
+                                if not source_bank or not source_account_name:
+                                    for b in self.banks:
+                                        for acc_name, acc in b.accounts.items():
+                                            if acc.account_type.value == "checking":
+                                                source_bank = b
+                                                source_account_name = acc_name
+                                                break
+                                        if source_bank:
+                                            break
+                                
+                                if source_bank and source_account_name and source_account_name in source_bank.accounts:
+                                    try:
+                                        payment_amount = mortgage.total_monthly_payment
+                                        source_bank.accounts[source_account_name].withdraw(
+                                            payment_amount,
+                                            description=f"Mortgage: {mortgage.account_name}",
+                                            transaction_date=current_date
+                                        )
+                                        # Record the mortgage payment
+                                        mortgage.make_payment(payment_date=current_date)
+                                        cash_flow.append({
+                                            "date": current_date,
+                                            "type": "MORTGAGE_PAYMENT",
+                                            "description": mortgage.account_name,
+                                            "amount": -payment_amount,
+                                            "account": source_account_name,
+                                            "bank": source_bank.name,
+                                            "principal": mortgage.current_monthly_principal,
+                                            "interest": mortgage.current_monthly_interest,
+                                            "escrow": mortgage.escrow.total_monthly
+                                        })
+                                    except ValueError as e:
+                                        # Insufficient funds - defer or flag
+                                        cash_flow.append({
+                                            "date": current_date,
+                                            "type": "MORTGAGE_DEFERRED",
+                                            "description": f"{mortgage.account_name} (insufficient funds)",
+                                            "amount": -mortgage.total_monthly_payment,
+                                            "account": source_account_name,
+                                            "bank": source_bank.name if source_bank else "(none)",
+                                            "error": str(e)
+                                        })
+                                break
+                        else:
+                            continue
+                        break
 
                 elif event.event_type == "INTEREST":
                     # Process interest accrual

@@ -116,7 +116,7 @@ class IncomeSourceType(graphene.ObjectType):
     source_name = graphene.String()
     amount = graphene.Float()
     frequency = graphene.String()
-    pay_date = graphene.Int()
+    pay_dates = graphene.List(graphene.Int)  # List of pay dates (e.g., [15, 31] for semimonthly)
     next_pay_date = graphene.String()
     distribution = graphene.JSONString()
 
@@ -264,7 +264,7 @@ class Query(graphene.ObjectType):
                     source_name=income.source_name,
                     amount=income.amount,
                     frequency=income.frequency.value,
-                    pay_date=income.pay_date,
+                    pay_dates=income.pay_date,  # List of pay dates
                     next_pay_date=income.get_next_pay_date(date.today() - timedelta(days=1)).isoformat(),
                     distribution=income.distribution
                 )
@@ -283,7 +283,7 @@ class Query(graphene.ObjectType):
                     source_name=income.source_name,
                     amount=income.amount,
                     frequency=income.frequency.value,
-                    pay_date=income.pay_date,
+                    pay_dates=income.pay_date,  # List of pay dates
                     next_pay_date=income.get_next_pay_date(date.today() - timedelta(days=1)).isoformat(),
                     distribution=income.distribution
                 )
@@ -472,20 +472,20 @@ class CreateIncomeSource(graphene.Mutation):
         source_name = graphene.String(required=True)
         amount = graphene.Float(required=True)
         frequency = graphene.String(default_value="monthly")
-        pay_date = graphene.Int(default_value=1)
+        pay_dates = graphene.List(graphene.Int, default_value=[1])  # List of pay dates (e.g., [15, 31] for semimonthly)
         distribution = graphene.JSONString(default_value={})
 
     income = graphene.Field(IncomeSourceType)
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, source_name, amount, frequency, pay_date, distribution):
+    def mutate(self, info, source_name, amount, frequency, pay_dates, distribution):
         manager = info.context.get('manager')
         if not manager:
             return CreateIncomeSource(success=False, message="Manager not available")
 
         try:
-            income = IncomeSource(source_name, amount, frequency, pay_date, distribution)
+            income = IncomeSource(source_name, amount, frequency, pay_dates, distribution)
             manager.income_sources.append(income)
             return CreateIncomeSource(income=income, success=True, message=f"Income '{source_name}' created")
         except Exception as e:

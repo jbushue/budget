@@ -1,21 +1,24 @@
 from copy import deepcopy
 from models.bank_account import BankAccount
 from models.credit_card_account import CreditAccount
+from models.mortgage_account import MortgageAccount, EscrowBreakdown
 
 
 class Bank:
-    """Represents a financial institution holding bank and/or credit accounts."""
+    """Represents a financial institution holding bank, credit, and/or mortgage accounts."""
 
     def __init__(self, name: str, bank_type: str = "traditional"):
         """
         Args:
             name: Name of the bank
-            bank_type: 'traditional' for regular bank, 'credit_issuer' for credit card companies
+            bank_type: 'traditional' for regular bank, 'credit_issuer' for credit card companies,
+                       'mortgage_lender' for mortgage companies
         """
         self.name = name
-        self.bank_type = bank_type  # 'traditional', 'credit_issuer', etc.
+        self.bank_type = bank_type  # 'traditional', 'credit_issuer', 'mortgage_lender', etc.
         self.accounts: dict[str, BankAccount] = {}  # Traditional bank accounts
         self.credit_accounts: dict[str, CreditAccount] = {}  # Credit card accounts
+        self.mortgage_accounts: dict[str, MortgageAccount] = {}  # Mortgage accounts
 
     def add_account(
         self,
@@ -61,6 +64,36 @@ class Bank:
         self.credit_accounts[account_name] = account
         return account
 
+    def add_mortgage_account(
+        self,
+        account_name: str,
+        original_principal: float,
+        current_principal: float,
+        interest_rate: float,
+        loan_term_months: int,
+        payment_due_date: int = 1,
+        escrow: EscrowBreakdown = None,
+        preferred_source_bank: str = None,
+        preferred_source_account: str = None
+    ) -> MortgageAccount:
+        """Add a mortgage account."""
+        if account_name in self.mortgage_accounts:
+            raise ValueError(f"Mortgage account '{account_name}' already exists in {self.name}.")
+
+        account = MortgageAccount(
+            account_name=account_name,
+            original_principal=original_principal,
+            current_principal=current_principal,
+            interest_rate=interest_rate,
+            loan_term_months=loan_term_months,
+            payment_due_date=payment_due_date,
+            escrow=escrow,
+            preferred_source_bank=preferred_source_bank,
+            preferred_source_account=preferred_source_account
+        )
+        self.mortgage_accounts[account_name] = account
+        return account
+
     def get_account(self, account_name: str) -> BankAccount | None:
         """Get a traditional bank account by name."""
         return self.accounts.get(account_name)
@@ -68,6 +101,10 @@ class Bank:
     def get_credit_account(self, account_name: str) -> CreditAccount | None:
         """Get a credit account by name."""
         return self.credit_accounts.get(account_name)
+
+    def get_mortgage_account(self, account_name: str) -> MortgageAccount | None:
+        """Get a mortgage account by name."""
+        return self.mortgage_accounts.get(account_name)
 
     def get_all_accounts(self) -> list[BankAccount]:
         """Get all traditional bank accounts."""
@@ -77,6 +114,10 @@ class Bank:
         """Get all credit accounts."""
         return list(self.credit_accounts.values())
 
+    def get_all_mortgage_accounts(self) -> list[MortgageAccount]:
+        """Get all mortgage accounts."""
+        return list(self.mortgage_accounts.values())
+
     def total_balance(self) -> float:
         """Get total balance across all traditional accounts."""
         return sum(acc.balance for acc in self.accounts.values())
@@ -84,6 +125,14 @@ class Bank:
     def total_credit_owed(self) -> float:
         """Get total amount owed across all credit accounts."""
         return sum(acc.balance for acc in self.credit_accounts.values())
+
+    def total_mortgage_owed(self) -> float:
+        """Get total principal owed across all mortgage accounts."""
+        return sum(acc.current_principal for acc in self.mortgage_accounts.values())
+
+    def total_liabilities(self) -> float:
+        """Get total liabilities (credit + mortgage)."""
+        return self.total_credit_owed() + self.total_mortgage_owed()
 
     def total_available_credit(self) -> float:
         """Get total available credit across all credit accounts."""
@@ -148,4 +197,8 @@ class Bank:
         return deepcopy(self)
 
     def __repr__(self):
-        return f"Bank({self.name}, {len(self.accounts)} bank accounts, {len(self.credit_accounts)} credit accounts)"
+        return (
+            f"Bank({self.name}, {len(self.accounts)} bank accounts, "
+            f"{len(self.credit_accounts)} credit accounts, "
+            f"{len(self.mortgage_accounts)} mortgage accounts)"
+        )

@@ -13,7 +13,7 @@ export const formatDate = (date: Date): string => {
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
-    year: numeric',
+    year: 'numeric',
   }).format(date);
 };
 
@@ -42,6 +42,7 @@ export const getFrequencyLabel = (frequency: string): string => {
   const labels: { [key: string]: string } = {
     weekly: 'Every Week',
     biweekly: 'Every 2 Weeks',
+    semimonthly: 'Twice Monthly',
     monthly: 'Monthly',
     quarterly: 'Quarterly',
     semi_annual: 'Every 6 Months',

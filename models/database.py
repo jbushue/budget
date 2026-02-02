@@ -38,43 +38,7 @@ BillTypeEnum = BillType
 BillFrequencyEnum = BillFrequency
 IncomeFrequencyEnum = IncomeFrequency
 CreditAccountStatusEnum = CreditAccountStatus
-
-# class AccountTypeEnum(str, enum.Enum):
-#     CHECKING = "checking"
-#     SAVINGS = "savings"
-#
-#
-# class BillTypeEnum(str, enum.Enum):
-#     FIXED = "fixed"
-#     FLOATING = "floating"
-#     CREDIT_PAYMENT = "credit_payment"
-#
-#
-# class BillFrequencyEnum(str, enum.Enum):
-#     ONCE = "once"
-#     WEEKLY = "weekly"
-#     BIWEEKLY = "biweekly"
-#     MONTHLY = "monthly"
-#     QUARTERLY = "quarterly"
-#     SEMI_ANNUAL = "semi_annual"
-#     YEARLY = "yearly"
-#
-#
-# class IncomeFrequencyEnum(str, enum.Enum):
-#     ONCE = "once"
-#     WEEKLY = "weekly"
-#     BIWEEKLY = "biweekly"
-#     MONTHLY = "monthly"
-#     SEMIMONTHLY = "semimonthly"
-#     BIMONTHLY = "bimonthly"
-#     QUARTERLY = "quarterly"
-#     YEARLY = "yearly"
-#
-#
-# class CreditAccountStatusEnum(str, enum.Enum):
-#     ACTIVE = "active"
-#     CLOSED = "closed"
-#     FROZEN = "frozen"
+MortgageStatusEnum = MortgageStatus
 
 
 # ==================== Database Models ====================
@@ -85,13 +49,14 @@ class BankModel(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True, nullable=False)
-    bank_type = Column(String(50), nullable=False, default="traditional")  # traditional, credit_issuer
+    bank_type = Column(String(50), nullable=False, default="traditional")  # traditional, credit_issuer, mortgage_lender
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationships
     bank_accounts = relationship("BankAccountModel", back_populates="bank", cascade="all, delete-orphan")
     credit_accounts = relationship("CreditAccountModel", back_populates="bank", cascade="all, delete-orphan")
+    mortgage_accounts = relationship("MortgageAccountModel", back_populates="bank", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<BankModel(id={self.id}, name={self.name})>"
@@ -185,6 +150,68 @@ class CreditTransactionModel(Base):
         return f"<CreditTransactionModel(id={self.id}, type={self.trans_type}, amount={self.amount})>"
 
 
+class MortgageAccountModel(Base):
+    """Represents a mortgage loan account."""
+    __tablename__ = "mortgage_accounts"
+
+    id = Column(Integer, primary_key=True)
+    bank_id = Column(Integer, ForeignKey("banks.id"), nullable=False)
+    account_name = Column(String(100), nullable=False)
+    original_principal = Column(Float, nullable=False)
+    current_principal = Column(Float, nullable=False)
+    interest_rate = Column(Float, nullable=False)  # APR as percentage
+    loan_term_months = Column(Integer, nullable=False)
+    payment_due_date = Column(Integer, nullable=True)  # Day of month (1-31)
+    start_date = Column(Date, nullable=True)
+    status = Column(Enum(MortgageStatusEnum), nullable=False, default=MortgageStatusEnum.ACTIVE)
+    
+    # Escrow breakdown (stored as JSON string)
+    escrow_property_tax = Column(Float, nullable=False, default=0.0)
+    escrow_insurance = Column(Float, nullable=False, default=0.0)
+    escrow_pmi = Column(Float, nullable=False, default=0.0)
+    escrow_hoa = Column(Float, nullable=False, default=0.0)
+    escrow_other = Column(Float, nullable=False, default=0.0)
+    escrow_balance = Column(Float, nullable=False, default=0.0)
+    
+    # Payment source preferences
+    preferred_source_bank = Column(String(100), nullable=True)
+    preferred_source_account = Column(String(100), nullable=True)
+    
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    bank = relationship("BankModel", back_populates="mortgage_accounts")
+    payments = relationship("MortgagePaymentModel", back_populates="mortgage", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<MortgageAccountModel(id={self.id}, name={self.account_name}, principal={self.current_principal})>"
+
+
+class MortgagePaymentModel(Base):
+    """Represents a mortgage payment."""
+    __tablename__ = "mortgage_payments"
+
+    id = Column(Integer, primary_key=True)
+    mortgage_id = Column(Integer, ForeignKey("mortgage_accounts.id"), nullable=False)
+    total_amount = Column(Float, nullable=False)
+    principal_amount = Column(Float, nullable=False)
+    interest_amount = Column(Float, nullable=False)
+    escrow_amount = Column(Float, nullable=False, default=0.0)
+    extra_principal = Column(Float, nullable=False, default=0.0)
+    source_bank = Column(String(100), nullable=True)
+    source_account = Column(String(100), nullable=True)
+    payment_date = Column(Date, nullable=False, default=date.today)
+    principal_after = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=utc_now)
+
+    # Relationships
+    mortgage = relationship("MortgageAccountModel", back_populates="payments")
+
+    def __repr__(self):
+        return f"<MortgagePaymentModel(id={self.id}, amount={self.total_amount}, date={self.payment_date})>"
+
+
 class BillModel(Base):
     """Represents a bill/recurring expense."""
     __tablename__ = "bills"
@@ -244,7 +271,7 @@ class IncomeSourceModel(Base):
     source_name = Column(String(100), nullable=False)
     amount = Column(Float, nullable=False)
     frequency = Column(Enum(IncomeFrequencyEnum), nullable=False, default=IncomeFrequencyEnum.MONTHLY)
-    pay_date = Column(Integer, nullable=True)  # Day of month (1-31)
+    pay_date = Column(String(100), nullable=True)  # JSON list of days: "[1]" or "[15, 31]" for semimonthly
     distribution = Column(String(1000), nullable=True)  # JSON string: {"account": amount}
 
     created_at = Column(DateTime, default=utc_now)
