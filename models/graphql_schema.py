@@ -73,7 +73,7 @@ class BankType(graphene.ObjectType):
                 balance=acc.balance,
                 regular_balance=acc.regular_balance,
                 credit_limit=acc.credit_limit,
-                available_credit=acc.available_credit(),
+                available_credit=acc.available_credit,
                 interest_rate=acc.interest_rate,
                 payment_due_date=acc.payment_due_date,
                 statement_date=acc.statement_date,

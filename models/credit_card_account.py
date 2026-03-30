@@ -12,7 +12,8 @@ class PromoOffer:
         promo_name: str,
         months_interest_free: int,
         purchase_limit: float = None,
-        start_date: date = None
+        start_date: date = None,
+        end_date: date = None
     ):
         """
         Args:
@@ -20,15 +21,23 @@ class PromoOffer:
             months_interest_free: Number of months with 0% interest
             purchase_limit: Maximum amount eligible for promo (None = unlimited)
             start_date: When the promo starts (None = today)
+            end_date: When the promo ends (calculated if not provided)
         """
         self.promo_name = promo_name
         self.months_interest_free = months_interest_free
         self.purchase_limit = purchase_limit
         self.start_date = start_date or date.today()
-        self.end_date = start_date + timedelta(days=30 * months_interest_free) if start_date else date.today() + timedelta(days=30 * months_interest_free)
+        if end_date:
+            self.end_date = end_date
+        else:
+            self.end_date = self.start_date + timedelta(days=30 * months_interest_free)
         self.amount_used = 0.0
-        self.is_active = True
         self.interest_charged = False  # Track if interest has been charged at end of promo
+
+    @property
+    def is_active(self) -> bool:
+        """Check if the promo is still active."""
+        return not self.has_expired()
 
     def is_valid_for_purchase(self, amount: float) -> bool:
         """Check if purchase is eligible for this promo."""
@@ -47,10 +56,17 @@ class PromoOffer:
 
     def has_expired(self) -> bool:
         """Check if the promotional period has ended."""
-        return date.today() > self.end_date
+        return date.today() >= self.end_date
+
+    @property
+    def days_remaining(self) -> int:
+        """Calculate days remaining until promo expires."""
+        today = date.today()
+        return (self.end_date - today).days
 
     def __repr__(self):
-        return f"PromoOffer({self.promo_name}, {self.months_interest_free} months, expires {self.end_date})"
+        limit_str = f", limit=${self.purchase_limit:.2f}" if self.purchase_limit else ""
+        return f"PromoOffer({self.promo_name}, {self.months_interest_free} months{limit_str}, expires {self.end_date})"
 
 
 class CreditAccount:
@@ -110,8 +126,8 @@ class CreditAccount:
         """
         if amount <= 0:
             raise ValueError("Purchase amount must be positive.")
-        if amount > self.available_credit():
-            raise ValueError(f"Purchase exceeds available credit. Available: {self.available_credit():.2f}, Requested: {amount:.2f}")
+        if amount > self.available_credit:
+            raise ValueError(f"Purchase exceeds available credit. Available: {self.available_credit:.2f}, Requested: {amount:.2f}")
 
         self.balance += amount
 
@@ -216,6 +232,7 @@ class CreditAccount:
         payment = self.balance * (monthly_rate * (1 + monthly_rate) ** months) / ((1 + monthly_rate) ** months - 1)
         return payment
 
+    @property
     def available_credit(self) -> float:
         """Return available credit."""
         available = self.credit_limit - self.balance

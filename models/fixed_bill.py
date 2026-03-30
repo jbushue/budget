@@ -14,6 +14,7 @@ class Bill:
         due_date: int,  # Day of month (1-31)
         bill_type: BillType = BillType.FIXED,
         frequency: BillFrequency = BillFrequency.MONTHLY,
+        due_month: int = None,  # Month (1-12) for yearly/semi-annual bills
         preferred_source_account: str = None,
         preferred_source_bank: str = None
     ):
@@ -24,6 +25,7 @@ class Bill:
             due_date: Day of month when due (1-31)
             bill_type: 'fixed' or 'floating'
             frequency: 'monthly', 'weekly', 'biweekly', etc.
+            due_month: Month (1-12) for yearly or semi-annual bills
             preferred_source_account: Preferred account name to pay from
             preferred_source_bank: Preferred bank name to pay from
         """
@@ -32,10 +34,14 @@ class Bill:
 
         if not (1 <= due_date <= 31):
             raise ValueError("Due date must be between 1 and 31.")
+        
+        if due_month is not None and not (1 <= due_month <= 12):
+            raise ValueError("Due month must be between 1 and 12.")
 
         self.bill_name = bill_name
         self.amount = amount
         self.due_date = due_date  # Day of month
+        self.due_month = due_month  # Month for yearly/semi-annual bills
 
         if isinstance(bill_type, str):
             bill_type = BillType[bill_type.upper()]
@@ -74,6 +80,57 @@ class Bill:
         """Calculate the next due date relative to a reference date."""
         year = reference_date.year
         month = reference_date.month
+
+        # Handle YEARLY frequency with due_month
+        if self.frequency == BillFrequency.YEARLY:
+            # If due_month not specified, use the same month as reference date
+            due_month = self.due_month if self.due_month is not None else month
+            
+            try:
+                next_due = date(year, due_month, self.due_date)
+            except ValueError:
+                # Handle day > max for that month
+                next_due = date(year, due_month, min(self.due_date, 28))
+            
+            if next_due <= reference_date:
+                # Bill already occurred this year, move to next year
+                year += 1
+                try:
+                    next_due = date(year, due_month, self.due_date)
+                except ValueError:
+                    next_due = date(year, due_month, min(self.due_date, 28))
+            
+            return next_due
+
+        # Handle SEMI_ANNUAL frequency with due_month
+        if self.frequency == BillFrequency.SEMI_ANNUAL:
+            # If due_month not specified, use the same month as reference date
+            due_month = self.due_month if self.due_month is not None else month
+            
+            try:
+                next_due = date(year, due_month, self.due_date)
+            except ValueError:
+                next_due = date(year, due_month, min(self.due_date, 28))
+            
+            if next_due <= reference_date:
+                # Try the second occurrence (6 months later)
+                second_month = (due_month + 6 - 1) % 12 + 1
+                second_year = year if due_month + 6 <= 12 else year + 1
+                
+                try:
+                    next_due = date(second_year, second_month, self.due_date)
+                except ValueError:
+                    next_due = date(second_year, second_month, min(self.due_date, 28))
+                
+                if next_due <= reference_date:
+                    # Both occurrences have passed, move to next year's first occurrence
+                    year += 1
+                    try:
+                        next_due = date(year, due_month, self.due_date)
+                    except ValueError:
+                        next_due = date(year, due_month, min(self.due_date, 28))
+            
+            return next_due
 
         # Start with the due date day of the current month
         try:
@@ -124,6 +181,7 @@ class FloatingBill(Bill):
         min_amount: float = None,
         max_amount: float = None,
         frequency: BillFrequency = BillFrequency.MONTHLY,
+        due_month: int = None,
         preferred_source_account: str = None,
         preferred_source_bank: str = None
     ):
@@ -132,6 +190,7 @@ class FloatingBill(Bill):
             estimated_amount: Best estimate of the bill amount
             min_amount: Minimum expected amount
             max_amount: Maximum expected amount
+            due_month: Month (1-12) for yearly or semi-annual bills
         """
         super().__init__(
             bill_name=bill_name,
@@ -139,6 +198,7 @@ class FloatingBill(Bill):
             due_date=due_date,
             bill_type=BillType.FLOATING,
             frequency=frequency,
+            due_month=due_month,
             preferred_source_account=preferred_source_account,
             preferred_source_bank=preferred_source_bank
         )

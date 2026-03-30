@@ -158,12 +158,10 @@ class IncomeSource:
         Returns:
             Dictionary of {account_name: amount_deposited}
         """
-        distribution_obj: DistributionType = DistributionType.__fromdict__(override_distribution) or self.distribution
-        distribution = distribution_obj.__todict__()
-        deposit_date = deposit_date or date.today()
+        distribution_obj: DistributionType = DistributionType.__fromdict__(override_distribution) if isinstance(override_distribution, dict) else None
+        distribution_obj = distribution_obj or self.distribution
         deposits = {}
-
-        if not distribution:
+        if distribution_obj is None:
             # Default: deposit all to the first account
             account_name = next(iter(bank.accounts))
             bank.accounts[account_name].deposit(
@@ -175,6 +173,9 @@ class IncomeSource:
             self.last_deposited_date = deposit_date
             self._record_deposit(account_name, self.amount, deposit_date)
             return deposits
+        
+        distribution = distribution_obj.__todict__()
+        deposit_date = deposit_date or date.today()
 
         # Check if using percentages (sum to ~1.0) or fixed amounts
         is_percentage = all(0 <= v <= 1 for v in distribution.values() if isinstance(v, (int, float)))
@@ -182,7 +183,8 @@ class IncomeSource:
         total_fixed = 0.0
         remainder_account = None
 
-        for account_name, value, distribution_type in distribution.items():
+        for account_name, value in distribution.items():
+            distribution_type = distribution_obj.get_distribution_type(account_name)
             if value is None and distribution_type == DistributionEnumType.REMAINDER:
                 if remainder_account is not None:
                     raise ValueError("Only one account can be set as 'remainder'.")

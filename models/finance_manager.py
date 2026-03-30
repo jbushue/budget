@@ -30,6 +30,69 @@ class FinanceManager:
         self.payment_optimizer = PaymentOptimizer(banks, income_sources, bills)
         self.financial_reporter = FinancialReport(banks, income_sources, bills)
 
+    # ========== Bank Management ==========
+
+    def get_all_banks(self) -> list[Bank]:
+        """Get all banks."""
+        return self.banks
+
+    def add_bank(self, bank: Bank) -> None:
+        """Add a bank."""
+        if bank not in self.banks:
+            self.banks.append(bank)
+            self._update_managers()
+
+    def remove_bank(self, bank: Bank) -> None:
+        """Remove a bank."""
+        if bank in self.banks:
+            self.banks.remove(bank)
+            self._update_managers()
+
+    def get_all_accounts(self) -> list:
+        """Get all accounts across all banks."""
+        accounts = []
+        for bank in self.banks:
+            accounts.extend(bank.get_all_accounts())
+            accounts.extend(bank.get_all_credit_accounts())
+            accounts.extend(bank.get_all_mortgage_accounts())
+        return accounts
+
+    # ========== Income Management ==========
+
+    def get_all_income_sources(self) -> list[IncomeSource]:
+        """Get all income sources."""
+        return self.income_sources
+
+    def add_income_source(self, income: IncomeSource) -> None:
+        """Add an income source."""
+        if income not in self.income_sources:
+            self.income_sources.append(income)
+            self._update_managers()
+
+    def remove_income_source(self, income: IncomeSource) -> None:
+        """Remove an income source."""
+        if income in self.income_sources:
+            self.income_sources.remove(income)
+            self._update_managers()
+
+    # ========== Bill Management ==========
+
+    def get_all_bills(self) -> list[Bill]:
+        """Get all bills."""
+        return self.bills
+
+    def add_bill(self, bill: Bill) -> None:
+        """Add a bill."""
+        if bill not in self.bills:
+            self.bills.append(bill)
+            self._update_managers()
+
+    def remove_bill(self, bill: Bill) -> None:
+        """Remove a bill."""
+        if bill in self.bills:
+            self.bills.remove(bill)
+            self._update_managers()
+
     # ========== Projection & Simulation ==========
 
     def project_balances(
@@ -398,3 +461,9 @@ class FinanceManager:
             init_db()
         except Exception as e:
             print(f"❌ Error initializing database: {e}")
+
+    def _update_managers(self) -> None:
+        """Update internal managers when data changes."""
+        self.timeline_simulator = TimelineSimulator(self.banks, self.income_sources, self.bills)
+        self.payment_optimizer = PaymentOptimizer(self.banks, self.income_sources, self.bills)
+        self.financial_reporter = FinancialReport(self.banks, self.income_sources, self.bills)

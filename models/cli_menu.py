@@ -2771,7 +2771,7 @@ class FinanceCLI:
                 print(f"\n{bank.name} - {credit.account_name}")
                 print(f"  Balance:     ${credit.balance:,.2f}")
                 print(f"  Limit:       ${credit.credit_limit:,.2f}")
-                print(f"  Available:   ${credit.available_credit():,.2f}")
+                print(f"  Available:   ${credit.available_credit:,.2f}")
                 print(f"  Utilization: {utilization:.1f}%")
                 print(f"  APR:         {credit.interest_rate}%")
                 print(f"  Min Payment: ${credit.calculate_minimum_payment():,.2f}")

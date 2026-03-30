@@ -48,10 +48,10 @@ class FinancialReport:
                     lines.append(
                         f"    {credit.account_name}: "
                         f"Balance owed ${credit.balance:,.2f}, "
-                        f"Available credit ${credit.available_credit():,.2f}"
+                        f"Available credit ${credit.available_credit:,.2f}"
                     )
                     total_credit_owed += credit.balance
-                    total_available_credit += credit.available_credit()
+                    total_available_credit += credit.available_credit
 
         lines.append(f"\n  TOTAL OWED: ${total_credit_owed:,.2f}")
         lines.append(f"  TOTAL AVAILABLE CREDIT: ${total_available_credit:,.2f}")

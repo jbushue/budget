@@ -5,6 +5,9 @@ Mortgage Account model for tracking home loans with escrow support.
 from datetime import date, timedelta
 from copy import deepcopy
 from dataclasses import dataclass
+from enum import Enum
+
+from .types import MortgageStatus
 
 
 @dataclass
@@ -44,9 +47,9 @@ class MortgageAccount:
         self,
         account_name: str,
         original_principal: float,
-        current_principal: float,
         interest_rate: float,  # Annual interest rate (APR) as percentage
         loan_term_months: int,  # Total loan term in months (e.g., 360 for 30-year)
+        current_principal: float = None,  # If None, defaults to original_principal
         payment_due_date: int = 1,  # Day of month (1-31)
         start_date: date = None,
         escrow: EscrowBreakdown = None,
@@ -68,7 +71,7 @@ class MortgageAccount:
         """
         if original_principal <= 0:
             raise ValueError("Original principal must be positive.")
-        if current_principal < 0:
+        if current_principal is not None and current_principal < 0:
             raise ValueError("Current principal cannot be negative.")
         if interest_rate < 0:
             raise ValueError("Interest rate cannot be negative.")
@@ -79,7 +82,7 @@ class MortgageAccount:
 
         self.account_name = account_name
         self.original_principal = original_principal
-        self.current_principal = current_principal
+        self.current_principal = current_principal if current_principal is not None else original_principal
         self.interest_rate = interest_rate
         self.loan_term_months = loan_term_months
         self.payment_due_date = payment_due_date
@@ -95,6 +98,7 @@ class MortgageAccount:
         self.extra_principal_payments: list[dict] = []
         self.escrow_balance: float = 0.0  # Current escrow account balance
         self.is_paid_this_period = False
+        self.status = MortgageStatus.ACTIVE
 
     @property
     def monthly_interest_rate(self) -> float:
@@ -174,6 +178,11 @@ class MortgageAccount:
         if self.original_principal == 0:
             return 0.0
         return self.current_principal / self.original_principal
+
+    @property
+    def remaining_balance(self) -> float:
+        """Alias for current_principal."""
+        return self.current_principal
 
     def make_payment(
         self,

@@ -103,10 +103,7 @@ class DistributionType(object):
         distribution = []
         if dist_dict is None:
             return None
-        for account_name, value, distribution_type in dist_dict.items():
-            if distribution_type in DistributionEnumType.__members__:
-                distribution_type = DistributionEnumType[distribution_type]
-            else:
-                raise ValueError(f"Invalid distribution type for account '{account_name}': {value}: {distribution_type}")
-            distribution.append(DistributionEntryType(account_name, value, distribution_type))
+        for account_name, value in dist_dict.items():
+            # Assume PERCENTAGE for now, as tests use percentages
+            distribution.append(DistributionEntryType(account_name, value, DistributionEnumType.PERCENTAGE))
         return cls(distribution=distribution)

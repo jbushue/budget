@@ -50,7 +50,7 @@ class PaymentPlan:
     total_interest_paid: float
     total_fees: float
     final_discretionary: float  # Cash available after all obligations
-    violations: list[str]  # Any constraint violations
+    violations: list[str] = field(default_factory=list)  # Any constraint violations
     extra_credit_payments: list[dict] = field(default_factory=list)  # Extra payments to credit accounts
     target_credit_payoff: Optional[str] = None  # Target credit account for payoff goal
     promo_payoff_schedule: list[dict] = field(default_factory=list)  # Scheduled promo payoff payments

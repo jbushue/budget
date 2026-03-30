@@ -46,7 +46,7 @@ class Bank:
         self,
         account_name: str,
         credit_limit: float,
-        interest_rate: float,
+        interest_rate: float = 0.0,
         payment_due_date: int = None,
         statement_date: int = None
     ) -> CreditAccount:
@@ -68,9 +68,9 @@ class Bank:
         self,
         account_name: str,
         original_principal: float,
-        current_principal: float,
-        interest_rate: float,
-        loan_term_months: int,
+        interest_rate: float = 0.0,
+        loan_term_months: int = 360,
+        current_principal: float = None,
         payment_due_date: int = 1,
         escrow: EscrowBreakdown = None,
         preferred_source_bank: str = None,
@@ -136,7 +136,7 @@ class Bank:
 
     def total_available_credit(self) -> float:
         """Get total available credit across all credit accounts."""
-        return sum(acc.available_credit() for acc in self.credit_accounts.values())
+        return sum(acc.available_credit for acc in self.credit_accounts.values())
 
     def update_account_balance(
         self,

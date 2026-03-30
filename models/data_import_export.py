@@ -212,7 +212,8 @@ class DataImportExport:
             ("bill_name", True, "Name of the bill"),
             ("amount", True, "Bill amount"),
             ("due_date", True, "Day of month (1-31)"),
-            ("frequency", False, "monthly, weekly, biweekly, quarterly, yearly"),
+            ("due_month", False, "Month (1-12) for yearly/semi-annual bills"),
+            ("frequency", False, "monthly, weekly, biweekly, quarterly, semi_annual, yearly"),
             ("is_floating", False, "TRUE if amount varies, FALSE if fixed"),
             ("min_amount", False, "Minimum amount (for floating bills)"),
             ("max_amount", False, "Maximum amount (for floating bills)"),
@@ -224,11 +225,11 @@ class DataImportExport:
         
         # Add examples
         example_bills = [
-            ("Rent/Mortgage", 2000, 1, "monthly", False, None, None, None, None),
-            ("Electric", 150, 15, "monthly", True, 80, 250, None, None),
-            ("Car Insurance", 180, 20, "monthly", False, None, None, None, None),
-            ("Netflix", 15.99, 5, "monthly", False, None, None, None, None),
-            ("Phone", 85, 22, "monthly", False, None, None, None, None),
+            ("Rent/Mortgage", 2000, 1, None, "monthly", False, None, None, None, None),
+            ("Electric", 150, 15, None, "monthly", True, 80, 250, None, None),
+            ("Car Insurance", 180, 20, None, "monthly", False, None, None, None, None),
+            ("Property Tax", 1200, 15, 4, "yearly", False, None, None, None, None),
+            ("Netflix", 15.99, 5, None, "monthly", False, None, None, None, None),
         ]
         for row_num, bill in enumerate(example_bills, 3):
             for col_num, value in enumerate(bill, 1):
@@ -361,6 +362,10 @@ class DataImportExport:
             results["errors"].append(f"Failed to read Excel file: {str(e)}")
 
         return results
+
+    def import_data(self, filepath: str) -> dict:
+        """Alias for import_from_excel."""
+        return self.import_from_excel(filepath)
 
     def _import_banks(self, wb, results: dict):
         """Import banks from the Banks sheet."""
@@ -539,17 +544,23 @@ class DataImportExport:
             bill_name = ws.cell(row=row_num, column=1).value
             amount = ws.cell(row=row_num, column=2).value
             due_date = ws.cell(row=row_num, column=3).value
-            frequency = ws.cell(row=row_num, column=4).value or "monthly"
-            is_floating = ws.cell(row=row_num, column=5).value
-            min_amount = ws.cell(row=row_num, column=6).value
-            max_amount = ws.cell(row=row_num, column=7).value
-            pref_bank = ws.cell(row=row_num, column=8).value
-            pref_account = ws.cell(row=row_num, column=9).value
-            
+            due_month = ws.cell(row=row_num, column=4).value
+            frequency = ws.cell(row=row_num, column=5).value or "monthly"
+            is_floating = ws.cell(row=row_num, column=6).value
+            min_amount = ws.cell(row=row_num, column=7).value
+            max_amount = ws.cell(row=row_num, column=8).value
+            pref_bank = ws.cell(row=row_num, column=9).value
+            pref_account = ws.cell(row=row_num, column=10).value
+
             if not bill_name or not amount:
                 continue
                 
             try:
+                # Convert due_month to int if provided
+                due_month_int = None
+                if due_month is not None:
+                    due_month_int = int(due_month)
+                
                 # Check if floating
                 if is_floating and str(is_floating).upper() == "TRUE":
                     bill = FloatingBill(
@@ -558,14 +569,16 @@ class DataImportExport:
                         due_date=int(due_date or 1),
                         min_amount=float(min_amount or amount * 0.5),
                         max_amount=float(max_amount or amount * 1.5),
-                        frequency=frequency
+                        frequency=frequency,
+                        due_month=due_month_int
                     )
                 else:
                     bill = Bill(
                         bill_name=bill_name,
                         amount=float(amount),
                         due_date=int(due_date or 1),
-                        frequency=frequency
+                        frequency=frequency,
+                        due_month=due_month_int
                     )
                 
                 # Set payment preferences
@@ -788,9 +801,9 @@ class DataImportExport:
 
         # ========== BILLS ==========
         ws_bills = wb.create_sheet("Bills")
-        ws_bills.append(["bill_name", "amount", "due_date", "frequency",
+        ws_bills.append(["bill_name", "amount", "due_date", "due_month", "frequency",
                         "is_floating", "min_amount", "max_amount"])
-        for col in range(1, 8):
+        for col in range(1, 9):
             ws_bills.cell(row=1, column=col).font = header_font
             ws_bills.cell(row=1, column=col).fill = header_fill
         
@@ -800,6 +813,7 @@ class DataImportExport:
                 bill.bill_name,
                 bill.amount,
                 bill.due_date,
+                bill.due_month,
                 bill.frequency.value,
                 is_floating,
                 getattr(bill, 'min_amount', None),

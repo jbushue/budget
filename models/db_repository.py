@@ -310,18 +310,21 @@ class DatabaseRepository:
 
         # Convert distribution dict to JSON string
         distribution_json = json.dumps(income.distribution) if income.distribution else None
+        
+        # Convert pay_date list to JSON string
+        pay_date_json = json.dumps(income.pay_date) if income.pay_date else None
 
         if db_income:
             db_income.amount = income.amount
             db_income.frequency = income.frequency
-            db_income.pay_date = income.pay_date
+            db_income.pay_date = pay_date_json
             db_income.distribution = distribution_json
         else:
             db_income = IncomeSourceModel(
                 source_name=income.source_name,
                 amount=income.amount,
                 frequency=income.frequency,
-                pay_date=income.pay_date,
+                pay_date=pay_date_json,
                 distribution=distribution_json
             )
             self.session.add(db_income)

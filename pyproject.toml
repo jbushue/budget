@@ -5,6 +5,7 @@ description = "Professional personal finance management system with projections,
 requires-python = ">=3.13"
 dependencies = [
     "flask-cors>=6.0.2",
+    "openpyxl>=3.1.5",
     "sqlalchemy>=2.0.46",
 ]
 
@@ -21,5 +22,12 @@ graphql = [
 ]
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
     "black>=23.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.1.0",
 ]
