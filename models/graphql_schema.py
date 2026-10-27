@@ -2151,6 +2151,8 @@ class MarkBillPaid(graphene.Mutation):
             return MarkBillPaid(success=False, message=(
                 f"Payment exceeds the balance owed (${bill.linked_account_balance:,.2f})"))
 
+        from models.dashboard import overdue_due_date, settle_paid_flag
+        was_overdue = overdue_due_date(bill, pay_date) is not None
         try:
             undo = _take_payment(manager, src_bank, src_acct, pay_amount, f"Bill payment: {bill_name}", pay_date)
         except ValueError as e:
@@ -2164,6 +2166,7 @@ class MarkBillPaid(graphene.Mutation):
         except ValueError as e:
             undo()
             return MarkBillPaid(success=False, message=f"Payment error: {e}")
+        settle_paid_flag(bill, was_overdue)
 
         # Persist all state changes (balances, paid flag, payment history)
         manager.save_to_database()

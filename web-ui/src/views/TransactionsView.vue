@@ -11,6 +11,8 @@
       </div>
     </div>
 
+    <BillMatchSuggestions ref="matchBox" :limit="5" style="margin-bottom:1rem" @changed="refetch()" />
+
     <div class="card filters">
       <input v-model="filters.text" placeholder="Search description or notes..." style="flex:2;min-width:180px" />
       <select v-model="filters.category" style="flex:1;min-width:150px">
@@ -66,7 +68,9 @@
               <td>
                 <div style="font-weight:500">{{ t.description }}</div>
                 <div class="sub">
-                  <span v-if="t.matchedBill" class="badge badge-success" title="Recorded as this bill's payment">✓ {{ t.matchedBill }}</span>
+                  <span v-if="t.matchedBill" class="badge badge-success" title="Recorded as this bill's payment">
+                    ✓ {{ t.matchedBill }} <button class="undo" title="Not this bill — undo" @click="unmatch(t)">undo</button>
+                  </span>
                   <span v-if="t.notes">{{ t.notes }}</span>
                   <span v-if="t.source !== 'manual'" class="src">{{ t.source === 'simplefin' ? 'SimpleFIN' : 'CSV' }}</span>
                 </div>
@@ -94,6 +98,8 @@
         <button class="btn btn-outline btn-sm" @click="loadMore">Show more ({{ page.total - items.length }} left)</button>
       </div>
     </div>
+
+    <RecurringSuggestions ref="recurringBox" style="margin-top:1.5rem" />
 
     <!-- Add -->
     <div v-if="showAdd" class="modal-overlay" @click.self="showAdd = false">
@@ -214,6 +220,9 @@ import {
   GET_LEDGER_TRANSACTIONS, GET_CATEGORIES, ADD_LEDGER_TRANSACTION, UPDATE_LEDGER_TRANSACTION,
   DELETE_LEDGER_TRANSACTION, IMPORT_CSV_TRANSACTIONS, IMPORT_SIMPLEFIN_TRANSACTIONS,
 } from '../graphql/ledger'
+import { UNMATCH_TRANSACTION } from '../graphql/goals'
+import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
+import RecurringSuggestions from '../components/RecurringSuggestions.vue'
 import { runMutation } from '../utils/mutation'
 import { currency, fmtDateShort } from '../utils/format'
 import type { Bank, Category, CsvPreview, ImportResult, LedgerTransaction, MutationPayload, TransactionPage } from '../types'
@@ -280,6 +289,24 @@ async function setCategory(t: LedgerTransaction, category: string) {
     variables: { id: t.id, category, createRule: rememberChoice.value && !!category },
   }), 'updateLedgerTransaction', { failMessage: 'Could not update category' })
   if (res) refetch()
+}
+
+const { mutate: unmatchM } = useMutation<{ unmatchTransaction: MutationPayload }>(UNMATCH_TRANSACTION)
+const matchBox = ref<InstanceType<typeof BillMatchSuggestions> | null>(null)
+const recurringBox = ref<InstanceType<typeof RecurringSuggestions> | null>(null)
+
+function refreshSuggestions() {
+  matchBox.value?.refetch()
+  recurringBox.value?.refetch()
+}
+
+async function unmatch(t: LedgerTransaction) {
+  if (!confirm(`Remove the ${t.matchedBill} payment recorded from this transaction?`)) return
+  const res = await runMutation(() => unmatchM({ variables: { transactionId: t.id } }), 'unmatchTransaction')
+  if (res) {
+    refetch()
+    refreshSuggestions()
+  }
 }
 
 async function remove(t: LedgerTransaction) {
@@ -387,6 +414,7 @@ async function doImport() {
   if (res) {
     showImport.value = false
     refetch()
+    refreshSuggestions()
   }
 }
 
@@ -398,7 +426,10 @@ async function syncSimplefin() {
   const res = await importResult(() => importSfin({ variables: { days: 90 } })
     .then(r => r?.data?.importSimplefinTransactions.result))
   syncing.value = false
-  if (res) refetch()
+  if (res) {
+    refetch()
+    refreshSuggestions()
+  }
 }
 
 /** Run an import, then tell the user what happened. Returns the result on success. */
@@ -432,5 +463,6 @@ td select { padding: 0.25rem 0.4rem; font-size: 0.82rem; width: 100%; margin: 0;
 select.uncat { border-color: var(--warning); }
 .icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; }
 .icon-btn:hover { color: var(--danger); }
+.undo { background: none; border: none; color: inherit; text-decoration: underline; cursor: pointer; font-size: 0.7rem; padding: 0 0 0 0.25rem; }
 .hint { font-size: 0.8rem; color: var(--text-muted); margin: 0.25rem 0 0.75rem; }
 </style>

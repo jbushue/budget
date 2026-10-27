@@ -12,6 +12,8 @@
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else>
+      <RecurringSuggestions style="margin-bottom:1.5rem" @added="refetch()" />
+
       <!-- Filter chips -->
       <div class="chip-group" style="margin-bottom:1rem">
         <span class="chip" :class="{ selected: filter === 'all' }" @click="filter = 'all'">All ({{ unifiedRows.length }})</span>
@@ -404,6 +406,7 @@ import {
 } from '../graphql/queries'
 import { currency, pct, fmtDate, frequencyLabel, billTypeLabel, todayISO } from '../utils/format'
 import { runMutation } from '../utils/mutation'
+import RecurringSuggestions from '../components/RecurringSuggestions.vue'
 import type { BillItem, Bank, CreditPaymentDue, BillGroup, MortgageAccount, HELOCAccount, MutationPayload } from '../types'
 
 // ── Unified Row Type ──

@@ -8,6 +8,7 @@ const routes = [
   { path: '/income', name: 'Income', component: () => import('../views/IncomeView.vue') },
   { path: '/transactions', name: 'Transactions', component: () => import('../views/TransactionsView.vue') },
   { path: '/budgets', name: 'Budgets', component: () => import('../views/BudgetsView.vue') },
+  { path: '/goals', name: 'Goals', component: () => import('../views/GoalsView.vue') },
   { path: '/timeline', name: 'Timeline', component: () => import('../views/TimelineView.vue') },
   { path: '/optimizer', name: 'Optimizer', component: () => import('../views/OptimizerView.vue') },
   { path: '/debt-payoff', name: 'DebtPayoff', component: () => import('../views/DebtPayoffView.vue') },

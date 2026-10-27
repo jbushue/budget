@@ -36,6 +36,7 @@ const navItems = [
   { path: '/income', icon: '💵', label: 'Income' },
   { path: '/transactions', icon: '🧾', label: 'Transactions' },
   { path: '/budgets', icon: '🎯', label: 'Budgets' },
+  { path: '/goals', icon: '🐷', label: 'Goals' },
   { path: '/timeline', icon: '📅', label: 'Timeline' },
   { path: '/optimizer', icon: '⚡', label: 'Optimizer' },
   { path: '/debt-payoff', icon: '📉', label: 'Debt Payoff' },

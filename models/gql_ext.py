@@ -11,6 +11,7 @@ from __future__ import annotations
 import graphene
 
 from models import app_settings
+from models.gql_goals import GoalsMutation, GoalsQuery
 from models.gql_ledger import LedgerMutation, LedgerQuery
 
 
@@ -109,7 +110,7 @@ class DashboardSummaryType(graphene.ObjectType):
 #  Roots
 # ─────────────────────────────────────────────────────────────────────────
 
-class ExtQuery(LedgerQuery, graphene.ObjectType):
+class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
     settings = graphene.JSONString(description="App settings (secrets omitted)")
     dashboard_summary = graphene.Field(DashboardSummaryType)
 
@@ -124,5 +125,5 @@ class ExtQuery(LedgerQuery, graphene.ObjectType):
         return build_dashboard(manager)
 
 
-class ExtMutation(LedgerMutation, graphene.ObjectType):
+class ExtMutation(LedgerMutation, GoalsMutation, graphene.ObjectType):
     update_settings = UpdateSettings.Field()

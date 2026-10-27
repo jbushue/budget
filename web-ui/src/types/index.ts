@@ -627,3 +627,58 @@ export interface CsvPreview {
   errors: string[]
   rows: { date: string; description: string; amount: number; category: string | null }[]
 }
+
+// ── Goals, bill matching, recurring charges ──
+
+export interface SavingsGoal {
+  id: number
+  name: string
+  targetAmount: number
+  savedAmount: number
+  remaining: number
+  progress: number
+  targetDate: string | null
+  monthsLeft: number | null
+  monthlyNeeded: number | null
+  perPaycheckNeeded: number | null
+  onTrack: boolean | null
+  bankName: string
+  accountName: string
+  inChecking: boolean
+  linkedBill: string | null
+  complete: boolean
+}
+
+export interface SinkingFundSuggestion {
+  billName: string
+  amount: number
+  frequency: string
+  nextDue: string
+  monthly: number
+}
+
+export interface BillMatch {
+  billName: string
+  dueDate: string
+  confidence: 'high' | 'medium'
+  reason: string
+  amount: number
+  transaction: Pick<LedgerTransaction, 'id' | 'date' | 'description' | 'amount' | 'bankName' | 'accountName'>
+}
+
+export interface RecurringCharge {
+  key: string
+  name: string
+  description: string
+  frequency: string
+  amount: number
+  variable: boolean
+  minAmount: number
+  maxAmount: number
+  count: number
+  lastDate: string
+  nextExpected: string
+  dueDay: number
+  category: string | null
+  monthlyCost: number
+}

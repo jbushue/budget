@@ -102,7 +102,9 @@ def _to_dict(t: db.LedgerTransactionModel) -> dict:
         "account_name": t.account_name or "",
         "category": t.category,
         "source": t.source,
-        "matched_bill": t.matched_bill,
+        # "__none__" = the user said this isn't a bill payment (see bill_matching)
+        "matched_bill": t.matched_bill if t.matched_bill != "__none__" else None,
+        "not_a_bill": t.matched_bill == "__none__",
         "notes": t.notes or "",
     }
 

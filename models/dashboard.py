@@ -68,40 +68,86 @@ def _skip_bill(bill, grouped_keys) -> bool:
     return False
 
 
+def _history(bill) -> list[dict]:
+    if isinstance(bill, GroupLinkedBill):
+        return bill.linked_group.payment_history or bill.payment_history
+    return bill.payment_history
+
+
+def _as_date(value) -> date | None:
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def overdue_due_date(bill, today: date) -> date | None:
+    """
+    The bill's most recent due date (within the last 31 days) if it passed
+    without a payment, else None. A payment counts for that due date if it
+    was made after the previous due date (early or late).
+    """
+    try:
+        prev_due = last_due = None
+        d = bill.get_next_due_date(today - timedelta(days=32))
+        while d < today:
+            prev_due, last_due = last_due, d
+            d = bill.get_next_due_date(d)
+        if last_due is None:
+            return None
+        if prev_due is None:
+            prev_due = last_due - timedelta(days=31)
+            back = bill.get_next_due_date(last_due - timedelta(days=400))
+            while back < last_due:
+                prev_due = back
+                back = bill.get_next_due_date(back)
+    except Exception:
+        return None
+    # Only call it overdue if the bill was being tracked by then: it existed
+    # before that due date, or has been paid before. (A bill you just added
+    # isn't "overdue" for last month.)
+    anchor = getattr(bill, "start_date", None)
+    if anchor and last_due < anchor:
+        return None
+    history = _history(bill)
+    created = getattr(bill.linked_group if isinstance(bill, GroupLinkedBill) else bill, "created_on", None)
+    if not history:
+        if bill.is_paid_this_period or created is None or created > last_due:
+            return None
+        return last_due
+    if any((_as_date(h.get("date")) or date.min) > prev_due for h in history):
+        return None
+    return last_due
+
+
+def settle_paid_flag(bill, was_overdue: bool) -> None:
+    """
+    After paying an OVERDUE bill, the payment was for the missed due date —
+    the next one is still owed, so don't flag the upcoming occurrence as paid
+    (otherwise the projection would skip it).
+    """
+    if not was_overdue:
+        return
+    bill.is_paid_this_period = False
+    if isinstance(bill, GroupLinkedBill):
+        bill.linked_group.is_paid_this_period = False
+
+
 def overdue_bills(manager, today: date) -> list[dict]:
     """
     Bills whose most recent due date (within the last 31 days) has passed
-    without being marked paid. The projection starts today, so these are
-    not in it — the money for them is still sitting in checking.
+    without being paid. The projection starts today, so these are not in
+    it — the money for them is still sitting in checking.
     """
     grouped = manager.get_grouped_account_keys()
     out = []
     for bill in manager.bills:
-        if bill.is_paid_this_period or _skip_bill(bill, grouped):
+        if _skip_bill(bill, grouped):
             continue
-        try:
-            last_due = None
-            d = bill.get_next_due_date(today - timedelta(days=32))
-            while d < today:
-                last_due = d
-                d = bill.get_next_due_date(d)
-        except Exception:
-            continue
+        last_due = overdue_due_date(bill, today)
         if last_due is None:
-            continue
-        # Only call it overdue if the bill was being tracked by then: it existed
-        # before that due date, or has been paid before. (A bill you just added
-        # isn't "overdue" for last month.)
-        anchor = getattr(bill, "start_date", None)
-        if anchor and last_due < anchor:
-            continue
-        if isinstance(bill, GroupLinkedBill):
-            created = getattr(bill.linked_group, "created_on", None)
-            history = bill.linked_group.payment_history or bill.payment_history
-        else:
-            created = getattr(bill, "created_on", None)
-            history = bill.payment_history
-        if not history and (created is None or created > last_due):
             continue
         amount = bill.effective_amount if not isinstance(bill, AccountLinkedBill) else min(
             bill.effective_amount, bill.linked_account_balance)

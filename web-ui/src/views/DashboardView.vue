@@ -93,6 +93,7 @@
           </div>
           <InsightList :items="dash.insights" compact />
         </div>
+        <BillMatchSuggestions style="margin-bottom:1.5rem" @changed="refreshAll" />
       </template>
       <div v-else-if="dashLoading" class="loading">Checking your bills...</div>
       <div v-else-if="dashError" class="card" style="color:var(--danger);margin-bottom:1.5rem">Could not check your bills: {{ dashError.message }}</div>
@@ -272,6 +273,7 @@ import {
   GET_DASHBOARD_SUMMARY,
 } from '../graphql/queries'
 import InsightList from '../components/InsightList.vue'
+import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
 import MarkPaidDialog, { type PayableBill } from '../components/MarkPaidDialog.vue'
 import { currency, fmtDate, fmtDateShort, frequencyLabel, daysFromNow } from '../utils/format'
 import type { FinancialSnapshot, Projection, SimplefinSyncedAccount, NetWorthSnapshot, BillPaymentHistory, DashboardSummary, PeriodBillStatus } from '../types'

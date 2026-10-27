@@ -64,7 +64,9 @@ class FinanceManager:
         SimpleFIN sync or a transaction match). Card/loan balances are left alone.
         """
         from models.fixed_bill import Bill as _Bill, FloatingBill as _Floating
+        from models.dashboard import overdue_due_date, settle_paid_flag
         payment_date = payment_date or date.today()
+        was_overdue = overdue_due_date(bill, payment_date) is not None
         if amount is None:
             amount = bill.effective_amount
         if isinstance(bill, _Floating):
@@ -73,6 +75,8 @@ class FinanceManager:
             _Bill.mark_paid(bill, source_bank, source_account, amount, payment_date)
         if isinstance(bill, GroupLinkedBill):
             bill.linked_group.mark_paid(payment_date)
+        settle_paid_flag(bill, was_overdue)
+        self.invalidate_plan_cache()
 
     def sim_options(self) -> dict:
         """Keyword arguments every TimelineSimulator/PaymentOptimizer should get."""
