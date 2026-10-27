@@ -68,7 +68,7 @@ class TestCreditCardAccount:
             interest_rate=15.0
         )
 
-        with pytest.raises(ValueError, match="exceeds credit limit"):
+        with pytest.raises(ValueError, match="exceeds available credit"):
             card.make_purchase(1500.00)
 
         assert card.balance == 0.00  # Should remain unchanged
@@ -283,7 +283,7 @@ class TestCreditCardIntegration:
         # Should have interest accrual on statement date
         assert len(interest_events) >= 1
 
-    def test_credit_card_optimization(self, sample_credit_bank, sample_income):
+    def test_credit_card_optimization(self, sample_bank, sample_credit_bank, sample_income):
         """Test credit card in payment optimization."""
         from models.payment_optimizer import PaymentOptimizer
 
@@ -291,7 +291,8 @@ class TestCreditCardIntegration:
         card = sample_credit_bank.credit_accounts["Rewards Card"]
         card.make_purchase(2000.00)
 
-        optimizer = PaymentOptimizer([sample_credit_bank], sample_income, [])
+        # Need both regular bank (for income deposits) and credit bank
+        optimizer = PaymentOptimizer([sample_bank, sample_credit_bank], sample_income, [])
 
         start_date = date(2024, 1, 1)
         end_date = date(2024, 3, 31)
@@ -340,7 +341,7 @@ class TestCreditCardEdgeCases:
             card.make_purchase(1.00)
 
     def test_credit_card_overpayment(self):
-        """Test overpaying credit card balance."""
+        """Test overpaying credit card balance - code prevents overpayment."""
         card = CreditAccount(
             account_name="Test Card",
             credit_limit=5000.00,
@@ -348,10 +349,13 @@ class TestCreditCardEdgeCases:
         )
 
         card.make_purchase(1000.00)
-        card.make_payment(1200.00)  # Overpay
+        
+        # Code prevents overpayment by raising an error
+        with pytest.raises(ValueError, match="Payment exceeds balance"):
+            card.make_payment(1200.00)  # Overpay
 
-        # Balance should go to zero (or negative, but typically not allowed)
-        assert card.balance <= 0.00
+        # Balance should remain unchanged since payment was rejected
+        assert card.balance == 1000.00
 
     def test_credit_card_multiple_charges(self):
         """Test multiple charges and payments."""

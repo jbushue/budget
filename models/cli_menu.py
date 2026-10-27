@@ -20,41 +20,21 @@ class FinanceCLI:
         """Run the interactive CLI menu."""
         while True:
             self.print_main_menu()
-            choice = input("\nSelect an option (1-17): ").strip()
+            choice = input("\nSelect an option (1-7): ").strip()
 
             if choice == "1":
-                self.view_snapshot()
+                self.dashboard_menu()
             elif choice == "2":
-                self.quick_balance_update()
+                self.views_projections_menu()
             elif choice == "3":
-                self.safe_to_spend()
+                self.planning_optimization_menu()
             elif choice == "4":
-                self.project_balances()
+                self.manage_data_menu()
             elif choice == "5":
-                self.view_upcoming_bills()
+                self.reports_export_menu()
             elif choice == "6":
-                self.view_upcoming_income()
-            elif choice == "7":
-                self.optimize_payments()
-            elif choice == "8":
-                self.manage_promotional_offers()
-            elif choice == "9":
-                self.manage_mortgages()
-            elif choice == "10":
-                self.view_reports()
-            elif choice == "11":
-                self.view_detailed_timeline()
-            elif choice == "12":
-                self.create_bank_menu()
-            elif choice == "13":
-                self.add_bills_income_menu()
-            elif choice == "14":
                 self.database_management()
-            elif choice == "15":
-                self.credit_payoff_planner()
-            elif choice == "16":
-                self.spending_budget_menu()
-            elif choice == "17":
+            elif choice == "7":
                 print("\nGoodbye! 👋")
                 break
             else:
@@ -63,28 +43,450 @@ class FinanceCLI:
     def print_main_menu(self):
         """Print the main menu."""
         print("\n" + "=" * 80)
-        print("PERSONAL FINANCE MANAGEMENT SYSTEM - MAIN MENU")
+        print("💲 PERSONAL FINANCE MANAGEMENT SYSTEM")
         print("=" * 80)
-        print("\n1.  View Current Financial Snapshot")
-        print("2.  💰 Quick Balance Update (All Accounts)")
-        print("3.  🎯 Safe-to-Spend Summary")
-        print("4.  Project Balance on Specific Date")
-        print("5.  View Upcoming Bills (Next 60 days)")
-        print("6.  View Upcoming Income (Next 60 days)")
-        print("7.  Get Payment Optimization Recommendations")
-        print("8.  Manage Promotional Offers (Credit Cards)")
-        print("9.  Manage Mortgages")
-        print("10. Generate Financial Reports")
-        print("11. View Detailed Timeline")
-        print("12. Manage Banks & Accounts")
-        print("13. Manage Bills & Income")
-        print("14. Database & File Management")
-        print("15. Credit Payoff Planner")
-        print("16. 📊 Spending & Budget Tracking")
-        print("17. Exit")
+        print("\n  1. 📊 Dashboard & Overview")
+        print("  2. 🔮 Views & Projections")
+        print("  3. 🎯 Planning & Optimization")
+        print("  4. ⚙️  Manage Data")
+        print("  5. 📄 Reports & Export")
+        print("  6. 💾 Database & File Management")
+        print("  7. 🚪 Exit")
 
-    def view_snapshot(self):
-        """View current financial snapshot."""
+    # ─────────────────────────────────────────────────────────────────────────
+    #  DASHBOARD & OVERVIEW
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def dashboard_menu(self):
+        """Dashboard hub – at-a-glance views and quick actions."""
+        while True:
+            print("\n" + "=" * 80)
+            print("📊 DASHBOARD & OVERVIEW")
+            print("=" * 80)
+            print("\n  1. 📋 View Financial Snapshot")
+            print("  2. 💰 Quick Balance Update (All Accounts)")
+            print("  3. 🎯 Safe-to-Spend Summary")
+            print("  4. ↩️  Back to main menu")
+
+            choice = input("\nSelect option (1-4): ").strip()
+
+            if choice == "1":
+                self.view_snapshot()
+            elif choice == "2":
+                self.quick_balance_update()
+            elif choice == "3":
+                self.safe_to_spend()
+            elif choice == "4":
+                break
+            else:
+                print("❌ Invalid choice.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  VIEWS & PROJECTIONS
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def views_projections_menu(self):
+        """View upcoming events and project future balances."""
+        while True:
+            strategy_label = self._strategy_label()
+            print("\n" + "=" * 80)
+            print("🔮 VIEWS & PROJECTIONS")
+            print(f"    Strategy: {strategy_label}")
+            print("=" * 80)
+            print("\n  1. 💸 Payment Calendar (What to pay & when)")
+            print("  2. 📆 Detailed Timeline (Day-by-day balances)")
+            print("  3. 📅 Upcoming Events (Bills / Income / Credit)")
+            print("  4. 📈 Projection Report (Monthly summaries)")
+            print("  5. ↩️  Back to main menu")
+
+            choice = input("\nSelect option (1-5): ").strip()
+
+            if choice == "1":
+                self.view_payment_calendar()
+            elif choice == "2":
+                self.view_detailed_timeline()
+            elif choice == "3":
+                self.view_upcoming_events()
+            elif choice == "4":
+                self.view_projection_report()
+            elif choice == "5":
+                break
+            else:
+                print("❌ Invalid choice.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  PLANNING & OPTIMIZATION
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def planning_optimization_menu(self):
+        """Payment optimization, payoff planning, and budgeting tools."""
+        while True:
+            strategy_label = self._strategy_label()
+            print("\n" + "=" * 80)
+            print("🎯 PLANNING & OPTIMIZATION")
+            print(f"    Current Strategy: {strategy_label}")
+            print("=" * 80)
+            print("\n  1. ⚡ Select Optimization Strategy")
+            print("  2. 💳 View Credit Balances & Payoff Progress")
+            print("  3. 📊 Spending & Budget Tracking")
+            print("  4. ↩️  Back to main menu")
+
+            choice = input("\nSelect option (1-4): ").strip()
+
+            if choice == "1":
+                self.select_optimization_strategy()
+            elif choice == "2":
+                self._view_all_credit_balances()
+            elif choice == "3":
+                self.spending_budget_menu()
+            elif choice == "4":
+                break
+            else:
+                print("❌ Invalid choice.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  MANAGE DATA
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def manage_data_menu(self):
+        """Hub for managing all financial data entities."""
+        while True:
+            print("\n" + "=" * 80)
+            print("⚙️  MANAGE DATA")
+            print("=" * 80)
+            print("\n  1. 🏦 Banks & Accounts")
+            print("  2. 📝 Bills & Income")
+            print("  3. 🏠 Mortgages")
+            print("  4. 🎁 Promotional Offers (Credit Cards)")
+            print("  5. ↩️  Back to main menu")
+
+            choice = input("\nSelect option (1-5): ").strip()
+
+            if choice == "1":
+                self.create_bank_menu()
+            elif choice == "2":
+                self.add_bills_income_menu()
+            elif choice == "3":
+                self.manage_mortgages()
+            elif choice == "4":
+                self.manage_promotional_offers()
+            elif choice == "5":
+                break
+            else:
+                print("❌ Invalid choice.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  REPORTS & EXPORT
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def reports_export_menu(self):
+        """Generate and export financial reports."""
+        while True:
+            print("\n" + "=" * 80)
+            print("📄 REPORTS & EXPORT")
+            print("=" * 80)
+            print("\n  1. 📋 Current Financial Snapshot")
+            print("  2. 📊 Monthly Spending Summary")
+            print("  3. 📤 Export Report to File")
+            print("  4. ↩️  Back to main menu")
+
+            choice = input("\nSelect option (1-4): ").strip()
+
+            if choice == "1":
+                self.view_snapshot()
+            elif choice == "2":
+                self._monthly_spending_summary()
+            elif choice == "3":
+                self._export_menu()
+            elif choice == "4":
+                break
+            else:
+                print("❌ Invalid choice.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  GLOBAL STRATEGY & UNIFIED VIEWS
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _strategy_label(self) -> str:
+        """Return a human-readable label for the current optimization strategy."""
+        labels = {
+            "maximize_discretionary": "💵 Maximize Cash on Hand",
+            "minimize_interest": "📉 Minimize Interest Paid",
+            "payoff_credit_account": f"💳 Pay Off {self.manager.target_credit_account or '(none)'}",
+        }
+        return labels.get(self.manager.optimization_goal, self.manager.optimization_goal)
+
+    def select_optimization_strategy(self):
+        """Let the user pick the global optimization strategy."""
+        print("\n" + "=" * 80)
+        print("⚡ SELECT OPTIMIZATION STRATEGY")
+        print("=" * 80)
+        print(f"\n  Current: {self._strategy_label()}")
+        print(f"\n  Strategies:")
+        print(f"    1. 💵 Maximize Cash on Hand")
+        print(f"       Keep as much money available as possible.")
+        print(f"    2. 📉 Minimize Interest Paid")
+        print(f"       Prioritize paying down high-interest debt first.")
+        print(f"    3. 💳 Pay Off a Specific Credit Account")
+        print(f"       Aggressively pay down a chosen credit card.")
+
+        choice = input("\nSelect strategy (1-3): ").strip()
+
+        if choice == "1":
+            self.manager.set_optimization_strategy("maximize_discretionary")
+            print("\n✓ Strategy set: Maximize Cash on Hand")
+        elif choice == "2":
+            self.manager.set_optimization_strategy("minimize_interest")
+            print("\n✓ Strategy set: Minimize Interest Paid")
+        elif choice == "3":
+            # List credit accounts with balances
+            credit_list = []
+            for bank in self.manager.banks:
+                for credit in bank.get_all_credit_accounts():
+                    if credit.balance > 0:
+                        credit_list.append(credit.account_name)
+                        print(f"    {len(credit_list)}. {credit.account_name} — ${credit.balance:,.2f} @ {credit.interest_rate}% APR")
+            if not credit_list:
+                print("\n  No credit accounts with balances found.")
+                return
+            try:
+                idx = int(input("\n  Select account (number): ").strip()) - 1
+                if 0 <= idx < len(credit_list):
+                    target = credit_list[idx]
+                    self.manager.set_optimization_strategy("payoff_credit_account", target)
+                    print(f"\n✓ Strategy set: Aggressively pay off {target}")
+                else:
+                    print("❌ Invalid selection.")
+            except ValueError:
+                print("❌ Invalid input.")
+        else:
+            print("❌ Invalid choice.")
+
+    def _ask_period(self, default_days: int = 90) -> int | None:
+        """Prompt user for a time period. Returns number of days or None on cancel."""
+        print("\n  How far ahead?")
+        print("    1. 30 days")
+        print("    2. 60 days")
+        print("    3. 90 days")
+        print("    4. 6 months")
+        print("    5. 1 year")
+        print("    6. Custom")
+        choice = input(f"\n  Select (1-6) [{default_days}d]: ").strip()
+        if choice == "1":
+            return 30
+        elif choice == "2":
+            return 60
+        elif choice == "3":
+            return 90
+        elif choice == "4":
+            return 180
+        elif choice == "5":
+            return 365
+        elif choice == "6":
+            try:
+                return int(input("  Enter number of days: ").strip())
+            except ValueError:
+                print("  ❌ Invalid input.")
+                return None
+        elif choice == "":
+            return default_days
+        else:
+            print("  ❌ Invalid choice.")
+            return None
+
+    def _plan_to_payments(self, plan) -> list[dict]:
+        """Convert a PaymentPlan into a unified list of payment dicts for display."""
+        payments = []
+        for strategy_key, assignment in plan.strategy.items():
+            entry_type = assignment.get('type', 'bill')
+            payment_date = assignment['date']
+            amount = assignment.get('amount', 0)
+            bank = assignment['bank']
+            account = assignment['account']
+
+            if entry_type == 'credit_payment':
+                credit_name = assignment.get('credit_name', strategy_key)
+                full_balance = assignment.get('full_balance', 0)
+                interest_rate = assignment.get('interest_rate', 0)
+                payments.append({
+                    'date': payment_date, 'icon': '💳',
+                    'name': f"{credit_name} (Min Payment)",
+                    'amount': amount, 'from_bank': bank, 'from_account': account,
+                    'category': 'credit',
+                    'extra': f"Card balance: ${full_balance:,.2f} | APR: {interest_rate:.1f}%",
+                })
+            elif entry_type == 'mortgage':
+                payments.append({
+                    'date': payment_date, 'icon': '🏠',
+                    'name': assignment.get('mortgage_name') or strategy_key.replace("Mortgage: ", ""),
+                    'amount': amount, 'from_bank': bank, 'from_account': account,
+                    'category': 'mortgage', 'extra': None,
+                })
+            else:
+                bill_name = assignment.get('bill_name', strategy_key)
+                payments.append({
+                    'date': payment_date, 'icon': '📄',
+                    'name': bill_name,
+                    'amount': amount, 'from_bank': bank, 'from_account': account,
+                    'category': 'bill', 'extra': None,
+                })
+
+        for pp in plan.promo_payoff_schedule:
+            payments.append({
+                'date': pp['date'], 'icon': '🎯',
+                'name': f"{pp['promo_name']} -> {pp['credit_account']}",
+                'amount': pp['amount'],
+                'from_bank': pp.get('bank', ''), 'from_account': '(checking)',
+                'category': 'promo',
+                'extra': f"Promo expires: {pp.get('promo_end_date', 'N/A')}",
+            })
+
+        for ep in plan.extra_credit_payments:
+            payments.append({
+                'date': ep['date'], 'icon': '⚡',
+                'name': f"Extra -> {ep['credit_account']}",
+                'amount': ep['amount'],
+                'from_bank': ep.get('bank', ''), 'from_account': '(checking)',
+                'category': 'extra_credit', 'extra': None,
+            })
+
+        payments.sort(key=lambda p: p['date'])
+        return payments
+
+    def view_upcoming_events(self):
+        """View upcoming events filtered by type."""
+        print("\n" + "=" * 80)
+        print("📅 UPCOMING EVENTS")
+        print("=" * 80)
+        print("\n  1. 📄 Upcoming Bills")
+        print("  2. 💵 Upcoming Income")
+        print("  3. 💳 Upcoming Credit Payments")
+        print("  4. 🏠 Upcoming Mortgage Payments")
+        print("  5. 🎯 Upcoming Promo Deadlines")
+        print("  6. 📋 All Events")
+
+        choice = input("\nSelect (1-6): ").strip()
+
+        days = 60
+        end = date.today() + timedelta(days=days)
+        plan = self.manager.get_global_plan(end_date=end)
+
+        if choice == "1":
+            self._show_upcoming_filtered(plan, "bill", "📄 UPCOMING BILLS", days)
+        elif choice == "2":
+            self._show_upcoming_income_list(days)
+        elif choice == "3":
+            self._show_upcoming_filtered(plan, "credit", "💳 UPCOMING CREDIT PAYMENTS", days)
+        elif choice == "4":
+            self._show_upcoming_filtered(plan, "mortgage", "🏠 UPCOMING MORTGAGE PAYMENTS", days)
+        elif choice == "5":
+            self._show_upcoming_promos()
+        elif choice == "6":
+            self._show_upcoming_filtered(plan, None, "📋 ALL UPCOMING EVENTS", days)
+        else:
+            print("❌ Invalid choice.")
+
+    def _show_upcoming_filtered(self, plan, category_filter: str | None, title: str, days: int):
+        """Show upcoming payments from the global plan, optionally filtered by category."""
+        payments = self._plan_to_payments(plan)
+        if category_filter:
+            payments = [p for p in payments if p['category'] == category_filter]
+
+        print(f"\n{title} (next {days} days)")
+        print("-" * 80)
+        if not payments:
+            print("  No upcoming events.")
+            return
+        for p in payments:
+            days_until = (p['date'] - date.today()).days
+            print(f"  {p['icon']} {p['date'].strftime('%a %b %d')}  {p['name']:40s}  ${p['amount']:>10,.2f}  ({days_until}d)")
+        total = sum(p['amount'] for p in payments)
+        print(f"\n  Total: ${total:,.2f}  ({len(payments)} payments)")
+
+    def _show_upcoming_income_list(self, days: int):
+        """Show upcoming income deposits."""
+        print(f"\n💵 UPCOMING INCOME (next {days} days)")
+        print("-" * 80)
+        end_date = date.today() + timedelta(days=days)
+        total = 0
+        entries = []
+        for income in self.manager.income_sources:
+            pay_dates = income.get_pay_dates_in_range(date.today() - timedelta(days=1), end_date)
+            for pd in pay_dates:
+                entries.append((pd, income.source_name, income.amount))
+                total += income.amount
+        entries.sort()
+        for pd, name, amount in entries:
+            days_until = (pd - date.today()).days
+            print(f"  💵 {pd.strftime('%a %b %d')}  {name:40s}  ${amount:>10,.2f}  ({days_until}d)")
+        print(f"\n  Total: ${total:,.2f}  ({len(entries)} deposits)")
+
+    def _show_upcoming_promos(self):
+        """Show promo expiration deadlines."""
+        print(f"\n🎯 PROMO EXPIRATION DEADLINES")
+        print("-" * 80)
+        promos = []
+        for bank in self.manager.banks:
+            for credit in bank.get_all_credit_accounts():
+                for promo in credit.active_promos:
+                    bal = credit.promo_balance.get(promo.promo_name, 0)
+                    if bal > 0:
+                        days_left = (promo.end_date - date.today()).days
+                        promos.append((days_left, promo.end_date, promo.promo_name, credit.account_name, bal))
+        if not promos:
+            print("  No active promos with balances.")
+            return
+        promos.sort()
+        for days_left, end_dt, name, acct, bal in promos:
+            urgency = "🔴" if days_left <= 30 else ("⚠️ " if days_left <= 90 else "  ")
+            print(f"  {urgency} {end_dt}  {name:30s}  {acct:25s}  ${bal:>10,.2f}  ({days_left}d left)")
+
+    def view_projection_report(self):
+        """View projection report with monthly summaries."""
+        days = self._ask_period(default_days=90)
+        if days is None:
+            return
+        end_date = date.today() + timedelta(days=days)
+        print(f"\nGenerating projection report...")
+        report = self.manager.generate_projection_report(end_date=end_date)
+        print("\n" + report["text"])
+
+        export = input("\nExport this report? (y/n): ").strip().lower()
+        if export == "y":
+            self.export_report("projection", end_date=end_date)
+
+    def _export_menu(self):
+        """Export a report to file."""
+        print("\n" + "=" * 80)
+        print("📤 EXPORT REPORT")
+        print("=" * 80)
+        print("\n  What to export?")
+        print("    1. Payment Calendar")
+        print("    2. Projection Report")
+        print("    3. Financial Snapshot")
+        print("    4. Detailed Timeline")
+
+        choice = input("\nSelect (1-4): ").strip()
+        if choice == "1":
+            days = self._ask_period(90)
+            if days:
+                end = date.today() + timedelta(days=days)
+                plan = self.manager.get_global_plan(end_date=end)
+                payments = self._plan_to_payments(plan)
+                self._export_payment_calendar(payments, date.today(), end)
+        elif choice == "2":
+            days = self._ask_period(90)
+            if days:
+                end_date = date.today() + timedelta(days=days)
+                self.export_report("projection", end_date=end_date)
+        elif choice == "3":
+            self.export_report("snapshot")
+        elif choice == "4":
+            days = self._ask_period(30)
+            if days:
+                self.export_report("timeline", days=days)
+        else:
+            print("❌ Invalid choice.")
         print("\n" + "=" * 80)
         print("CURRENT FINANCIAL SNAPSHOT")
         print("=" * 80)
@@ -258,9 +660,9 @@ class FinanceCLI:
         print(f"{'='*50}")
         
         # Show optimized payment suggestion
-        show_optimization = input("\nShow payment optimization? (y/n): ").strip().lower()
+        show_optimization = input("\nView payment calendar? (y/n): ").strip().lower()
         if show_optimization == 'y':
-            self.optimize_payments()
+            self.view_payment_calendar()
 
     def spending_budget_menu(self):
         """Manage spending budgets and track discretionary expenses."""
@@ -268,11 +670,11 @@ class FinanceCLI:
             print("\n" + "=" * 80)
             print("📊 SPENDING & BUDGET TRACKING")
             print("=" * 80)
-            print("\n1. View Monthly Spending Summary")
-            print("2. Calculate Discretionary Budget")
-            print("3. View Spending Trends")
-            print("4. Set Spending Goals")
-            print("5. Back to main menu")
+            print("\n  1. 📋 View Monthly Spending Summary")
+            print("  2. 🧮 Calculate Discretionary Budget")
+            print("  3. 📈 View Spending Trends")
+            print("  4. 🎯 Set Spending Goals")
+            print("  5. ↩️  Back")
             
             choice = input("\nSelect option (1-5): ").strip()
             
@@ -295,14 +697,44 @@ class FinanceCLI:
         print("MONTHLY SPENDING SUMMARY")
         print("-" * 80)
         
-        # Calculate monthly totals
+        # Calculate monthly totals - properly convert all frequencies to monthly
         total_fixed_bills = sum(bill.amount for bill in self.manager.bills)
-        total_income = sum(income.amount for income in self.manager.income_sources)
         
-        # For semimonthly income, double the amount
+        # Calculate monthly income with proper frequency conversion
+        total_income = 0.0
+        income_details = []
+        
         for income in self.manager.income_sources:
-            if income.frequency == IncomeFrequency.SEMIMONTHLY:
-                total_income += income.amount  # Add again for 2x per month
+            # Convert to monthly amount based on frequency
+            if income.frequency == IncomeFrequency.WEEKLY:
+                monthly_amount = income.amount * 52 / 12  # ~4.33 per month
+                freq_display = f"${income.amount:,.2f}/week"
+            elif income.frequency == IncomeFrequency.BIWEEKLY:
+                monthly_amount = income.amount * 26 / 12  # ~2.17 per month
+                freq_display = f"${income.amount:,.2f}/biweekly"
+            elif income.frequency == IncomeFrequency.SEMIMONTHLY:
+                monthly_amount = income.amount * 2  # 2x per month
+                freq_display = f"${income.amount:,.2f} x2"
+            elif income.frequency == IncomeFrequency.MONTHLY:
+                monthly_amount = income.amount
+                freq_display = f"${income.amount:,.2f}/mo"
+            elif income.frequency == IncomeFrequency.QUARTERLY:
+                monthly_amount = income.amount / 3
+                freq_display = f"${income.amount:,.2f}/quarter"
+            elif income.frequency == IncomeFrequency.YEARLY:
+                monthly_amount = income.amount / 12
+                freq_display = f"${income.amount:,.2f}/year"
+            else:
+                monthly_amount = income.amount
+                freq_display = f"${income.amount:,.2f}"
+            
+            total_income += monthly_amount
+            income_details.append({
+                'name': income.source_name,
+                'monthly': monthly_amount,
+                'display': freq_display,
+                'frequency': income.frequency.value
+            })
         
         # Credit minimums
         min_credit = sum(
@@ -322,9 +754,8 @@ class FinanceCLI:
         discretionary = total_income - total_obligations
         
         print(f"\n📈 MONTHLY INCOME: ${total_income:,.2f}")
-        for income in self.manager.income_sources:
-            freq_mult = 2 if income.frequency == IncomeFrequency.SEMIMONTHLY else 1
-            print(f"   • {income.source_name}: ${income.amount * freq_mult:,.2f}/mo ({income.frequency.value})")
+        for detail in income_details:
+            print(f"   • {detail['name']}: ${detail['monthly']:,.2f}/mo ({detail['display']}, {detail['frequency']})")
         
         print(f"\n📉 FIXED OBLIGATIONS: ${total_obligations:,.2f}")
         print(f"   Bills: ${total_fixed_bills:,.2f}")
@@ -565,14 +996,30 @@ class FinanceCLI:
                     key=lambda x: x[1]['date']
                 )
 
-                for bill_name, assignment in sorted_strategy:
+                for strategy_key, assignment in sorted_strategy:
                     payment_date = assignment['date']
                     bank = assignment['bank']
                     account = assignment['account']
+                    entry_type = assignment.get('type', 'bill')
 
-                    # Find the bill to get the amount
-                    bill = next((b for b in self.manager.bills if b.bill_name == bill_name), None)
-                    amount = f"${bill.amount:,.2f}" if bill else f"${assignment.get('amount', 0):,.2f}"
+                    # Determine display name, icon, and amount based on entry type
+                    if entry_type == 'credit_payment':
+                        credit_name = assignment.get('credit_name', strategy_key)
+                        display_name = f"💳 {credit_name} (Min Payment)"
+                        amount = f"${assignment.get('amount', 0):,.2f}"
+                        full_balance = assignment.get('full_balance', 0)
+                        interest_rate = assignment.get('interest_rate', 0)
+                        extra_info = f"    Balance: ${full_balance:,.2f}  |  APR: {interest_rate:.1f}%"
+                    elif entry_type == 'mortgage':
+                        display_name = f"🏠 {strategy_key}"
+                        amount = f"${assignment.get('amount', 0):,.2f}"
+                        extra_info = None
+                    else:
+                        bill_name = assignment.get('bill_name', strategy_key)
+                        display_name = f"📝 {bill_name}"
+                        bill = next((b for b in self.manager.bills if b.bill_name == bill_name), None)
+                        amount = f"${bill.amount:,.2f}" if bill else f"${assignment.get('amount', 0):,.2f}"
+                        extra_info = None
 
                     # Calculate days until payment
                     days_until = (payment_date - date.today()).days
@@ -585,10 +1032,12 @@ class FinanceCLI:
                     else:
                         timing = f"{-days_until} days ago (OVERDUE!)"
 
-                    print(f"\n  • {bill_name.upper()}")
+                    print(f"\n  • {display_name.upper()}")
                     print(f"    When:    {payment_date.strftime('%A, %B %d, %Y')} ({timing})")
                     print(f"    From:    {bank} → {account}")
                     print(f"    Amount:  {amount}")
+                    if extra_info:
+                        print(f"    {extra_info}")
             else:
                 print("\n  No payment strategy generated.")
 
@@ -636,35 +1085,36 @@ class FinanceCLI:
 
     def manage_promotional_offers(self):
         """Manage promotional offers on credit cards."""
-        print("\n" + "=" * 80)
-        print("PROMOTIONAL OFFERS MANAGEMENT")
-        print("=" * 80)
-        print("\n1. View All Promotional Offers")
-        print("2. Add New Promotional Offer")
-        print("3. Record Purchase on Promo")
-        print("4. Pay Down Promo Balance")
-        print("5. View Promo Payoff Priority")
-        print("6. Remove Promo Offer")
-        print("7. Back to main menu")
+        while True:
+            print("\n" + "=" * 80)
+            print("🎁 PROMOTIONAL OFFERS MANAGEMENT")
+            print("=" * 80)
+            print("\n  1. 👀 View All Promotional Offers")
+            print("  2. ➕ Add New Promotional Offer")
+            print("  3. 🛒 Record Purchase on Promo")
+            print("  4. 💲 Pay Down Promo Balance")
+            print("  5. 📊 View Promo Payoff Priority")
+            print("  6. ❌ Remove Promo Offer")
+            print("  7. ↩️  Back")
 
-        choice = input("\nSelect option (1-7): ").strip()
+            choice = input("\nSelect option (1-7): ").strip()
 
-        if choice == "1":
-            self._view_all_promos()
-        elif choice == "2":
-            self._add_promotional_offer()
-        elif choice == "3":
-            self._record_promo_purchase()
-        elif choice == "4":
-            self._pay_promo_balance()
-        elif choice == "5":
-            self._view_promo_payoff_priority()
-        elif choice == "6":
-            self._remove_promo_offer()
-        elif choice == "7":
-            return
-        else:
-            print("❌ Invalid choice.")
+            if choice == "1":
+                self._view_all_promos()
+            elif choice == "2":
+                self._add_promotional_offer()
+            elif choice == "3":
+                self._record_promo_purchase()
+            elif choice == "4":
+                self._pay_promo_balance()
+            elif choice == "5":
+                self._view_promo_payoff_priority()
+            elif choice == "6":
+                self._remove_promo_offer()
+            elif choice == "7":
+                break
+            else:
+                print("❌ Invalid choice.")
 
     def _view_all_promos(self):
         """View all promotional offers across all credit accounts."""
@@ -949,13 +1399,13 @@ class FinanceCLI:
     def view_reports(self):
         """Generate and view financial reports with customizable time periods."""
         print("\n" + "=" * 80)
-        print("FINANCIAL REPORTS")
+        print("📄 FINANCIAL REPORTS")
         print("=" * 80)
-        print("\n1. Current Snapshot")
-        print("2. Projection Report (customizable period)")
-        print("3. Budget Analysis (customizable months)")
-        print("4. Payment Schedule (customizable months)")
-        print("5. Back to main menu")
+        print("\n  1. 📋 Current Snapshot")
+        print("  2. 📈 Projection Report (customizable period)")
+        print("  3. 🧮 Budget Analysis (customizable months)")
+        print("  4. 📅 Payment Schedule (customizable months)")
+        print("  5. ↩️  Back")
 
         choice = input("\nSelect report (1-5): ").strip()
 
@@ -994,7 +1444,13 @@ class FinanceCLI:
                     return
 
                 print(f"\nGenerating {period_str} projection report...")
-                print("\n" + self.manager.generate_projection_report(end_date=end_date))
+                report = self.manager.generate_projection_report(end_date=end_date)
+                print("\n" + report["text"])
+
+                # Offer export
+                export = input("\nExport this report? (y/n): ").strip().lower()
+                if export == "y":
+                    self.export_report("projection", end_date=end_date)
             except ValueError:
                 print("❌ Invalid input.")
 
@@ -1061,29 +1517,197 @@ class FinanceCLI:
             print("❌ Invalid choice.")
 
     def view_detailed_timeline(self):
-        """View detailed day-by-day timeline."""
+        """View detailed day-by-day timeline with the global optimization strategy applied."""
         print("\n" + "=" * 80)
-        print("DETAILED TIMELINE")
+        print(f"📆 DETAILED TIMELINE  |  Strategy: {self._strategy_label()}")
         print("=" * 80)
 
+        days = self._ask_period(default_days=30)
+        if days is None:
+            return
+
         try:
-            days = int(input("\nShow timeline for how many days? (default 30): ").strip() or "30")
             end_date = date.today() + timedelta(days=days)
 
-            print(f"\nGenerating timeline...")
-            timeline = self.manager.generate_detailed_timeline(end_date=end_date)
+            # Get the global plan's strategy to pass to the timeline
+            plan = self.manager.get_global_plan(end_date=end_date)
+            strategy = plan.strategy if plan.strategy else None
+
+            print(f"\nGenerating timeline with optimized routing...")
+            timeline = self.manager.generate_detailed_timeline(
+                end_date=end_date, payment_strategy=strategy
+            )
             print("\n" + timeline)
 
-            # Offer export option
-            self._offer_export_timeline(days)
+            export = input("\nExport this timeline? (y/n): ").strip().lower()
+            if export == "y":
+                self.export_report("timeline", days=days)
         except ValueError:
             print("❌ Invalid input.")
 
-    def _offer_export_timeline(self, days: int):
-        """Offer to export timeline after viewing."""
-        export = input("\nExport this timeline? (y/n): ").strip().lower()
-        if export == "y":
-            self.export_report("timeline", days=days)
+    def view_payment_calendar(self):
+        """
+        Show a clean, actionable payment calendar — every payment the user
+        needs to make, when, how much, and from which account.
+        Uses the globally selected optimization strategy.
+        """
+        print("\n" + "=" * 80)
+        print(f"💸 PAYMENT CALENDAR  |  Strategy: {self._strategy_label()}")
+        print("=" * 80)
+
+        days = self._ask_period(default_days=90)
+        if days is None:
+            return
+
+        try:
+            start = date.today()
+            end = start + timedelta(days=days)
+
+            print(f"\nBuilding payment calendar for {start} to {end}...")
+
+            plan = self.manager.get_global_plan(end_date=end)
+            payments = self._plan_to_payments(plan)
+
+            if not payments:
+                print("\n  No payments scheduled in this period.")
+                return
+
+            # ── Print calendar grouped by month ──
+            import calendar as cal_mod
+            current_month = None
+            running_total = 0.0
+            month_total = 0.0
+
+            for p in payments:
+                p_month = (p['date'].year, p['date'].month)
+                if p_month != current_month:
+                    if current_month is not None:
+                        print(f"  {'─' * 70}")
+                        print(f"  📊 Month total: ${month_total:,.2f}")
+                    current_month = p_month
+                    month_total = 0.0
+                    month_name = cal_mod.month_name[p['date'].month]
+                    print(f"\n{'=' * 80}")
+                    print(f"  📅 {month_name} {p['date'].year}")
+                    print(f"{'=' * 80}")
+
+                days_until = (p['date'] - date.today()).days
+                if days_until == 0:
+                    timing = "⏰ TODAY"
+                elif days_until == 1:
+                    timing = "⏰ TOMORROW"
+                elif days_until < 0:
+                    timing = f"🔴 {-days_until}d OVERDUE"
+                elif days_until <= 7:
+                    timing = f"⚠️  in {days_until}d"
+                else:
+                    timing = f"in {days_until}d"
+
+                day_name = p['date'].strftime('%a %b %d')
+
+                print(f"\n  {p['icon']} {day_name}  {p['name']}")
+                print(f"     Amount:   ${p['amount']:,.2f}")
+                print(f"     Pay from: {p['from_bank']} -> {p['from_account']}")
+                print(f"     {timing}")
+                if p.get('extra'):
+                    print(f"     {p['extra']}")
+
+                month_total += p['amount']
+                running_total += p['amount']
+
+            if current_month is not None:
+                print(f"  {'─' * 70}")
+                print(f"  📊 Month total: ${month_total:,.2f}")
+
+            # ── Grand totals ──
+            print(f"\n{'=' * 80}")
+            print(f"  PAYMENT CALENDAR SUMMARY")
+            print(f"{'=' * 80}")
+
+            categories = [
+                ('bill', '📄 Bills:'),
+                ('credit', '💳 Credit Minimums:'),
+                ('mortgage', '🏠 Mortgages:'),
+                ('promo', '🎯 Promo Payoffs:'),
+                ('extra_credit', '⚡ Extra Credit:'),
+            ]
+            for cat, label in categories:
+                cat_total = sum(p['amount'] for p in payments if p['category'] == cat)
+                cat_count = sum(1 for p in payments if p['category'] == cat)
+                if cat_total > 0:
+                    print(f"  {label:24s} ${cat_total:>12,.2f}  ({cat_count} payments)")
+            print(f"  {'─' * 46}")
+            print(f"  {'💰 TOTAL:':24s} ${running_total:>12,.2f}  ({len(payments)} payments)")
+
+            # Discretionary & issues
+            print(f"\n  💵 Discretionary remaining: ${plan.final_discretionary:,.2f}")
+            if plan.total_interest_paid > 0:
+                print(f"  📉 Interest paid: ${plan.total_interest_paid:,.2f}")
+
+            if plan.violations:
+                print(f"\n  ⚠️  ISSUES:")
+                for v in plan.violations:
+                    print(f"    • {v}")
+            else:
+                print(f"\n  ✓ No issues detected")
+
+            export = input("\nExport this calendar? (y/n): ").strip().lower()
+            if export == "y":
+                self._export_payment_calendar(payments, start, end)
+
+        except ValueError:
+            print("❌ Invalid input.")
+
+    def _export_payment_calendar(self, payments: list[dict], start_date: date, end_date: date):
+        """Export the payment calendar to a file."""
+        print("\nExport format:")
+        print("  1. CSV")
+        print("  2. Text (.txt)")
+
+        fmt = input("\nSelect format (1-2): ").strip()
+
+        try:
+            import os
+            filename_base = f"payment_calendar_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
+
+            if fmt == "1":
+                import csv
+                filepath = os.path.join(os.path.expanduser("~"), "Desktop", f"{filename_base}.csv")
+                with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Date", "Category", "Name", "Amount", "Pay From Bank", "Pay From Account", "Notes"])
+                    for p in payments:
+                        writer.writerow([
+                            p['date'].strftime('%Y-%m-%d'),
+                            p['category'],
+                            p['name'],
+                            f"{p['amount']:.2f}",
+                            p['from_bank'],
+                            p['from_account'],
+                            p.get('extra', '')
+                        ])
+                print(f"✓ Exported to: {filepath}")
+
+            elif fmt == "2":
+                filepath = os.path.join(os.path.expanduser("~"), "Desktop", f"{filename_base}.txt")
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(f"PAYMENT CALENDAR: {start_date} to {end_date}\n")
+                    f.write("=" * 80 + "\n\n")
+                    for p in payments:
+                        f.write(f"{p['date'].strftime('%Y-%m-%d')}  {p['icon']} {p['name']}\n")
+                        f.write(f"  Amount:   ${p['amount']:,.2f}\n")
+                        f.write(f"  Pay from: {p['from_bank']} -> {p['from_account']}\n")
+                        if p.get('extra'):
+                            f.write(f"  {p['extra']}\n")
+                        f.write("\n")
+                    total = sum(p['amount'] for p in payments)
+                    f.write(f"{'=' * 80}\n")
+                    f.write(f"TOTAL: ${total:,.2f} ({len(payments)} payments)\n")
+                print(f"✓ Exported to: {filepath}")
+            else:
+                print("❌ Invalid choice.")
+        except Exception as e:
+            print(f"❌ Export failed: {e}")
 
     def export_report(self, report_type: str, **kwargs):
         """Export reports to various formats."""
@@ -1141,8 +1765,9 @@ class FinanceCLI:
             if report_type == "snapshot":
                 content = self.manager.generate_snapshot()
             elif report_type == "projection":
-                end_date = date.today() + timedelta(days=kwargs.get('days', 90))
-                content = self.manager.generate_projection_report(end_date=end_date)
+                end_date = kwargs.get('end_date') or date.today() + timedelta(days=kwargs.get('days', 90))
+                report = self.manager.generate_projection_report(end_date=end_date)
+                content = report["text"]
             elif report_type == "budget":
                 months = kwargs.get('months', 3)
                 content = self.manager.generate_budget_analysis(months=months)
@@ -1154,7 +1779,7 @@ class FinanceCLI:
                 print("❌ Unknown report type.")
                 return
 
-            with open(filepath, 'w') as f:
+            with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(content)
 
             print(f"✓ Report exported to: {filepath}")
@@ -1224,8 +1849,9 @@ class FinanceCLI:
             if report_type == "snapshot":
                 content = self.manager.generate_snapshot()
             elif report_type == "projection":
-                end_date = date.today() + timedelta(days=kwargs.get('days', 90))
-                content = self.manager.generate_projection_report(end_date=end_date)
+                end_date = kwargs.get('end_date') or date.today() + timedelta(days=kwargs.get('days', 90))
+                report = self.manager.generate_projection_report(end_date=end_date)
+                content = report["text"]
             elif report_type == "budget":
                 months = kwargs.get('months', 3)
                 content = self.manager.generate_budget_analysis(months=months)
@@ -1274,7 +1900,7 @@ class FinanceCLI:
 
     def _snapshot_to_csv(self, filepath: str):
         """Export snapshot to CSV."""
-        with open(filepath, 'w', newline='') as f:
+        with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Account", "Balance"])
 
@@ -1285,18 +1911,21 @@ class FinanceCLI:
 
     def _projection_to_csv(self, filepath: str, **kwargs):
         """Export projection to CSV."""
-        days = kwargs.get('days', 90)
-        end_date = date.today() + timedelta(days=days)
+        end_date = kwargs.get('end_date') or date.today() + timedelta(days=kwargs.get('days', 90))
         result = self.manager.project_balances(end_date=end_date)
 
-        with open(filepath, 'w', newline='') as f:
+        with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
-            writer.writerow(["Date", "Account", "Balance"])
+            writer.writerow(["Date", "Account", "Type", "Balance"])
 
             for snapshot in result["snapshots"]:
                 snap_date = snapshot["date"]
                 for account_name, balance in snapshot["balances"].items():
-                    writer.writerow([snap_date, account_name, balance])
+                    writer.writerow([snap_date, account_name, "Bank", balance])
+                for account_name, balance in snapshot.get("credit_balances", {}).items():
+                    writer.writerow([snap_date, account_name, "Credit", balance])
+                for account_name, balance in snapshot.get("mortgage_balances", {}).items():
+                    writer.writerow([snap_date, account_name, "Mortgage", balance])
 
     def _budget_to_csv(self, filepath: str, **kwargs):
         """Export budget analysis to CSV."""
@@ -1304,7 +1933,7 @@ class FinanceCLI:
         end_date = date.today() + timedelta(days=30 * months)
         result = self.manager.project_balances(end_date=end_date)
 
-        with open(filepath, 'w', newline='') as f:
+        with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Date", "Type", "Description", "Amount", "Account"])
 
@@ -1323,7 +1952,7 @@ class FinanceCLI:
         end_date = date.today() + timedelta(days=days)
         result = self.manager.project_balances(end_date=end_date)
 
-        with open(filepath, 'w', newline='') as f:
+        with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow(["Date", "Type", "Description", "Amount", "Account", "Bank"])
 
@@ -1339,6 +1968,7 @@ class FinanceCLI:
 
     def _populate_snapshot_excel(self, ws, **kwargs):
         """Populate Excel sheet with snapshot data."""
+        from openpyxl.styles import Font
         row = 4
         ws[f'A{row}'] = "Account"
         ws[f'B{row}'] = "Balance"
@@ -1356,16 +1986,17 @@ class FinanceCLI:
 
     def _populate_projection_excel(self, ws, **kwargs):
         """Populate Excel sheet with projection data."""
-        days = kwargs.get('days', 90)
-        end_date = date.today() + timedelta(days=days)
+        from openpyxl.styles import Font
+        end_date = kwargs.get('end_date') or date.today() + timedelta(days=kwargs.get('days', 90))
         result = self.manager.project_balances(end_date=end_date)
 
         row = 4
         ws[f'A{row}'] = "Date"
         ws[f'B{row}'] = "Account"
-        ws[f'C{row}'] = "Balance"
+        ws[f'C{row}'] = "Type"
+        ws[f'D{row}'] = "Balance"
 
-        for col in ['A', 'B', 'C']:
+        for col in ['A', 'B', 'C', 'D']:
             ws[f'{col}{row}'].font = Font(bold=True)
 
         row += 1
@@ -1374,12 +2005,28 @@ class FinanceCLI:
             for account_name, balance in snapshot["balances"].items():
                 ws[f'A{row}'] = snap_date
                 ws[f'B{row}'] = account_name
-                ws[f'C{row}'] = balance
-                ws[f'C{row}'].number_format = '$#,##0.00'
+                ws[f'C{row}'] = "Bank"
+                ws[f'D{row}'] = balance
+                ws[f'D{row}'].number_format = '$#,##0.00'
+                row += 1
+            for account_name, balance in snapshot.get("credit_balances", {}).items():
+                ws[f'A{row}'] = snap_date
+                ws[f'B{row}'] = account_name
+                ws[f'C{row}'] = "Credit"
+                ws[f'D{row}'] = balance
+                ws[f'D{row}'].number_format = '$#,##0.00'
+                row += 1
+            for account_name, balance in snapshot.get("mortgage_balances", {}).items():
+                ws[f'A{row}'] = snap_date
+                ws[f'B{row}'] = account_name
+                ws[f'C{row}'] = "Mortgage"
+                ws[f'D{row}'] = balance
+                ws[f'D{row}'].number_format = '$#,##0.00'
                 row += 1
 
     def _populate_budget_excel(self, ws, **kwargs):
         """Populate Excel sheet with budget data."""
+        from openpyxl.styles import Font
         months = kwargs.get('months', 3)
         end_date = date.today() + timedelta(days=30 * months)
         result = self.manager.project_balances(end_date=end_date)
@@ -1406,6 +2053,7 @@ class FinanceCLI:
 
     def _populate_timeline_excel(self, ws, **kwargs):
         """Populate Excel sheet with timeline data."""
+        from openpyxl.styles import Font
         days = kwargs.get('days', 30)
         end_date = date.today() + timedelta(days=days)
         result = self.manager.project_balances(end_date=end_date)
@@ -1436,15 +2084,15 @@ class FinanceCLI:
         """Database and file management menu."""
         while True:
             print("\n" + "=" * 80)
-            print("DATABASE & FILE MANAGEMENT")
+            print("💾 DATABASE & FILE MANAGEMENT")
             print("=" * 80)
-            print("\n1. Save data to database")
-            print("2. Load data from database")
-            print("3. View database info")
-            print("4. 📥 Import from Excel (bulk load)")
-            print("5. 📤 Export to Excel")
-            print("6. 📋 Generate Excel template")
-            print("7. Back to main menu")
+            print("\n  1. 💾 Save data to database")
+            print("  2. 📂 Load data from database")
+            print("  3. ℹ️  View database info")
+            print("  4. 📥 Import from Excel (bulk load)")
+            print("  5. 📤 Export to Excel")
+            print("  6. 📋 Generate Excel template")
+            print("  7. ↩️  Back")
 
             choice = input("\nSelect option (1-7): ").strip()
 
@@ -1538,6 +2186,58 @@ class FinanceCLI:
         for income in self.manager.income_sources:
             print(f"    • {income.source_name} (${income.amount:,.2f})")
 
+    def _open_file_picker(self, file_types=None, title="Select File"):
+        """
+        Open a file picker dialog to select a file.
+        
+        Args:
+            file_types: List of tuples like [("Excel files", "*.xlsx"), ("All files", "*.*")]
+            title: Dialog window title
+            
+        Returns:
+            Selected file path or None if cancelled
+        """
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            
+            # Create a hidden root window
+            root = tk.Tk()
+            root.withdraw()  # Hide the root window
+            root.attributes('-topmost', True)  # Bring dialog to front
+            
+            # Default file types for Excel
+            if file_types is None:
+                file_types = [
+                    ("Excel files", "*.xlsx"),
+                    ("Excel files (old)", "*.xls"),
+                    ("All files", "*.*")
+                ]
+            
+            # Set initial directory to Desktop
+            initial_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+            
+            # Open the file dialog
+            filepath = filedialog.askopenfilename(
+                title=title,
+                initialdir=initial_dir,
+                filetypes=file_types
+            )
+            
+            # Destroy the hidden root window
+            root.destroy()
+            
+            return filepath if filepath else None
+            
+        except ImportError:
+            print("\n⚠️  File picker not available (tkinter not installed).")
+            print("   Please enter the file path manually instead.")
+            return None
+        except Exception as e:
+            print(f"\n⚠️  Could not open file picker: {e}")
+            print("   Please enter the file path manually instead.")
+            return None
+
     def generate_excel_template(self):
         """Generate an Excel template for bulk data import."""
         print("\n" + "-" * 80)
@@ -1612,18 +2312,34 @@ class FinanceCLI:
                     print("Cancelled.")
                     return
         
-        # Get file path
-        default_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        print(f"\nDefault location: {default_path}")
-        filepath = input("Enter Excel file path: ").strip()
+        # Get file path - offer file picker or manual entry
+        print("\nHow would you like to select the Excel file?")
+        print("1. 📂 Open file picker dialog")
+        print("2. ⌨️  Type file path manually")
         
-        if not filepath:
-            print("❌ No file path provided")
-            return
+        file_choice = input("\nSelect option (1/2): ").strip()
         
-        # Handle relative paths
-        if not os.path.isabs(filepath):
-            filepath = os.path.join(default_path, filepath)
+        filepath = None
+        
+        if file_choice == "1":
+            # Use file picker dialog
+            filepath = self._open_file_picker()
+            if not filepath:
+                print("❌ No file selected")
+                return
+        else:
+            # Manual path entry
+            default_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            print(f"\nDefault location: {default_path}")
+            filepath = input("Enter Excel file path: ").strip()
+            
+            if not filepath:
+                print("❌ No file path provided")
+                return
+            
+            # Handle relative paths
+            if not os.path.isabs(filepath):
+                filepath = os.path.join(default_path, filepath)
         
         print(f"\nImporting from: {filepath}")
         print("Please wait...")
@@ -1634,36 +2350,55 @@ class FinanceCLI:
         print("IMPORT RESULTS")
         print("=" * 50)
         
-        if results["success"]:
+        # Check for early failure (file not found, openpyxl not installed, etc.)
+        if "error" in results:
+            print(f"\n❌ Import failed: {results['error']}")
+            return
+        
+        if results.get("success"):
             print("\n✅ Import completed successfully!")
         else:
             print("\n⚠️  Import completed with errors")
         
-        print(f"\n📊 Items Created:")
-        print(f"   Banks:           {results['banks_created']}")
-        print(f"   Bank Accounts:   {results['bank_accounts_created']}")
-        print(f"   Credit Accounts: {results['credit_accounts_created']}")
-        print(f"   Mortgages:       {results['mortgages_created']}")
-        print(f"   Bills:           {results['bills_created']}")
-        print(f"   Income Sources:  {results['income_sources_created']}")
-        print(f"   Promo Offers:    {results['promos_created']}")
+        bills_created = results.get('bills_created', 0)
+        floating_bills = results.get('floating_bills_created', 0)
+        fixed_bills = bills_created - floating_bills
         
-        if results["warnings"]:
+        print(f"\n📊 Items Created:")
+        print(f"   Banks:           {results.get('banks_created', 0)}")
+        print(f"   Bank Accounts:   {results.get('bank_accounts_created', 0)}")
+        print(f"   Credit Accounts: {results.get('credit_accounts_created', 0)}")
+        print(f"   Mortgages:       {results.get('mortgages_created', 0)}")
+        print(f"   Bills:           {bills_created} ({fixed_bills} fixed, {floating_bills} floating)")
+        print(f"   Income Sources:  {results.get('income_sources_created', 0)}")
+        print(f"   Promo Offers:    {results.get('promos_created', 0)}")
+        
+        if results.get("warnings"):
             print(f"\n⚠️  Warnings ({len(results['warnings'])}):")
             for warning in results["warnings"][:5]:
                 print(f"   • {warning}")
             if len(results["warnings"]) > 5:
                 print(f"   ... and {len(results['warnings']) - 5} more")
         
-        if results["errors"]:
+        if results.get("errors"):
             print(f"\n❌ Errors ({len(results['errors'])}):")
             for error in results["errors"][:10]:
                 print(f"   • {error}")
             if len(results["errors"]) > 10:
                 print(f"   ... and {len(results['errors']) - 10} more")
         
-        # Offer to save
-        if results["success"] or results["banks_created"] > 0:
+        # Offer to save if any data was imported
+        items_created = (
+            results.get("banks_created", 0) +
+            results.get("bank_accounts_created", 0) +
+            results.get("credit_accounts_created", 0) +
+            results.get("mortgages_created", 0) +
+            results.get("bills_created", 0) +
+            results.get("income_sources_created", 0) +
+            results.get("promos_created", 0)
+        )
+        
+        if results.get("success") or items_created > 0:
             save = input("\nSave imported data to database? (y/n): ").strip().lower()
             if save == 'y':
                 if self.manager.save_to_database():
@@ -1714,17 +2449,17 @@ class FinanceCLI:
         """Menu for creating banks and accounts."""
         while True:
             print("\n" + "=" * 80)
-            print("MANAGE BANKS & ACCOUNTS")
+            print("🏦 MANAGE BANKS & ACCOUNTS")
             print("=" * 80)
-            print("\n1. Create new bank")
-            print("2. Add account to existing bank")
-            print("3. List all banks")
-            print("4. Update account balance")
-            print("5. Update credit balance")
-            print("6. Delete account")
-            print("7. Delete bank")
-            print("8. Transfer between accounts")
-            print("9. Back to main menu")
+            print("\n  1. ➕ Create new bank")
+            print("  2. ➕ Add account to existing bank")
+            print("  3. 📋 List all banks & accounts")
+            print("  4. ✏️  Update account balance")
+            print("  5. ✏️  Update credit balance")
+            print("  6. ❌ Delete account")
+            print("  7. ❌ Delete bank")
+            print("  8. 🔄 Transfer between accounts")
+            print("  9. ↩️  Back")
 
             choice = input("\nSelect option (1-9): ").strip()
 
@@ -2051,20 +2786,22 @@ class FinanceCLI:
         """Menu for adding bills and income sources."""
         while True:
             print("\n" + "=" * 80)
-            print("MANAGE BILLS & INCOME")
+            print("📝 MANAGE BILLS & INCOME")
             print("=" * 80)
-            print("\n1. Add bill")
-            print("2. Add floating bill")
-            print("3. Add income source")
-            print("4. List all bills")
-            print("5. List all income sources")
-            print("6. Edit bill")
-            print("7. Delete bill")
-            print("8. Edit income source")
-            print("9. Delete income source")
-            print("10. Back to main menu")
+            print("\n  1.  ➕ Add fixed bill")
+            print("  2.  ➕ Add floating bill")
+            print("  3.  ➕ Add income source")
+            print("  4.  📋 List all bills")
+            print("  5.  📋 List all income sources")
+            print("  6.  ✏️  Edit bill")
+            print("  7.  ❌ Delete bill")
+            print("  8.  ✏️  Edit income source")
+            print("  9.  ❌ Delete income source")
+            print("  10. 💰 Manage income distributions")
+            print("  11. 💲 Set actual amount for floating bill")
+            print("  12. ↩️  Back")
 
-            choice = input("\nSelect option (1-10): ").strip()
+            choice = input("\nSelect option (1-12): ").strip()
 
             if choice == "1":
                 self.add_fixed_bill()
@@ -2085,6 +2822,10 @@ class FinanceCLI:
             elif choice == "9":
                 self.delete_income()
             elif choice == "10":
+                self.manage_income_distributions()
+            elif choice == "11":
+                self.set_floating_bill_actual()
+            elif choice == "12":
                 break
             else:
                 print("❌ Invalid choice.")
@@ -2140,6 +2881,90 @@ class FinanceCLI:
             print("❌ Invalid input. Please enter valid numbers.")
         except Exception as e:
             print(f"❌ Error adding bill: {e}")
+
+    def set_floating_bill_actual(self):
+        """Set the actual amount for the next instance of a floating bill."""
+        from models.fixed_bill import FloatingBill
+
+        print("\n" + "-" * 80)
+        print("💲 SET ACTUAL AMOUNT FOR FLOATING BILL")
+        print("-" * 80)
+
+        # Filter to only floating bills
+        floating_bills = [
+            (i, bill) for i, bill in enumerate(self.manager.bills)
+            if isinstance(bill, FloatingBill)
+        ]
+
+        if not floating_bills:
+            print("\nNo floating bills found. Add a floating bill first.")
+            return
+
+        print("\nFloating bills:")
+        for display_idx, (_, bill) in enumerate(floating_bills, 1):
+            next_due = bill.get_next_due_date(date.today() - timedelta(days=1))
+            actual_marker = ""
+            if bill.has_actual_amount:
+                actual_marker = f"  <- actual set"
+            history_count = len(bill.amount_history)
+            print(
+                f"  {display_idx}. {bill.bill_name}"
+                f"  |  Current: ${bill.amount:,.2f}"
+                f"  |  Estimate: ${bill.estimated_amount:,.2f}"
+                f"  |  Range: ${bill.min_amount:,.2f} - ${bill.max_amount:,.2f}"
+                f"  |  Next due: {next_due}"
+                f"  |  History: {history_count} entries{actual_marker}"
+            )
+
+        try:
+            choice = int(input("\nSelect bill (number): ").strip())
+            if 1 <= choice <= len(floating_bills):
+                _, bill = floating_bills[choice - 1]
+
+                print(f"\n  Bill: {bill.bill_name}")
+                print(f"  Estimate (auto-updated): ${bill.estimated_amount:,.2f}")
+                print(f"  Range: ${bill.min_amount:,.2f} - ${bill.max_amount:,.2f}")
+                if bill.has_actual_amount:
+                    print(f"  Current actual set: ${bill.amount:,.2f}")
+                if bill.amount_history:
+                    recent = bill.amount_history[-6:]
+                    avg = sum(recent) / len(recent)
+                    print(f"  Recent actuals: {', '.join(f'${a:,.2f}' for a in recent)}")
+                    print(f"  Average (last {len(recent)}): ${avg:,.2f}")
+
+                print(f"\n  Options:")
+                print(f"    1. Enter actual amount for next payment")
+                if bill.has_actual_amount:
+                    print(f"    2. Reset to estimate (${bill.estimated_amount:,.2f})")
+                if bill.amount_history:
+                    print(f"    3. View full history")
+
+                action = input("\n  Select: ").strip()
+
+                if action == "1":
+                    actual = float(input(f"  Actual amount ($): ").strip())
+                    bill.set_actual_amount(actual)
+                    next_due = bill.get_next_due_date(date.today() - timedelta(days=1))
+                    print(f"\n  ✓ {bill.bill_name} set to ${actual:,.2f} for next payment on {next_due}")
+                    print(f"    (Estimate will auto-update to ${bill.estimated_amount:,.2f} after payment)")
+                elif action == "2" and bill.has_actual_amount:
+                    bill.reset_to_estimate()
+                    print(f"\n  ✓ {bill.bill_name} reset to estimate ${bill.estimated_amount:,.2f}")
+                elif action == "3" and bill.amount_history:
+                    print(f"\n  Amount History for {bill.bill_name}:")
+                    for idx, amt in enumerate(bill.amount_history, 1):
+                        print(f"    {idx}. ${amt:,.2f}")
+                    print(f"\n  Average: ${sum(bill.amount_history) / len(bill.amount_history):,.2f}")
+                    print(f"  Min: ${min(bill.amount_history):,.2f}")
+                    print(f"  Max: ${max(bill.amount_history):,.2f}")
+                else:
+                    print("  ❌ Invalid option.")
+            else:
+                print("❌ Invalid selection.")
+        except ValueError:
+            print("❌ Invalid input.")
+        except Exception as e:
+            print(f"❌ Error: {e}")
 
     def add_income(self):
         """Add an income source."""
@@ -2200,6 +3025,8 @@ class FinanceCLI:
 
     def list_bills(self):
         """List all bills."""
+        from models.fixed_bill import FloatingBill
+
         print("\n" + "-" * 80)
         print("BILLS")
         print("-" * 80)
@@ -2209,12 +3036,27 @@ class FinanceCLI:
             return
 
         for bill in self.manager.bills:
-            bill_type = "floating" if hasattr(bill, 'min_amount') else "fixed"
-            print(f"\n• {bill.bill_name}")
-            print(f"  Type: {bill_type}")
-            print(f"  Amount: ${bill.amount:,.2f}")
-            print(f"  Due date: {bill.due_date}")
-            print(f"  Frequency: {bill.frequency.value}")
+            is_floating = isinstance(bill, FloatingBill)
+            bill_type = "floating" if is_floating else "fixed"
+            next_due = bill.get_next_due_date(date.today() - timedelta(days=1))
+            print(f"\n  {'~' if is_floating else '*'} {bill.bill_name}")
+            print(f"    Type: {bill_type}  |  Frequency: {bill.frequency.value}  |  Due: day {bill.due_date}  |  Next: {next_due}")
+
+            if is_floating:
+                print(f"    Amount (next payment): ${bill.amount:,.2f}", end="")
+                if bill.has_actual_amount:
+                    print(f"  (actual set)")
+                else:
+                    print(f"  (estimated)")
+                print(f"    Estimate: ${bill.estimated_amount:,.2f}  |  Range: ${bill.min_amount:,.2f} - ${bill.max_amount:,.2f}")
+                if bill.amount_history:
+                    avg = sum(bill.amount_history[-6:]) / len(bill.amount_history[-6:])
+                    print(f"    History: {len(bill.amount_history)} entries  |  Avg (last 6): ${avg:,.2f}")
+            else:
+                print(f"    Amount: ${bill.amount:,.2f}")
+
+            if bill.preferred_source_bank and bill.preferred_source_account:
+                print(f"    Pay from: {bill.preferred_source_bank} -> {bill.preferred_source_account}")
 
     def list_income(self):
         """List all income sources."""
@@ -2225,6 +3067,8 @@ class FinanceCLI:
         if not self.manager.income_sources:
             print("\nNo income sources created yet.")
             return
+
+        from models.types import DistributionEnumType
 
         for income in self.manager.income_sources:
             print(f"\n• {income.source_name}")
@@ -2242,13 +3086,15 @@ class FinanceCLI:
             
             if income.distribution:
                 print(f"  Distribution:")
-                for account, value in income.distribution.items():
-                    if value == "remainder":
-                        print(f"    - {account}: remainder")
-                    elif isinstance(value, float) and 0 < value < 1:
-                        print(f"    - {account}: {value*100:.0f}%")
+                for entry in income.distribution.distribution:
+                    if entry.distribution_type == DistributionEnumType.REMAINDER:
+                        print(f"    - {entry.account_name}: remainder")
+                    elif entry.distribution_type == DistributionEnumType.PERCENTAGE:
+                        pct = entry.value * 100 if entry.value else 0
+                        print(f"    - {entry.account_name}: {pct:.0f}%")
                     else:
-                        print(f"    - {account}: ${value:,.2f}")
+                        val = entry.value or 0
+                        print(f"    - {entry.account_name}: ${val:,.2f}")
 
     def edit_bill(self):
         """Edit an existing bill."""
@@ -2391,6 +3237,211 @@ class FinanceCLI:
         except Exception as e:
             print(f"❌ Error editing income: {e}")
 
+    def manage_income_distributions(self):
+        """Manage how income is distributed across accounts."""
+        print("\n" + "-" * 80)
+        print("💰 MANAGE INCOME DISTRIBUTIONS")
+        print("-" * 80)
+
+        if not self.manager.income_sources:
+            print("\nNo income sources to manage.")
+            return
+
+        # List income sources
+        print("\nSelect income source to configure distribution:")
+        for i, income in enumerate(self.manager.income_sources, 1):
+            dist_info = ""
+            if income.distribution:
+                dist_dict = income.distribution.__todict__()
+                dist_parts = []
+                for acc, val in dist_dict.items():
+                    if val is None:
+                        dist_parts.append(f"{acc}: remainder")
+                    elif isinstance(val, (int, float)) and 0 < val <= 1:
+                        dist_parts.append(f"{acc}: {val*100:.0f}%")
+                    else:
+                        dist_parts.append(f"{acc}: ${val:,.2f}")
+                dist_info = f" → {', '.join(dist_parts)}"
+            print(f"  {i}. {income.source_name} (${income.amount:,.2f}){dist_info}")
+
+        try:
+            choice = int(input("\nSelect income (number): ").strip())
+            if not 1 <= choice <= len(self.manager.income_sources):
+                print("❌ Invalid selection.")
+                return
+            
+            income = self.manager.income_sources[choice - 1]
+            self._configure_income_distribution(income)
+            
+        except ValueError:
+            print("❌ Invalid input.")
+        except Exception as e:
+            print(f"❌ Error: {e}")
+
+    def _configure_income_distribution(self, income):
+        """Configure distribution for a specific income source."""
+        from models.types import DistributionType, DistributionEntryType, DistributionEnumType
+        
+        print(f"\n--- Configuring Distribution for '{income.source_name}' ---")
+        print(f"Total income amount: ${income.amount:,.2f}")
+        
+        # Show current distribution
+        if income.distribution:
+            print("\nCurrent distribution:")
+            for entry in income.distribution.distribution:
+                if entry.distribution_type == DistributionEnumType.REMAINDER:
+                    print(f"  • {entry.account_name}: remainder")
+                elif entry.distribution_type == DistributionEnumType.PERCENTAGE:
+                    print(f"  • {entry.account_name}: {entry.value*100:.0f}%")
+                else:
+                    print(f"  • {entry.account_name}: ${entry.value:,.2f}")
+        else:
+            print("\nNo distribution configured (deposits to first available account)")
+        
+        # Show available accounts
+        print("\nAvailable accounts:")
+        all_accounts = []
+        for bank in self.manager.banks:
+            for acc_name, account in bank.accounts.items():
+                all_accounts.append((bank.name, acc_name, account))
+                print(f"  • {bank.name} - {acc_name} (${account.balance:,.2f})")
+        
+        if not all_accounts:
+            print("  No bank accounts available. Create accounts first.")
+            return
+        
+        print("\nDistribution options:")
+        print("1. Set up new distribution (fixed amounts)")
+        print("2. Set up new distribution (percentages)")
+        print("3. Clear distribution (use default)")
+        print("4. Cancel")
+        
+        option = input("\nSelect option (1-4): ").strip()
+        
+        if option == "1":
+            self._setup_fixed_distribution(income, all_accounts)
+        elif option == "2":
+            self._setup_percentage_distribution(income, all_accounts)
+        elif option == "3":
+            income.distribution = None
+            print("✓ Distribution cleared. Income will go to first available account.")
+        elif option == "4":
+            print("Cancelled.")
+        else:
+            print("❌ Invalid option.")
+
+    def _setup_fixed_distribution(self, income, all_accounts):
+        """Set up fixed amount distribution for income."""
+        from models.types import DistributionType, DistributionEntryType, DistributionEnumType
+        
+        print(f"\n--- Fixed Amount Distribution ---")
+        print(f"Total to distribute: ${income.amount:,.2f}")
+        print("Enter fixed amounts for each account (or 'r' for remainder, Enter to skip)")
+        
+        distribution_entries = []
+        total_fixed = 0.0
+        remainder_account = None
+        
+        for bank_name, acc_name, account in all_accounts:
+            label = f"{bank_name} - {acc_name}"
+            value = input(f"  {label}: $").strip().lower()
+            
+            if not value:
+                continue
+            elif value == 'r':
+                if remainder_account:
+                    print(f"  ⚠️  Remainder already assigned to {remainder_account}, skipping")
+                    continue
+                remainder_account = acc_name
+                distribution_entries.append(
+                    DistributionEntryType(acc_name, None, DistributionEnumType.REMAINDER)
+                )
+                print(f"    → {acc_name} will receive remainder")
+            else:
+                try:
+                    amount = float(value)
+                    if amount > 0:
+                        total_fixed += amount
+                        distribution_entries.append(
+                            DistributionEntryType(acc_name, amount, DistributionEnumType.FIXED_AMOUNT)
+                        )
+                        print(f"    → {acc_name} will receive ${amount:,.2f}")
+                except ValueError:
+                    print(f"    ⚠️  Invalid amount, skipping")
+        
+        if not distribution_entries:
+            print("\n❌ No distribution configured.")
+            return
+        
+        # Validate
+        if total_fixed > income.amount and not remainder_account:
+            print(f"\n⚠️  Warning: Fixed amounts (${total_fixed:,.2f}) exceed income (${income.amount:,.2f})")
+        elif total_fixed < income.amount and not remainder_account:
+            remaining = income.amount - total_fixed
+            print(f"\n⚠️  Warning: ${remaining:,.2f} is unallocated. Consider adding a remainder account.")
+        
+        income.distribution = DistributionType(distribution_entries)
+        print(f"\n✓ Distribution configured for '{income.source_name}'")
+
+    def _setup_percentage_distribution(self, income, all_accounts):
+        """Set up percentage distribution for income."""
+        from models.types import DistributionType, DistributionEntryType, DistributionEnumType
+        
+        print(f"\n--- Percentage Distribution ---")
+        print(f"Total to distribute: ${income.amount:,.2f}")
+        print("Enter percentages for each account (e.g., '50' for 50%, 'r' for remainder, Enter to skip)")
+        
+        distribution_entries = []
+        total_percentage = 0.0
+        remainder_account = None
+        
+        for bank_name, acc_name, account in all_accounts:
+            label = f"{bank_name} - {acc_name}"
+            value = input(f"  {label}: ").strip().lower()
+            
+            if not value:
+                continue
+            elif value == 'r':
+                if remainder_account:
+                    print(f"  ⚠️  Remainder already assigned to {remainder_account}, skipping")
+                    continue
+                remainder_account = acc_name
+                distribution_entries.append(
+                    DistributionEntryType(acc_name, None, DistributionEnumType.REMAINDER)
+                )
+                print(f"    → {acc_name} will receive remainder")
+            else:
+                try:
+                    # Remove % sign if present
+                    value = value.replace('%', '').strip()
+                    percentage = float(value)
+                    if 0 < percentage <= 100:
+                        decimal_pct = percentage / 100.0
+                        total_percentage += decimal_pct
+                        distribution_entries.append(
+                            DistributionEntryType(acc_name, decimal_pct, DistributionEnumType.PERCENTAGE)
+                        )
+                        amount_preview = income.amount * decimal_pct
+                        print(f"    → {acc_name} will receive {percentage:.0f}% (${amount_preview:,.2f})")
+                    else:
+                        print(f"    ⚠️  Percentage must be between 0 and 100, skipping")
+                except ValueError:
+                    print(f"    ⚠️  Invalid percentage, skipping")
+        
+        if not distribution_entries:
+            print("\n❌ No distribution configured.")
+            return
+        
+        # Validate
+        if total_percentage > 1.0 and not remainder_account:
+            print(f"\n⚠️  Warning: Percentages total {total_percentage*100:.0f}% (exceeds 100%)")
+        elif total_percentage < 1.0 and not remainder_account:
+            remaining_pct = (1.0 - total_percentage) * 100
+            print(f"\n⚠️  Warning: {remaining_pct:.0f}% is unallocated. Consider adding a remainder account.")
+        
+        income.distribution = DistributionType(distribution_entries)
+        print(f"\n✓ Distribution configured for '{income.source_name}'")
+
     def delete_income(self):
         """Delete an existing income source."""
         print("\n" + "-" * 80)
@@ -2423,35 +3474,36 @@ class FinanceCLI:
 
     def manage_mortgages(self):
         """Manage mortgage accounts."""
-        print("\n" + "=" * 80)
-        print("MORTGAGE MANAGEMENT")
-        print("=" * 80)
-        print("\n1. View All Mortgages")
-        print("2. Add New Mortgage")
-        print("3. Make Mortgage Payment")
-        print("4. Make Extra Principal Payment")
-        print("5. View Amortization Schedule")
-        print("6. Calculate Early Payoff")
-        print("7. Back to main menu")
+        while True:
+            print("\n" + "=" * 80)
+            print("🏠 MORTGAGE MANAGEMENT")
+            print("=" * 80)
+            print("\n  1. 👀 View All Mortgages")
+            print("  2. ➕ Add New Mortgage")
+            print("  3. 💲 Make Mortgage Payment")
+            print("  4. 💲 Make Extra Principal Payment")
+            print("  5. 📊 View Amortization Schedule")
+            print("  6. 🧮 Calculate Early Payoff")
+            print("  7. ↩️  Back")
 
-        choice = input("\nSelect option (1-7): ").strip()
+            choice = input("\nSelect option (1-7): ").strip()
 
-        if choice == "1":
-            self._view_all_mortgages()
-        elif choice == "2":
-            self._add_mortgage()
-        elif choice == "3":
-            self._make_mortgage_payment()
-        elif choice == "4":
-            self._make_extra_principal_payment()
-        elif choice == "5":
-            self._view_amortization_schedule()
-        elif choice == "6":
-            self._calculate_early_payoff()
-        elif choice == "7":
-            return
-        else:
-            print("❌ Invalid choice.")
+            if choice == "1":
+                self._view_all_mortgages()
+            elif choice == "2":
+                self._add_mortgage()
+            elif choice == "3":
+                self._make_mortgage_payment()
+            elif choice == "4":
+                self._make_extra_principal_payment()
+            elif choice == "5":
+                self._view_amortization_schedule()
+            elif choice == "6":
+                self._calculate_early_payoff()
+            elif choice == "7":
+                break
+            else:
+                print("❌ Invalid choice.")
 
     def _view_all_mortgages(self):
         """View all mortgage accounts."""
@@ -2729,29 +3781,30 @@ class FinanceCLI:
 
     def credit_payoff_planner(self):
         """Plan credit card/debt payoff."""
-        print("\n" + "=" * 80)
-        print("CREDIT PAYOFF PLANNER")
-        print("=" * 80)
-        print("\n1. View All Credit Balances")
-        print("2. Generate Payoff Plan for Specific Account")
-        print("3. Compare Payoff Strategies")
-        print("4. View Promo Expiration Warnings")
-        print("5. Back to main menu")
+        while True:
+            print("\n" + "=" * 80)
+            print("💳 CREDIT PAYOFF PLANNER")
+            print("=" * 80)
+            print("\n  1. 👀 View All Credit Balances")
+            print("  2. 📊 Generate Payoff Plan for Specific Account")
+            print("  3. ⚖️  Compare Payoff Strategies")
+            print("  4. ⚠️  View Promo Expiration Warnings")
+            print("  5. ↩️  Back")
 
-        choice = input("\nSelect option (1-5): ").strip()
+            choice = input("\nSelect option (1-5): ").strip()
 
-        if choice == "1":
-            self._view_all_credit_balances()
-        elif choice == "2":
-            self._generate_credit_payoff_plan()
-        elif choice == "3":
-            self._compare_payoff_strategies()
-        elif choice == "4":
-            self._view_promo_payoff_priority()
-        elif choice == "5":
-            return
-        else:
-            print("❌ Invalid choice.")
+            if choice == "1":
+                self._view_all_credit_balances()
+            elif choice == "2":
+                self._generate_credit_payoff_plan()
+            elif choice == "3":
+                self._compare_payoff_strategies()
+            elif choice == "4":
+                self._view_promo_payoff_priority()
+            elif choice == "5":
+                break
+            else:
+                print("❌ Invalid choice.")
 
     def _view_all_credit_balances(self):
         """View all credit account balances."""

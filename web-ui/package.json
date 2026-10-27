@@ -1,58 +1,33 @@
 {
-  "name": "budget-app",
-  "version": "1.0.0",
+  "name": "web-ui",
   "private": true,
-  "description": "Modern Personal Finance Management Application",
-  "main": "index.js",
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@apollo/client": "3.8.10",
-    "@react-navigation/bottom-tabs": "6.5.8",
-    "@react-navigation/native": "6.1.9",
-    "@react-navigation/stack": "6.3.17",
-    "axios": "1.12.0",
-    "date-fns": "2.30.0",
-    "graphql": "16.8.1",
-    "graphql-tag": "2.12.6",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "react-native": "0.72.4",
-    "react-native-gesture-handler": "2.13.4",
-    "react-native-paper": "5.10.0",
-    "react-native-reanimated": "3.5.0",
-    "react-native-safe-area-context": "4.7.2",
-    "react-native-screens": "3.26.0",
-    "react-native-vector-icons": "9.2.0",
-    "react-refresh": "^0.18.0"
+    "@apollo/client": "^4.1.6",
+    "@vue/apollo-composable": "^5.0.0-alpha.2",
+    "@vueuse/core": "^14.0.0",
+    "@wry/equality": "^0.5.6",
+    "chart.js": "^4.5.1",
+    "date-fns": "^4.1.0",
+    "graphql": "^16.13.2",
+    "graphql-tag": "^2.12.6",
+    "rxjs": "^7.3.0",
+    "vue": "^3.5.30",
+    "vue-chartjs": "^5.3.3",
+    "vue-router": "^5.0.4"
   },
   "devDependencies": {
-    "@types/node": "20.8.0",
-    "@types/react": "18.2.38",
-    "@types/react-dom": "18.2.16",
-    "ajv": "^8.17.1",
-    "react-scripts": "5.0.1",
-    "typescript": "5.2.2"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "@types/node": "^25.5.2",
+    "@vitejs/plugin-vue": "^6.0.5",
+    "@vue/tsconfig": "^0.9.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.1",
+    "vue-tsc": "^3.2.5"
   }
 }

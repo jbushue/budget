@@ -1,406 +1,136 @@
-# 🚀 Complete Setup Guide - Using uv Virtual Environment
+# Setup Guide (uv)
 
-## ✅ Status: Everything is Ready!
+How to set up and run Budget Manager with [uv](https://docs.astral.sh/uv/), the Python package and environment manager. If you'd rather use plain `pip`, see the [README](README.md#manual-start). On Windows you can also just double-click **`start.bat`**.
 
-Your Personal Finance Management System is fully configured with:
-- ✓ Python backend with GraphQL API
-- ✓ React Native web UI with npm
-- ✓ SQLite database for persistence
-- ✓ All dependencies installed
-- ✓ API server (renamed to `api_server.py`)
+The app has two parts:
 
----
-
-## 📋 Prerequisites
-
-- `uv` installed (Python package manager with virtual env)
-- `npm` installed (Node.js package manager)
-- `python` 3.13+
-- `node` 16+
+| Part | What it is | Address |
+|---|---|---|
+| API server | Python (Flask + GraphQL) with a SQLite database | http://127.0.0.1:4000 |
+| Web interface | Vue 3 + Vite | http://localhost:3000 |
 
 ---
 
-## 🛠️ Initial Setup (One Time Only)
+## Prerequisites
 
-### 1. Create and Activate uv Virtual Environment
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- Python 3.13+ (uv can install it for you: `uv python install 3.13`)
+- Node.js 20+ (includes `npm`)
 
-```bash
-cd /Users/justin/PycharmProjects/budget
+---
 
-# Create uv virtual environment (if not already done)
-uv venv
+## One-time setup
 
-# Activate the environment
-source .venv/bin/activate
-# On Windows: .venv\Scripts\activate
-
-# Verify activation (you should see (budget) in your prompt)
-```
-
-### 2. Install Python Dependencies
+Run these from the project folder (the one containing `pyproject.toml`).
 
 ```bash
-# Install required packages
-uv pip install flask flask-cors graphene sqlalchemy openpyxl reportlab
+# 1. Python: creates .venv and installs everything in pyproject.toml (incl. pytest)
+uv sync
 
-# Verify Flask works
-python -c "from flask import Flask; print('✓ Flask OK')"
-
-# Verify GraphQL works
-python -c "from models.graphql_schema import schema; print('✓ GraphQL OK')"
-```
-
-### 3. Install Node Dependencies
-
-```bash
+# 2. Web interface
 cd web-ui
-
-# Install React dependencies
-npm install --legacy-peer-deps
-
-# Verify npm is ready
-npm list --depth=0 | head -5
-```
-
----
-
-## ⚡ Quick Start (Every Time You Code)
-
-### Terminal 1: Start the GraphQL Backend
-
-```bash
-cd /Users/justin/PycharmProjects/budget
-
-# Activate uv environment (if not already active)
-source .venv/bin/activate
-
-# Start the API server
-python api_server.py
-```
-
-**Expected output:**
-```
-================================================================================
-🏦 PERSONAL FINANCE GRAPHQL API SERVER
-================================================================================
-
-📍 Starting GraphQL server...
-
-✓ GraphQL Playground: http://localhost:4000/graphql
-✓ Health Check: http://localhost:4000/health
-✓ API Info: http://localhost:4000/
-
-================================================================================
-```
-
-### Terminal 2: Start the React Web UI
-
-```bash
-cd /Users/justin/PycharmProjects/budget/web-ui
-
-# Start development server
-npm start
-```
-
-**Expected output:**
-```
-Compiled successfully!
-
-You can now view budget-app in the browser.
-
-  Local:            http://localhost:3000
-  On Your Network:  http://192.168.x.x:3000
-```
-
-### Terminal 3 (Optional): Use the CLI
-
-```bash
-cd /Users/justin/PycharmProjects/budget
-
-# Activate uv environment
-source .venv/bin/activate
-
-# Start interactive CLI
-python cli.py
-```
-
----
-
-## 📋 Common Commands with uv
-
-### Virtual Environment
-
-```bash
-# Activate venv
-source .venv/bin/activate
-
-# Deactivate venv
-deactivate
-
-# Check if activated (should show (budget) in prompt)
-which python
-
-# List installed packages
-uv pip list
-
-# Install a package
-uv pip install package_name
-
-# Install from requirements.txt
-uv pip install -r requirements.txt
-```
-
-### API Server
-
-```bash
-# Start server
-python api_server.py
-
-# Server endpoints:
-# - Playground: http://localhost:4000/graphql
-# - Health: http://localhost:4000/health
-# - Info: http://localhost:4000/
-
-# Stop server: Press Ctrl+C
-```
-
-### Web UI
-
-```bash
-cd web-ui
-
-# Start development
-npm start
-
-# Build for production
-npm run build
-
-# Run tests
-npm test
-
-# Clean reinstall
-rm -rf node_modules package-lock.json
-npm install --legacy-peer-deps
-```
-
-### CLI
-
-```bash
-# Start interactive menu
-python cli.py
-
-# From menu, you can:
-# 1. View financial snapshot
-# 2. Update account balance
-# 3. Project balances
-# 4. View bills & income
-# 5. Get payment optimization
-# 6. Add promotional offers
-# 7. Generate reports
-# 8. Create banks & accounts
-# 9. Add bills & income
-# 10. Save/Load database
-```
-
----
-
-## 🌐 Accessing Your App
-
-Once both terminals are running:
-
-### Web UI (Dashboard)
-```
-http://localhost:3000
-```
-- View financial snapshot
-- Create banks & accounts
-- Add bills & income
-- View analytics & projections
-- Toggle dark/light mode
-
-### GraphQL Playground
-```
-http://localhost:4000/graphql
-```
-- Interactive GraphQL IDE
-- Write and test queries
-- Explore schema
-- View documentation
-
-### Health Check
-```
-http://localhost:4000/health
-```
-JSON response with current data stats
-
----
-
-## 📁 Project Structure
-
-```
-budget/
-├── .venv/                    ← Your uv virtual environment
-├── api_server.py             ← GraphQL API server
-├── cli.py                    ← CLI interface
-├── models/                   ← Business logic
-│   ├── graphql_schema.py     ← GraphQL definitions
-│   ├── finance_manager.py
-│   ├── database.py
-│   └── ...
-├── web-ui/                   ← React Native web app
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── screens/
-│   │   ├── graphql/
-│   │   └── utils/
-│   ├── package.json
-│   ├── .npmrc                ← npm config (legacy-peer-deps)
-│   └── node_modules/
-└── ...
-```
-
----
-
-## 🔧 Troubleshooting
-
-### "Command 'source' not found"
-→ You're on Windows. Use: `.venv\Scripts\activate`
-
-### "python: command not found"
-→ Make sure venv is activated: `source .venv/bin/activate`
-
-### "ModuleNotFoundError: No module named 'flask'"
-→ Install dependencies: `uv pip install flask flask-cors`
-
-### "Cannot connect to localhost:4000"
-→ Make sure API server is running in Terminal 1
-
-### "npm ERR! code ERESOLVE"
-→ Use legacy-peer-deps: `npm install --legacy-peer-deps`
-
-### "Port 3000 already in use"
-```bash
-# Find and kill process
-lsof -i :3000
-kill -9 <PID>
-```
-
-### "Port 4000 already in use"
-```bash
-# Find and kill process
-lsof -i :4000
-kill -9 <PID>
-```
-
-### "GraphQL queries not working"
-→ Check playground at http://localhost:4000/graphql
-→ Try sample query from GRAPHQL_API.md
-
----
-
-## 📊 Typical Workflow
-
-### Day 1: Initial Setup
-```bash
-# One-time setup
-uv venv
-source .venv/bin/activate
-uv pip install flask flask-cors graphene sqlalchemy openpyxl reportlab
-cd web-ui
-npm install --legacy-peer-deps
+npm install
 cd ..
 ```
 
-### Daily: Start Development
+`uv sync` creates a `uv.lock` file the first time. Keep it if you want everyone to get exactly the same package versions.
+
+Check it worked:
+
 ```bash
-# Terminal 1
-source .venv/bin/activate
-python api_server.py
-
-# Terminal 2
-cd web-ui
-npm start
-
-# Terminal 3 (optional)
-source .venv/bin/activate
-python cli.py
+uv run python -c "from models.graphql_schema import schema; print('API OK')"
 ```
 
-### When Done
-```bash
-# Stop servers: Press Ctrl+C in each terminal
-# Deactivate venv:
-deactivate
-```
+> **If `.venv` is broken** (for example, errors about a missing `python313.dll` after a Python upgrade), delete the `.venv` folder and run `uv sync` again.
 
 ---
 
-## ✨ Features Available
+## Running the app
 
-### Web UI (http://localhost:3000)
-- ✓ Dashboard with net worth & charts
-- ✓ Account management
-- ✓ Bill tracking
-- ✓ Income management
-- ✓ Advanced analytics
-- ✓ Dark/light theme
-- ✓ Database save/load
+You need two terminals.
 
-### GraphQL API (http://localhost:4000/graphql)
-- ✓ 9 queries for financial data
-- ✓ 7 mutations for data creation
-- ✓ Real-time synchronization
-- ✓ Interactive playground
-- ✓ Complete documentation
-
-### CLI (Terminal)
-- ✓ Interactive menu system
-- ✓ 13 main menu options
-- ✓ Complete financial management
-- ✓ Report generation
-- ✓ Excel/PDF export
-
----
-
-## 📖 Documentation Files
-
-- **QUICK_START.md** (this file) - Setup guide
-- **README.md** - Complete feature guide
-- **GRAPHQL_API.md** - API reference
-- **cli.py** - Interactive menu (run it!)
-- **api_server.py** - GraphQL server (run it!)
-
----
-
-## ✅ You're All Set!
-
-Now run:
-
-### Terminal 1
+**Terminal 1 — API server**
 ```bash
-source .venv/bin/activate
-python api_server.py
+uv run api_server.py
 ```
+You should see the server start on port 4000. `uv run` uses the project's `.venv` automatically, so there's no need to activate it.
 
-### Terminal 2
+**Terminal 2 — web interface**
 ```bash
 cd web-ui
-npm start
+npm run dev
 ```
 
-Then open **http://localhost:3000** and start managing your finances! 🎉
+Then open **http://localhost:3000**. The web interface forwards its API calls to port 4000, so that's the only address you need.
+
+Stop either one with **Ctrl+C**.
+
+**Optional — command-line menu**
+```bash
+uv run cli.py
+```
+A text menu with: Dashboard & Overview, Views & Projections, Planning & Optimization, Manage Data, Reports & Export, and Database & File Management (including Excel import/export and the import template).
 
 ---
 
-## 🆘 Need Help?
+## Useful addresses
 
-1. **Check Console** - Look for error messages (F12 in browser)
-2. **Check Server** - Is api_server.py running?
-3. **Check Venv** - Is `(budget)` showing in your prompt?
-4. **Check Network** - Can you reach http://localhost:4000?
-5. **Read Docs** - Check README.md for features
+| Address | What's there |
+|---|---|
+| http://localhost:3000 | The web interface — see the [User Guide](docs/USER_GUIDE.md) |
+| http://127.0.0.1:4000/graphql | GraphQL playground: explore and try the API |
+| http://127.0.0.1:4000/health | Quick status check (counts of banks, bills, income) |
+
+Your data is stored in `~/.budget_app/finance.db` (Windows: `C:\Users\<you>\.budget_app\finance.db`). Copy that file to back it up.
+
+Server options (set before `uv run api_server.py`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BUDGET_HOST` | `127.0.0.1` | Listen address. The API has no login — only change this if you understand the risk. |
+| `BUDGET_DEBUG` | off | `1` turns on Flask debug mode. |
 
 ---
 
-**Happy coding!** 💰📊✨
+## Common commands
 
+```bash
+# Python
+uv sync                     # install / update dependencies from pyproject.toml
+uv add <package>            # add a dependency (updates pyproject.toml and uv.lock)
+uv run pytest               # run the test suite (uses a temporary database, never your real data)
+uv run python example.py    # library demo
+
+# Web interface (from web-ui/)
+npm run dev                 # development server on port 3000
+npm run build               # type-check (vue-tsc) and production build into web-ui/dist
+npm run preview             # serve the production build
+```
+
+---
+
+## Troubleshooting
+
+**The web page loads but shows errors or no data**
+The API server isn't running or isn't reachable. Start it in Terminal 1 and check http://127.0.0.1:4000/health.
+
+**`ModuleNotFoundError` (flask, graphene, …)**
+Run `uv sync`, and start the server with `uv run api_server.py` (not a bare `python` from another environment).
+
+**Port 3000 or 4000 already in use**
+Another copy is probably still running. Close it, or find and stop the process:
+```bash
+# Windows
+netstat -ano | findstr :4000
+taskkill /PID <pid> /F
+
+# macOS / Linux
+lsof -i :4000
+kill <pid>
+```
+
+**`npm install` fails**
+Delete `web-ui/node_modules` and run `npm install` again. Make sure Node.js is version 20 or newer (`node --version`).
+
+**Something else**
+See the Troubleshooting & FAQ section of the [User Guide](docs/USER_GUIDE.md).

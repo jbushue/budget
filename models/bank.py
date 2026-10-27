@@ -2,6 +2,7 @@ from copy import deepcopy
 from models.bank_account import BankAccount
 from models.credit_card_account import CreditAccount
 from models.mortgage_account import MortgageAccount, EscrowBreakdown
+from models.heloc_account import HELOCAccount
 
 
 class Bank:
@@ -19,6 +20,7 @@ class Bank:
         self.accounts: dict[str, BankAccount] = {}  # Traditional bank accounts
         self.credit_accounts: dict[str, CreditAccount] = {}  # Credit card accounts
         self.mortgage_accounts: dict[str, MortgageAccount] = {}  # Mortgage accounts
+        self.heloc_accounts: dict[str, HELOCAccount] = {}  # HELOC accounts
 
     def add_account(
         self,
@@ -118,6 +120,50 @@ class Bank:
         """Get all mortgage accounts."""
         return list(self.mortgage_accounts.values())
 
+    def add_heloc_account(
+        self,
+        account_name: str,
+        credit_limit: float,
+        interest_rate: float = 0.0,
+        draw_period_months: int = 180,
+        total_term_months: int = 360,
+        start_date=None,
+        current_balance: float = 0.0,
+        payment_due_date: int = 1,
+        preferred_source_bank: str = None,
+        preferred_source_account: str = None,
+    ) -> HELOCAccount:
+        """Add a HELOC account."""
+        if account_name in self.heloc_accounts:
+            raise ValueError(f"HELOC account '{account_name}' already exists in {self.name}.")
+
+        account = HELOCAccount(
+            account_name=account_name,
+            credit_limit=credit_limit,
+            interest_rate=interest_rate,
+            draw_period_months=draw_period_months,
+            total_term_months=total_term_months,
+            start_date=start_date,
+            current_balance=current_balance,
+            payment_due_date=payment_due_date,
+            preferred_source_bank=preferred_source_bank,
+            preferred_source_account=preferred_source_account,
+        )
+        self.heloc_accounts[account_name] = account
+        return account
+
+    def get_heloc_account(self, account_name: str) -> HELOCAccount | None:
+        """Get a HELOC account by name."""
+        return self.heloc_accounts.get(account_name)
+
+    def get_all_heloc_accounts(self) -> list[HELOCAccount]:
+        """Get all HELOC accounts."""
+        return list(self.heloc_accounts.values())
+
+    def total_heloc_owed(self) -> float:
+        """Get total balance owed across all HELOC accounts."""
+        return sum(acc.balance for acc in self.heloc_accounts.values())
+
     def total_balance(self) -> float:
         """Get total balance across all traditional accounts."""
         return sum(acc.balance for acc in self.accounts.values())
@@ -131,8 +177,8 @@ class Bank:
         return sum(acc.current_principal for acc in self.mortgage_accounts.values())
 
     def total_liabilities(self) -> float:
-        """Get total liabilities (credit + mortgage)."""
-        return self.total_credit_owed() + self.total_mortgage_owed()
+        """Get total liabilities (credit + mortgage + HELOC)."""
+        return self.total_credit_owed() + self.total_mortgage_owed() + self.total_heloc_owed()
 
     def total_available_credit(self) -> float:
         """Get total available credit across all credit accounts."""
@@ -188,6 +234,10 @@ class Bank:
         if account_name in self.credit_accounts:
             account = self.credit_accounts[account_name]
             account.balance = new_balance
+            # Keep the sub-balances consistent: whatever is not on a promo
+            # is regular (interest-bearing) balance.
+            promo_total = sum(account.promo_balance.values())
+            account.regular_balance = max(0.0, new_balance - promo_total)
             account._record_transaction("ADJUSTMENT", 0, description)
             return account
         return None
@@ -200,5 +250,6 @@ class Bank:
         return (
             f"Bank({self.name}, {len(self.accounts)} bank accounts, "
             f"{len(self.credit_accounts)} credit accounts, "
-            f"{len(self.mortgage_accounts)} mortgage accounts)"
+            f"{len(self.mortgage_accounts)} mortgage accounts, "
+            f"{len(self.heloc_accounts)} HELOC accounts)"
         )

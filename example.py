@@ -89,7 +89,6 @@ def example_setup():
             preferred_source_bank="Chase Bank",
             preferred_source_account="Primary Checking"
         ),
-        Bill(bill_name="Brockton"),
         Bill(
             bill_name="Internet",
             amount=90.00,
@@ -237,7 +236,7 @@ def main():
         start_date=date.today(),
         end_date=end_date,
         include_optimization=True
-    ))
+    )["text"])
 
 
 if __name__ == "__main__":

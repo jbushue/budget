@@ -1,0 +1,21 @@
+import { createRouter, createWebHistory } from 'vue-router'
+
+const routes = [
+  { path: '/', name: 'Dashboard', component: () => import('../views/DashboardView.vue') },
+  { path: '/accounts', name: 'Accounts', component: () => import('../views/AccountsView.vue') },
+  { path: '/bills', name: 'Bills', component: () => import('../views/BillsView.vue') },
+  { path: '/bill-groups', name: 'BillGroups', component: () => import('../views/BillGroupsView.vue') },
+  { path: '/income', name: 'Income', component: () => import('../views/IncomeView.vue') },
+  { path: '/timeline', name: 'Timeline', component: () => import('../views/TimelineView.vue') },
+  { path: '/optimizer', name: 'Optimizer', component: () => import('../views/OptimizerView.vue') },
+  { path: '/debt-payoff', name: 'DebtPayoff', component: () => import('../views/DebtPayoffView.vue') },
+  { path: '/scenarios', name: 'Scenarios', component: () => import('../views/ScenarioView.vue') },
+  { path: '/settings', name: 'Settings', component: () => import('../views/SettingsView.vue') },
+  { path: '/:pathMatch(.*)*', redirect: '/' },
+]
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
+

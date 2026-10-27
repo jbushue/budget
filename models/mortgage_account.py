@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .types import MortgageStatus
+from .date_utils import add_months, clamped_date, next_by_months
 
 
 @dataclass
@@ -54,7 +55,8 @@ class MortgageAccount:
         start_date: date = None,
         escrow: EscrowBreakdown = None,
         preferred_source_bank: str = None,
-        preferred_source_account: str = None
+        preferred_source_account: str = None,
+        market_value: float = None,  # Current market value of the property
     ):
         """
         Args:
@@ -99,6 +101,7 @@ class MortgageAccount:
         self.escrow_balance: float = 0.0  # Current escrow account balance
         self.is_paid_this_period = False
         self.status = MortgageStatus.ACTIVE
+        self.market_value: float | None = market_value  # Current market value of property
 
     @property
     def monthly_interest_rate(self) -> float:
@@ -116,8 +119,9 @@ class MortgageAccount:
         
         r = self.monthly_interest_rate
         if r == 0:
-            # No interest - simple division
-            return self.current_principal / self.remaining_months
+            # No interest - the scheduled payment is the original loan spread
+            # evenly over the term (it does not shrink as principal is repaid)
+            return round(self.original_principal / max(1, self.loan_term_months), 2)
         
         n = self.loan_term_months
         payment = self.original_principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
@@ -143,16 +147,23 @@ class MortgageAccount:
         """Estimate remaining months based on current principal and payment."""
         if self.current_principal <= 0:
             return 0
-        if self.base_monthly_payment <= self.current_monthly_interest:
+        
+        r = self.monthly_interest_rate
+        if r == 0:
+            # No interest - remaining principal divided by the scheduled
+            # payment (original principal / term), rounded up to whole months
+            import math
+            payment = self.original_principal / max(1, self.loan_term_months)
+            if payment <= 0:
+                return self.loan_term_months
+            return max(1, math.ceil(round(self.current_principal / payment, 6)))
+        
+        payment = self.base_monthly_payment
+        if payment <= self.current_monthly_interest:
             return 999  # Effectively infinite if payment doesn't cover interest
         
         # Use logarithm to calculate remaining months
         import math
-        r = self.monthly_interest_rate
-        if r == 0:
-            return int(self.current_principal / self.base_monthly_payment) + 1
-        
-        payment = self.base_monthly_payment
         remaining = math.log(payment / (payment - r * self.current_principal)) / math.log(1 + r)
         return max(1, int(remaining) + 1)
 
@@ -169,15 +180,17 @@ class MortgageAccount:
 
     @property
     def equity(self) -> float:
-        """Current equity (original principal - current principal)."""
-        return self.original_principal - self.current_principal
+        """Current equity (market_value - current_principal, or original - current if no market value)."""
+        base_value = self.market_value if self.market_value is not None else self.original_principal
+        return base_value - self.current_principal
 
     @property
     def loan_to_value_ratio(self) -> float:
-        """Current LTV ratio (current principal / original principal)."""
-        if self.original_principal == 0:
+        """Current LTV ratio (current principal / market_value or original_principal)."""
+        base_value = self.market_value if self.market_value is not None else self.original_principal
+        if base_value == 0:
             return 0.0
-        return self.current_principal / self.original_principal
+        return self.current_principal / base_value
 
     @property
     def remaining_balance(self) -> float:
@@ -208,13 +221,14 @@ class MortgageAccount:
         payment_date = payment_date or date.today()
         amount = amount or self.total_monthly_payment
         
-        # Calculate payment breakdown
-        interest_portion = self.current_monthly_interest
-        escrow_portion = self.escrow.total_monthly
-        
-        # Principal is what's left after interest and escrow
-        base_principal = amount - interest_portion - escrow_portion
-        total_principal = base_principal + extra_principal
+        # Apply the payment in order: interest -> escrow -> principal.
+        # A partial payment can never increase the principal, and principal
+        # applied is capped at what is still owed.
+        interest_portion = round(min(max(0.0, amount), self.current_monthly_interest), 2)
+        remaining = max(0.0, amount - interest_portion)
+        escrow_portion = round(min(remaining, self.escrow.total_monthly), 2)
+        remaining = max(0.0, remaining - escrow_portion)
+        total_principal = min(remaining + max(0.0, extra_principal), self.current_principal)
         
         # Update balances
         self.current_principal = max(0, self.current_principal - total_principal)
@@ -341,20 +355,9 @@ class MortgageAccount:
             principal_payment = min(round(payment - interest, 2), principal)
             principal -= principal_payment
             
-            # Calculate payment date
-            try:
-                payment_date = date(
-                    current_date.year + (current_date.month + month - 1) // 12,
-                    (current_date.month + month - 1) % 12 + 1,
-                    self.payment_due_date
-                )
-            except ValueError:
-                # Handle month-end edge cases
-                payment_date = date(
-                    current_date.year + (current_date.month + month - 1) // 12,
-                    (current_date.month + month - 1) % 12 + 1,
-                    28
-                )
+            # Calculate payment date (clamped to month length)
+            pay_year, pay_month = add_months(current_date.year, current_date.month, month)
+            payment_date = clamped_date(pay_year, pay_month, self.payment_due_date)
             
             schedule.append({
                 "month": month,
@@ -378,25 +381,29 @@ class MortgageAccount:
         Returns:
             Dictionary with payoff analysis
         """
-        principal = self.current_principal
         payment = self.base_monthly_payment
         r = self.monthly_interest_rate
-        
-        months_without_extra = self.remaining_months
-        
-        # Calculate with extra payments
-        months_with_extra = 0
-        total_interest_with_extra = 0.0
-        
-        while principal > 0 and months_with_extra < 600:  # Cap at 50 years
-            interest = principal * r
-            total_interest_with_extra += interest
-            principal_payment = payment - interest + extra_monthly
-            principal = max(0, principal - principal_payment)
-            months_with_extra += 1
-        
-        # Calculate interest without extra payments
-        total_interest_without_extra = self.total_interest_remaining
+
+        def simulate(extra: float) -> tuple[int, float]:
+            """Months and total interest to payoff with a given extra payment."""
+            principal = self.current_principal
+            months = 0
+            total_interest = 0.0
+            while principal > 0.005 and months < 600:  # Cap at 50 years
+                interest = principal * r
+                total_interest += interest
+                principal_payment = payment - interest + extra
+                if principal_payment <= 0:
+                    # Payment never covers interest — loan does not amortize
+                    months = 600
+                    break
+                principal = max(0, principal - principal_payment)
+                months += 1
+            return months, total_interest
+
+        # Baseline and scenario use the same loop so extra=0 reports no savings
+        months_without_extra, total_interest_without_extra = simulate(0.0)
+        months_with_extra, total_interest_with_extra = simulate(extra_monthly)
         
         return {
             "months_saved": months_without_extra - months_with_extra,
@@ -409,27 +416,8 @@ class MortgageAccount:
 
     def get_next_due_date(self, reference_date: date) -> date:
         """Calculate the next payment due date relative to a reference date."""
-        year = reference_date.year
-        month = reference_date.month
-
-        try:
-            next_due = date(year, month, self.payment_due_date)
-        except ValueError:
-            next_due = date(year, month, min(self.payment_due_date, 28))
-
-        if next_due <= reference_date:
-            if month == 12:
-                year += 1
-                month = 1
-            else:
-                month += 1
-
-            try:
-                next_due = date(year, month, self.payment_due_date)
-            except ValueError:
-                next_due = date(year, month, min(self.payment_due_date, 28))
-
-        return next_due
+        return next_by_months(reference_date.year, reference_date.month,
+                              self.payment_due_date, 1, reference_date)
 
     def reset_period(self):
         """Reset the paid status for the next period."""

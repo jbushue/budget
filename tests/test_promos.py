@@ -294,7 +294,7 @@ class TestPromoEdgeCases:
 
     def test_promo_calculation_edge_cases(self):
         """Test promotional offer calculation edge cases."""
-        # Promo ending today
+        # Promo ending today - end_date is today, so it's expired
         today = date.today()
         promo_today = PromoOffer(
             promo_name="Ends Today",
@@ -303,7 +303,8 @@ class TestPromoEdgeCases:
             end_date=today
         )
         assert promo_today.days_remaining == 0
-        assert promo_today.is_active  # Still active on end date
+        # has_expired checks date.today() >= self.end_date, so it's expired on end date
+        assert not promo_today.is_active  # Expired on end date
 
         # Promo ending tomorrow
         tomorrow = date.today() + timedelta(days=1)
@@ -316,3 +317,43 @@ class TestPromoEdgeCases:
         assert promo_tomorrow.days_remaining == 1
         assert promo_tomorrow.is_active
 
+
+
+class TestPromoSimulationDates:
+    """Promo expiry must follow the simulated/transaction date, not the real clock."""
+
+    def _card_with_promo(self):
+        from models.credit_card_account import CreditAccount
+        card = CreditAccount("Card", credit_limit=10000, interest_rate=24.0)
+        card.add_promotional_offer("0% Promo", 6, start_date=date(2030, 1, 1))
+        card.make_purchase(1200.0, promo_name="0% Promo", transaction_date=date(2030, 1, 10))
+        return card
+
+    def test_purchase_uses_transaction_date(self):
+        card = self._card_with_promo()
+        assert card.promo_balance["0% Promo"] == 1200.0
+        assert card.regular_balance == 0.0
+
+    def test_purchase_outside_window_goes_to_regular(self):
+        from models.credit_card_account import CreditAccount
+        card = CreditAccount("Card", credit_limit=10000, interest_rate=24.0)
+        card.add_promotional_offer("0% Promo", 6, start_date=date(2030, 1, 1))
+        card.make_purchase(500.0, promo_name="0% Promo", transaction_date=date(2031, 1, 1))
+        assert card.promo_balance["0% Promo"] == 0.0
+        assert card.regular_balance == 500.0
+
+    def test_no_deferred_interest_before_simulated_expiry(self):
+        card = self._card_with_promo()
+        assert card.accrue_interest(date(2030, 3, 1)) == 0.0
+        assert card.balance == 1200.0
+
+    def test_deferred_interest_charged_at_simulated_expiry(self):
+        card = self._card_with_promo()
+        promo = card.active_promos[0]
+        interest = card.process_expired_promos(promo.end_date)
+        assert interest > 0
+        assert promo.interest_charged
+        # Remaining promo balance + deferred interest becomes regular debt
+        assert card.promo_balance["0% Promo"] == 0.0
+        assert card.regular_balance == pytest.approx(1200.0 + interest)
+        assert card.regular_balance + sum(card.promo_balance.values()) == pytest.approx(card.balance)

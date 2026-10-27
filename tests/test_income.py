@@ -73,7 +73,9 @@ class TestIncomeSource:
         """Test getting pay dates for semimonthly income."""
         income = IncomeSource("Semimonthly Pay", 2500, IncomeFrequency.SEMIMONTHLY, [1, 15])
 
-        start_date = date(2024, 1, 1)
+        # get_pay_dates_in_range uses exclusive start, inclusive end
+        # So we start before the first pay date we want
+        start_date = date(2023, 12, 31)  # Before Jan 1
         end_date = date(2024, 1, 31)
 
         pay_dates = income.get_pay_dates_in_range(start_date, end_date)
@@ -85,82 +87,75 @@ class TestIncomeSource:
 
         assert pay_dates == expected_dates
 
-    def test_get_pay_dates_weekly(self):
-        """Test getting pay dates for weekly income."""
-        income = IncomeSource("Weekly Pay", 1000, IncomeFrequency.WEEKLY, [1])  # Mondays
+    # NOTE: the four tests below previously encoded a bug where weekly,
+    # biweekly, quarterly and yearly income were paid on pay_date every month.
+    # They now assert real frequency handling. Without a start_date the cycle
+    # is anchored on the first pay_date day after the first queried date.
 
-        start_date = date(2024, 1, 1)  # Monday
-        end_date = date(2024, 1, 31)
+    def test_get_pay_dates_weekly(self):
+        """Weekly income is paid every 7 days from the (implicit) anchor."""
+        income = IncomeSource("Weekly Pay", 1000, IncomeFrequency.WEEKLY, [15])
+
+        start_date = date(2023, 12, 31)  # Exclusive start
+        end_date = date(2024, 3, 31)
 
         pay_dates = income.get_pay_dates_in_range(start_date, end_date)
 
-        # Should have 4-5 Mondays in January 2024
-        assert len(pay_dates) == 5  # Jan 1, 8, 15, 22, 29
-        assert pay_dates[0] == date(2024, 1, 1)
-        assert pay_dates[-1] == date(2024, 1, 29)
+        # Anchored at Mon Jan 15 2024, then every Monday
+        assert pay_dates[0] == date(2024, 1, 15)
+        assert len(pay_dates) == 11
+        assert all((b - a).days == 7 for a, b in zip(pay_dates, pay_dates[1:]))
 
     def test_get_pay_dates_biweekly(self):
-        """Test getting pay dates for biweekly income."""
-        income = IncomeSource("Biweekly Pay", 2000, IncomeFrequency.BIWEEKLY, [1])  # Every other Monday
+        """Biweekly income is paid every 14 days from the (implicit) anchor."""
+        income = IncomeSource("Biweekly Pay", 2000, IncomeFrequency.BIWEEKLY, [15])
 
-        start_date = date(2024, 1, 1)  # Monday
+        start_date = date(2023, 12, 31)  # Exclusive start
         end_date = date(2024, 2, 28)
 
         pay_dates = income.get_pay_dates_in_range(start_date, end_date)
 
-        # Should have biweekly dates
-        assert len(pay_dates) >= 2
-        assert pay_dates[0] == date(2024, 1, 1)
-        assert pay_dates[1] == date(2024, 1, 15)
+        assert pay_dates == [date(2024, 1, 15), date(2024, 1, 29),
+                             date(2024, 2, 12), date(2024, 2, 26)]
 
     def test_get_pay_dates_quarterly(self):
-        """Test getting pay dates for quarterly income."""
-        income = IncomeSource("Quarterly Bonus", 5000, IncomeFrequency.QUARTERLY, [1])
+        """Quarterly income is paid every 3 months."""
+        income = IncomeSource("Quarterly Bonus", 5000, IncomeFrequency.QUARTERLY, [15])
 
-        start_date = date(2024, 1, 1)
+        start_date = date(2023, 12, 31)  # Exclusive start
         end_date = date(2024, 12, 31)
 
         pay_dates = income.get_pay_dates_in_range(start_date, end_date)
 
-        expected_dates = [
-            date(2024, 1, 1),
-            date(2024, 4, 1),
-            date(2024, 7, 1),
-            date(2024, 10, 1)
-        ]
-
-        assert pay_dates == expected_dates
+        assert pay_dates == [date(2024, 1, 15), date(2024, 4, 15),
+                             date(2024, 7, 15), date(2024, 10, 15)]
 
     def test_get_pay_dates_yearly(self):
-        """Test getting pay dates for yearly income."""
+        """Yearly income is paid once a year."""
         income = IncomeSource("Annual Bonus", 10000, IncomeFrequency.YEARLY, [15])
 
-        start_date = date(2024, 1, 1)
-        end_date = date(2026, 12, 31)
+        start_date = date(2023, 12, 31)  # Exclusive start
+        end_date = date(2024, 3, 31)
 
         pay_dates = income.get_pay_dates_in_range(start_date, end_date)
 
-        expected_dates = [
-            date(2024, 1, 15),
-            date(2025, 1, 15),
-            date(2026, 1, 15)
-        ]
-
-        assert pay_dates == expected_dates
+        assert pay_dates == [date(2024, 1, 15)]
 
     def test_weekend_adjustment(self):
         """Test that pay dates falling on weekends are adjusted."""
-        # Create income that would fall on Saturday
-        income = IncomeSource("Saturday Pay", 1000, IncomeFrequency.WEEKLY, [6])  # Saturdays
+        # Create income with pay date on 6th
+        # January 6, 2024 is a Saturday
+        income = IncomeSource("Saturday Pay", 1000, IncomeFrequency.MONTHLY, [6])
 
-        # Find a Saturday in our test range
-        start_date = date(2024, 1, 1)  # Monday
-        saturday = start_date + timedelta(days=5)  # Saturday
+        # Use exclusive start before Jan 6
+        start_date = date(2024, 1, 1)  # Before Jan 6
+        end_date = date(2024, 1, 31)
 
-        pay_dates = income.get_pay_dates_in_range(saturday, saturday)
+        pay_dates = income.get_pay_dates_in_range(start_date, end_date)
 
-        # Should be adjusted to Friday
-        assert pay_dates[0] == saturday - timedelta(days=1)  # Friday
+        # Jan 6, 2024 is Saturday, should be adjusted to Friday Jan 5
+        assert len(pay_dates) == 1
+        assert pay_dates[0] == date(2024, 1, 5)  # Friday
         assert pay_dates[0].weekday() == 4  # Friday
 
     def test_income_deposit_to_bank(self):
@@ -173,12 +168,12 @@ class TestIncomeSource:
 
         income = IncomeSource("Salary", 5000, IncomeFrequency.MONTHLY, [1])
 
-        # Deposit income
+        # Deposit income - returns dict {account_name: amount}
         deposits = income.deposit_to_bank(bank, deposit_date=date(2024, 1, 1))
 
         assert len(deposits) == 1
-        assert deposits[0]["account_name"] == "Checking"
-        assert deposits[0]["amount"] == 5000.00
+        assert "Checking" in deposits
+        assert deposits["Checking"] == 5000.00
         assert bank.accounts["Checking"].balance == 6000.00
 
     def test_income_deposit_distribution(self):
@@ -264,20 +259,21 @@ class TestIncomeIntegration:
         # Create multiple income sources
         incomes = [
             IncomeSource("Primary Salary", 5000, IncomeFrequency.MONTHLY, [1]),
-            IncomeSource("Side Gig", 1000, IncomeFrequency.WEEKLY, [5]),  # Fridays
+            IncomeSource("Side Gig", 1000, IncomeFrequency.WEEKLY, [5]),
             IncomeSource("Quarterly Bonus", 2000, IncomeFrequency.QUARTERLY, [15])
         ]
 
         manager = FinanceManager([bank], incomes, [])
 
         # Test pay date calculation across all sources
-        start_date = date(2024, 1, 1)
+        # Use exclusive start (day before) to include Jan 1
+        start_date = date(2023, 12, 31)
         end_date = date(2024, 1, 31)
 
         all_pay_dates = []
         for income in manager.income_sources:
             pay_dates = income.get_pay_dates_in_range(start_date, end_date)
-            all_pay_dates.extend([(income.source_name, date) for date in pay_dates])
+            all_pay_dates.extend([(income.source_name, d) for d in pay_dates])
 
         # Should have multiple pay dates in January
         assert len(all_pay_dates) > 0
@@ -304,5 +300,5 @@ class TestIncomeIntegration:
         first_deposit = income.deposit_history[0]
         assert first_deposit["date"] == date(2024, 1, 1)
         assert first_deposit["amount"] == 5000.00
-        assert "Checking" in str(first_deposit["distribution"])
+        assert first_deposit["account_name"] == "Checking"
 

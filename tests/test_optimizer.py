@@ -49,9 +49,10 @@ class TestPaymentOptimizer:
         assert plan.final_discretionary >= 0
         assert len(plan.strategy) > 0
 
-    def test_optimize_payoff_credit(self, sample_credit_bank, sample_income, sample_bills):
+    def test_optimize_payoff_credit(self, sample_bank, sample_credit_bank, sample_income, sample_bills):
         """Test optimization for paying off credit account."""
-        optimizer = PaymentOptimizer([sample_credit_bank], sample_income, sample_bills)
+        # Need both a regular bank (for income deposits) and credit bank
+        optimizer = PaymentOptimizer([sample_bank, sample_credit_bank], sample_income, sample_bills)
 
         start_date = date(2024, 1, 1)
         end_date = date(2024, 3, 31)
@@ -230,11 +231,11 @@ class TestPromoPayoff:
         """Test finding promotional offers that need payoff."""
         # Add a promo to the credit card
         card = sample_credit_bank.credit_accounts["Rewards Card"]
-        from models.credit_card_account import PromotionalOffer
+        from models.credit_card_account import PromoOffer
         from datetime import timedelta
 
         end_date = date.today() + timedelta(days=60)
-        promo = PromotionalOffer(
+        promo = PromoOffer(
             promo_name="0% APR",
             months_interest_free=12,
             purchase_limit=2000.00,
@@ -258,10 +259,10 @@ class TestPromoPayoff:
         """Test calculating promo payoff schedule."""
         # Setup similar to above
         card = sample_credit_bank.credit_accounts["Rewards Card"]
-        from models.credit_card_account import PromotionalOffer
+        from models.credit_card_account import PromoOffer
 
         end_date = date.today() + timedelta(days=60)
-        promo = PromotionalOffer(
+        promo = PromoOffer(
             promo_name="0% APR",
             months_interest_free=12,
             purchase_limit=2000.00,
@@ -364,13 +365,14 @@ class TestPaymentOptimizerIntegration:
         # Should include the yearly bill in strategy
         assert len(plan.strategy) > 0
 
-    def test_optimization_with_credit_payoff(self, sample_credit_bank, sample_income):
+    def test_optimization_with_credit_payoff(self, sample_bank, sample_credit_bank, sample_income):
         """Test credit payoff optimization."""
         # Add balance to credit card
         card = sample_credit_bank.credit_accounts["Rewards Card"]
         card.make_purchase(1000.00)
 
-        optimizer = PaymentOptimizer([sample_credit_bank], sample_income, [])
+        # Need both regular bank (for income deposits) and credit bank
+        optimizer = PaymentOptimizer([sample_bank, sample_credit_bank], sample_income, [])
 
         start_date = date(2024, 1, 1)
         end_date = date(2024, 3, 31)

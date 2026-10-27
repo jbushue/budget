@@ -36,27 +36,28 @@ class PromoOffer:
 
     @property
     def is_active(self) -> bool:
-        """Check if the promo is still active."""
+        """Check if the promo is still active (as of today)."""
         return not self.has_expired()
 
-    def is_valid_for_purchase(self, amount: float) -> bool:
-        """Check if purchase is eligible for this promo."""
-        if not self.is_active or date.today() > self.end_date:
+    def is_valid_for_purchase(self, amount: float, as_of: date = None) -> bool:
+        """Check if purchase is eligible for this promo on the given date (default today)."""
+        as_of = as_of or date.today()
+        if self.has_expired(as_of) or as_of < self.start_date:
             return False
         if self.purchase_limit and self.amount_used + amount > self.purchase_limit:
             return False
         return True
 
-    def apply_to_purchase(self, amount: float) -> bool:
+    def apply_to_purchase(self, amount: float, as_of: date = None) -> bool:
         """Apply promo to a purchase. Returns True if applied."""
-        if self.is_valid_for_purchase(amount):
+        if self.is_valid_for_purchase(amount, as_of):
             self.amount_used += amount
             return True
         return False
 
-    def has_expired(self) -> bool:
-        """Check if the promotional period has ended."""
-        return date.today() >= self.end_date
+    def has_expired(self, as_of: date = None) -> bool:
+        """Check if the promotional period has ended as of the given date (default today)."""
+        return (as_of or date.today()) >= self.end_date
 
     @property
     def days_remaining(self) -> int:
@@ -134,7 +135,7 @@ class CreditAccount:
         # Allocate to promotional offer if specified
         if promo_name:
             promo = next((p for p in self.active_promos if p.promo_name == promo_name), None)
-            if promo and promo.apply_to_purchase(amount):
+            if promo and promo.apply_to_purchase(amount, transaction_date):
                 if promo_name not in self.promo_balance:
                     self.promo_balance[promo_name] = 0.0
                 self.promo_balance[promo_name] += amount
@@ -152,11 +153,17 @@ class CreditAccount:
         source_account=None,
         source_bank=None,
         description: str = "Payment",
-        transaction_date: date = None
+        transaction_date: date = None,
+        promo_name: str = None,
     ) -> None:
         """
         Record a payment to this credit account.
         Optionally withdraws from a source bank account.
+
+        By default the payment reduces the regular balance first, then promo
+        balances. When ``promo_name`` is given the payment is applied to that
+        promotional balance first (e.g. paying a promo off before it expires),
+        with any excess going to the regular balance and then other promos.
         """
         if amount <= 0:
             raise ValueError("Payment amount must be positive.")
@@ -175,6 +182,30 @@ class CreditAccount:
             )
 
         self.balance -= amount
+
+        # Reduce sub-balances: apply payment to regular balance first,
+        # then promo balances.  This keeps the sub-balance tracking in sync
+        # with the overall balance so interest calculations stay accurate.
+        remaining = amount
+        if promo_name and self.promo_balance.get(promo_name, 0.0) > 0:
+            applied = min(remaining, self.promo_balance[promo_name])
+            self.promo_balance[promo_name] -= applied
+            remaining -= applied
+        if remaining > 0 and self.regular_balance > 0:
+            applied = min(remaining, self.regular_balance)
+            self.regular_balance -= applied
+            remaining -= applied
+        if remaining > 0:
+            # Apply remainder to promo balances (oldest/smallest first)
+            for promo_name in list(self.promo_balance.keys()):
+                if remaining <= 0:
+                    break
+                promo_bal = self.promo_balance[promo_name]
+                if promo_bal > 0:
+                    applied = min(remaining, promo_bal)
+                    self.promo_balance[promo_name] -= applied
+                    remaining -= applied
+
         self._record_transaction("PAYMENT", -amount, description, transaction_date)
 
         self.payment_history.append({
@@ -205,15 +236,50 @@ class CreditAccount:
             return self.accrue_interest(current_date)
         return 0.0
 
-    def calculate_minimum_payment(self) -> float:
+    def calculate_minimum_payment(self, reference_date: date = None) -> float:
         """
         Calculate minimum payment due.
-        Typical credit card formula: 2% of balance or $25, whichever is greater (but not more than balance).
+
+        Standard minimum: 2% of balance or $25, whichever is greater.
+
+        Promo payoff: For each active promo with a remaining balance, add
+        enough monthly payment to fully pay it off before expiration.
+        This prevents deferred interest charges when promos expire.
+
+        Args:
+            reference_date: Date to use for promo expiration calculations
+                            (defaults to today; timeline simulator passes simulated date)
         """
         if self.balance <= 0:
             return 0.0
-        min_payment = max(0.02 * self.balance, 25.0)
-        return min(min_payment, self.balance)
+
+        ref = reference_date or date.today()
+
+        # Standard minimum on the regular (non-promo) balance
+        standard_min = max(0.02 * self.regular_balance, 25.0) if self.regular_balance > 0 else 0.0
+
+        # Add promo payoff amounts
+        promo_monthly = 0.0
+        for promo in self.active_promos:
+            promo_bal = self.promo_balance.get(promo.promo_name, 0.0)
+            if promo_bal <= 0:
+                continue
+            if promo.interest_charged:
+                # Already expired & interest charged — balance is now regular debt
+                continue
+
+            days_remaining = (promo.end_date - ref).days
+            if days_remaining <= 0:
+                # Promo expired or expiring today — pay it all now
+                promo_monthly += promo_bal
+            else:
+                months_remaining = max(1, days_remaining / 30.0)
+                promo_monthly += promo_bal / months_remaining
+
+        total = standard_min + promo_monthly
+
+        # Never exceed total balance
+        return min(round(total, 2), self.balance)
 
     def calculate_monthly_payment(self, months: int) -> float:
         """
@@ -277,7 +343,7 @@ class CreditAccount:
 
         for promo in self.active_promos:
             # Check if promo has expired and still has balance
-            if promo.has_expired() and not promo.interest_charged:
+            if promo.has_expired(current_date) and not promo.interest_charged:
                 remaining_balance = self.promo_balance.get(promo.promo_name, 0.0)
 
                 if remaining_balance > 0:
@@ -289,10 +355,11 @@ class CreditAccount:
                     # Interest = Principal * [(1 + rate)^n - 1]
                     interest = remaining_balance * (((1 + monthly_rate) ** months_elapsed) - 1)
 
-                    # Add interest to balance and record it
+                    # Add interest to balance; the remaining promo balance plus the
+                    # deferred interest now becomes regular (interest-bearing) debt.
                     self.balance += interest
-                    self.regular_balance += interest
-                    self.promo_balance[promo.promo_name] = remaining_balance + interest
+                    self.regular_balance += remaining_balance + interest
+                    self.promo_balance[promo.promo_name] = 0.0
 
                     total_interest_charged += interest
 

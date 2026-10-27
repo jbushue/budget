@@ -35,7 +35,15 @@ class TestFinanceManager:
         assert len(accounts) >= 0
         for account in accounts:
             assert hasattr(account, 'account_name')
-            assert hasattr(account, 'balance')
+            # Different account types have different balance properties
+            # BankAccount: balance
+            # CreditAccount: balance
+            # MortgageAccount: current_principal
+            has_balance_field = (
+                hasattr(account, 'balance') or
+                hasattr(account, 'current_principal')
+            )
+            assert has_balance_field
 
     def test_get_all_income_sources(self, sample_finance_manager):
         """Test getting all income sources."""
@@ -173,9 +181,9 @@ class TestFinanceManagerIntegration:
 
         result = manager.project_balances(start_date, end_date)
 
-        # Should include the yearly bill
+        # Should include bill payment events (BILL_PAYMENT not BILL_DUE)
         cash_flow = result["cash_flow"]
-        bill_payments = [cf for cf in cash_flow if cf.get("type") == "BILL_DUE"]
+        bill_payments = [cf for cf in cash_flow if cf.get("type") == "BILL_PAYMENT"]
         assert len(bill_payments) > 0
 
     def test_finance_manager_with_multiple_bank_types(self):
@@ -339,18 +347,18 @@ class TestFinanceManagerEdgeCases:
         bank = Bank("Test Bank")
         bank.add_account("checking", "Checking", 10000)  # Plenty of money
 
-        bill = Bill("Rent", 2000, 1)
+        bill = Bill("Rent", 2000, 15)  # Due on the 15th
 
         manager = FinanceManager([bank], [], [bill])
 
-        # Test projection
-        start_date = date(2024, 1, 1)
-        end_date = date(2024, 1, 31)
+        # Test projection - use a range that includes the 15th
+        start_date = date(2024, 1, 10)  # Before the 15th
+        end_date = date(2024, 1, 20)  # After the 15th
 
         result = manager.project_balances(start_date, end_date)
 
-        # Should have bill events
+        # Should have bill payment events (BILL_PAYMENT not BILL_DUE)
         cash_flow = result["cash_flow"]
-        bill_events = [cf for cf in cash_flow if cf.get("type") == "BILL_DUE"]
+        bill_events = [cf for cf in cash_flow if cf.get("type") == "BILL_PAYMENT"]
         assert len(bill_events) > 0
 
