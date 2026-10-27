@@ -238,6 +238,10 @@
           <input v-model="form.startDate" type="date" />
         </div>
         <div class="form-group">
+          <label>Late fee (optional)</label>
+          <input v-model="form.lateFee" type="number" min="0" step="1" placeholder="Use the default from Settings" />
+        </div>
+        <div class="form-group">
           <label>Preferred Source Bank (optional)</label>
           <select v-model="form.preferredSourceBank">
             <option value="">Auto (no preference)</option>
@@ -707,6 +711,7 @@ function emptyForm() {
     billName: '', amount: 0, dueDate: 1, frequency: 'monthly' as string, dueMonth: null as number | null,
     billType: 'fixed' as string, minAmount: null as number | null, maxAmount: null as number | null,
     startDate: '', preferredSourceBank: '', preferredSourceAccount: '',
+    lateFee: '' as number | string,
   }
 }
 const form = ref(emptyForm())
@@ -731,6 +736,7 @@ function openEdit(b: BillItem) {
     billType: b.billType, minAmount: b.minAmount ?? null, maxAmount: b.maxAmount ?? null,
     startDate: b.startDate || '',
     preferredSourceBank: b.preferredSourceBank || '', preferredSourceAccount: b.preferredSourceAccount || '',
+    lateFee: b.lateFee ?? '',
   }
   showModal.value = true
 }
@@ -748,6 +754,8 @@ async function saveBill() {
   }
   const yearlyish = f.frequency === 'yearly' || f.frequency === 'semi_annual'
   const startDate = usesStartDate(f.frequency) ? (f.startDate || null) : null
+  // Blank late fee = use the default from Settings
+  const lateFee = f.lateFee === '' || f.lateFee == null ? null : Number(f.lateFee)
   let ok
   if (editMode.value) {
     // An empty string clears the preferred source on the backend
@@ -758,6 +766,7 @@ async function saveBill() {
       startDate,
       minAmount: isFloating ? f.minAmount : null, maxAmount: isFloating ? f.maxAmount : null,
       preferredSourceBank: bank, preferredSourceAccount: bank ? (f.preferredSourceAccount || '') : '',
+      lateFee: lateFee ?? -1,
     }}), 'updateBill', { failMessage: 'Failed to update bill' })
   } else {
     ok = await runMutation(() => doCreate({ variables: {
@@ -768,6 +777,7 @@ async function saveBill() {
       startDate,
       preferredSourceBank: f.preferredSourceBank || null,
       preferredSourceAccount: f.preferredSourceBank ? (f.preferredSourceAccount || null) : null,
+      lateFee,
     }}), 'createBill', { failMessage: 'Failed to create bill' })
   }
   if (!ok) return

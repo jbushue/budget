@@ -107,12 +107,58 @@ class DashboardSummaryType(graphene.ObjectType):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+#  Alerts
+# ─────────────────────────────────────────────────────────────────────────
+
+class AlertType(graphene.ObjectType):
+    key = graphene.String(description="Pass to dismissAlert")
+    severity = graphene.String(description="danger | warning | info")
+    title = graphene.String()
+    detail = graphene.String()
+    link = graphene.String(description="Page in the web UI to deal with it")
+    date = graphene.String()
+
+
+class DismissAlert(graphene.Mutation):
+    """Hide an alert. `days` snoozes it; omit to hide it until the situation changes."""
+    class Arguments:
+        key = graphene.String(required=True)
+        days = graphene.Int()
+
+    success = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info, key, days=None):
+        from models import alerts
+        alerts.dismiss(key, days)
+        return DismissAlert(success=True, message="Dismissed")
+
+
+class SendDigestEmail(graphene.Mutation):
+    """Send the daily digest email now (to test the SMTP settings)."""
+    success = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info):
+        from models import alerts
+        manager = _manager(info)
+        if not manager:
+            return SendDigestEmail(success=False, message="Manager not available")
+        try:
+            return SendDigestEmail(success=True, message=alerts.send_digest(manager, force=True))
+        except Exception as e:
+            return SendDigestEmail(success=False, message=f"Couldn't send: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────
 #  Roots
 # ─────────────────────────────────────────────────────────────────────────
 
 class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
     settings = graphene.JSONString(description="App settings (secrets omitted)")
     dashboard_summary = graphene.Field(DashboardSummaryType)
+    alerts = graphene.List(AlertType, include_dismissed=graphene.Boolean())
+    digest_preview = graphene.String(description="Today's digest email text")
 
     def resolve_settings(self, info):
         return app_settings.public_settings()
@@ -124,6 +170,23 @@ class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
         from models.dashboard import build_dashboard
         return build_dashboard(manager)
 
+    def resolve_alerts(self, info, include_dismissed=False):
+        manager = _manager(info)
+        if not manager:
+            return []
+        from models.alerts import build_alerts
+        return build_alerts(manager, include_dismissed=bool(include_dismissed))
+
+    def resolve_digest_preview(self, info):
+        manager = _manager(info)
+        if not manager:
+            return None
+        from models.alerts import digest_text
+        subject, body = digest_text(manager)
+        return f"Subject: {subject}\n\n{body}"
+
 
 class ExtMutation(LedgerMutation, GoalsMutation, graphene.ObjectType):
     update_settings = UpdateSettings.Field()
+    dismiss_alert = DismissAlert.Field()
+    send_digest_email = SendDigestEmail.Field()

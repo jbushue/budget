@@ -5,6 +5,9 @@
     </div>
 
     <PlanningSettings />
+    <AlertSettings />
+    <DataFiles />
+    <SecuritySettings />
 
     <!-- SimpleFIN Bridge -->
     <div class="card" style="margin-bottom:1.5rem">
@@ -212,6 +215,9 @@ import {
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
 import PlanningSettings from '../components/PlanningSettings.vue'
+import AlertSettings from '../components/AlertSettings.vue'
+import DataFiles from '../components/DataFiles.vue'
+import SecuritySettings from '../components/SecuritySettings.vue'
 import { currency, fmtDate } from '../utils/format'
 import type { Bank, SimplefinStatus, SimplefinAccount, MutationPayload } from '../types'
 

@@ -345,6 +345,10 @@ const comparisonRows = computed<CompRow[]>(() => {
     { label: 'Interest charged', hint: 'On cards and HELOCs', base: b.interestCharged, opt: o.interestCharged, better: -1, fmt: currency },
     { label: 'Interest earned', hint: 'On savings / checking', base: b.interestEarned, opt: o.interestEarned, better: 1, fmt: currency },
   ]
+  if (b.fees || o.fees) {
+    rows.push({ label: 'Late & overdraft fees', hint: 'Using the fees in Settings → Planning (and each bill’s own late fee)',
+      base: b.fees, opt: o.fees, better: -1, fmt: currency })
+  }
   if (b.pendingDeferredInterest || o.pendingDeferredInterest) {
     rows.push({ label: 'Deferred promo interest at risk', hint: 'If promo money still owed at the end isn\'t paid before the promo expires',
       base: b.pendingDeferredInterest, opt: o.pendingDeferredInterest, better: -1, fmt: currency })

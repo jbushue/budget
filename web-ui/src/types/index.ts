@@ -105,6 +105,7 @@ export interface BillItem {
   minAmount: number | null
   maxAmount: number | null
   startDate?: string | null
+  lateFee?: number | null
   nextDueDate: string
   preferredSourceBank: string | null
   preferredSourceAccount: string | null
@@ -353,6 +354,8 @@ export interface OutcomeSummary {
   interestEarned: number
   paymentsOnTime: number
   pendingDeferredInterest: number
+  fees: number
+  everydaySpending: number
   latePayments: LatePayment[]
 }
 
@@ -681,4 +684,15 @@ export interface RecurringCharge {
   dueDay: number
   category: string | null
   monthlyCost: number
+}
+
+// ── Alerts ──
+
+export interface AlertItem {
+  key: string
+  severity: 'danger' | 'warning' | 'info'
+  title: string
+  detail: string
+  link: string
+  date: string
 }

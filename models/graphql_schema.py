@@ -257,6 +257,7 @@ class BillType(graphene.ObjectType):
     linked_account_name = graphene.String()
     linked_account_type = graphene.String()
     start_date = graphene.String()
+    late_fee = graphene.Float(description="Fee if paid late (null = the default from settings)")
 
 
 def _iso(d):
@@ -323,6 +324,7 @@ def _bill_to_type(bill) -> 'BillType':
         linked_account_name=bill.linked_account.account_name if is_linked else None,
         linked_account_type=getattr(bill, 'linked_account_type', None) if is_linked else None,
         start_date=_iso(getattr(bill, 'start_date', None)),
+        late_fee=getattr(bill, 'late_fee', None),
     )
 
 
@@ -603,6 +605,8 @@ class OutcomeSummaryType(graphene.ObjectType):
     late_payments = graphene.List(LatePaymentType)
     pending_deferred_interest = graphene.Float(
         description="Deferred interest unpaid 0% promos would trigger after the window")
+    fees = graphene.Float(description="Late and overdraft fees in the window")
+    everyday_spending = graphene.Float(description="Everyday spending allowance included in the window")
 
 
 class WhatIfResultType(graphene.ObjectType):
@@ -1716,6 +1720,7 @@ class CreateBill(graphene.Mutation):
         preferred_source_bank = graphene.String()
         preferred_source_account = graphene.String()
         start_date = graphene.String()
+        late_fee = graphene.Float(description="Fee if paid late (omit to use the default from settings)")
 
     bill = graphene.Field(BillType)
     success = graphene.Boolean()
@@ -1723,7 +1728,7 @@ class CreateBill(graphene.Mutation):
 
     def mutate(self, info, bill_name, amount, due_date, frequency, due_month=None, bill_type="fixed",
                min_amount=None, max_amount=None, preferred_source_bank=None, preferred_source_account=None,
-               start_date=None):
+               start_date=None, late_fee=None):
         manager = info.context.get('manager')
         if not manager:
             return CreateBill(success=False, message="Manager not available")
@@ -1748,6 +1753,10 @@ class CreateBill(graphene.Mutation):
                 bill = Bill(bill_name, amount, **common)
             else:
                 return CreateBill(success=False, message=f"Unsupported bill type '{bill_type}'. Use fixed or floating.")
+            if late_fee is not None:
+                if late_fee < 0:
+                    return CreateBill(success=False, message="Late fee can't be negative")
+                bill.late_fee = late_fee
             manager.bills.append(bill)
             manager.save_to_database()
             return CreateBill(bill=_bill_to_type(bill), success=True, message=f"Bill '{bill_name}' created")
@@ -1964,12 +1973,13 @@ class UpdateBill(graphene.Mutation):
         max_amount = graphene.Float()
         preferred_source_bank = graphene.String()
         preferred_source_account = graphene.String()
+        late_fee = graphene.Float(description="Fee if paid late; a negative value means use the default")
     success = graphene.Boolean()
     message = graphene.String()
 
     def mutate(self, info, bill_name, amount=None, due_date=None, frequency=None, due_month=None,
                start_date=None, min_amount=None, max_amount=None,
-               preferred_source_bank=None, preferred_source_account=None):
+               preferred_source_bank=None, preferred_source_account=None, late_fee=None):
         manager = info.context.get('manager')
         if not manager:
             return UpdateBill(success=False, message="Manager not available")
@@ -2003,6 +2013,8 @@ class UpdateBill(graphene.Mutation):
                 bill.due_month = due_month
             if start_date is not None:
                 bill.start_date = _parse_date(start_date, "start date")
+            if late_fee is not None:
+                bill.late_fee = late_fee if late_fee >= 0 else None
             if isinstance(bill, FloatingBill):
                 if min_amount is not None:
                     bill.min_amount = min_amount

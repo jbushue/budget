@@ -13,6 +13,7 @@ const routes = [
   { path: '/optimizer', name: 'Optimizer', component: () => import('../views/OptimizerView.vue') },
   { path: '/debt-payoff', name: 'DebtPayoff', component: () => import('../views/DebtPayoffView.vue') },
   { path: '/scenarios', name: 'Scenarios', component: () => import('../views/ScenarioView.vue') },
+  { path: '/reports', name: 'Reports', component: () => import('../views/ReportsView.vue') },
   { path: '/settings', name: 'Settings', component: () => import('../views/SettingsView.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

@@ -14,3 +14,10 @@ const app = createApp({
 
 app.use(router)
 app.mount('#app')
+
+// Installable app (PWA). Browsers only allow service workers on localhost or HTTPS.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* not available here */ })
+  })
+}
