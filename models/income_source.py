@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 from enum import Enum
 from copy import deepcopy
 from typing import Optional
 
 from models.types import DistributionType, DistributionEnumType
+from models.date_utils import add_months, clamped_date, next_by_days, next_by_months
 
 
 class IncomeFrequency(Enum):
@@ -25,8 +26,9 @@ class IncomeSource:
         source_name: str,
         amount: float,
         frequency: IncomeFrequency = IncomeFrequency.MONTHLY,
-        pay_date: list[int] = None,  # Day(s) of month (1-31)
-        distribution: dict = None  # {account_name: amount or "remainder"} or {account_name: percentage}
+        pay_date: list[int] | int = None,  # Day(s) of month (1-31)
+        distribution: dict = None,  # {account_name: amount or "remainder"} or {account_name: percentage}
+        start_date: date | None = None,
     ):
         """
         Args:
@@ -37,6 +39,9 @@ class IncomeSource:
             distribution: How to distribute income across accounts
                 Example: {"checking": 1000, "savings": "remainder"}
                 Example: {"checking": 0.8, "savings": 0.2}  # percentages
+            start_date: Optional anchor (first pay date) for weekly, biweekly,
+                bimonthly, quarterly, yearly and one-time income. Ignored for
+                monthly/semimonthly income, which use the pay_date list.
         """
         if amount <= 0:
             raise ValueError("Income amount must be positive.")
@@ -48,8 +53,11 @@ class IncomeSource:
             frequency = IncomeFrequency[frequency.upper()]
         self.frequency = frequency
 
-        self.pay_date = pay_date  # Day of month (1-31)
+        if isinstance(pay_date, int):
+            pay_date = [pay_date]
+        self.pay_date = pay_date  # Day(s) of month (1-31)
         self.distribution = DistributionType.__fromdict__(dist_dict=distribution)
+        self.start_date = start_date  # Anchor for non-monthly frequencies
 
         # Tracking
         self.deposit_history: list[dict] = []
@@ -75,62 +83,134 @@ class IncomeSource:
             return pay_date - timedelta(days=2)  # Move to Friday
         return pay_date
 
+    # Step sizes for anchored frequencies
+    _DAY_STEPS = {
+        IncomeFrequency.WEEKLY: 7,
+        IncomeFrequency.BIWEEKLY: 14,
+    }
+    _MONTH_STEPS = {
+        IncomeFrequency.BIMONTHLY: 2,
+        IncomeFrequency.QUARTERLY: 3,
+        IncomeFrequency.YEARLY: 12,
+    }
+    # Weekend adjustment moves a pay date back at most this many days
+    _MAX_WEEKEND_SHIFT = 2
+
+    def _first_pay_day(self, fallback: int) -> int:
+        """First configured pay day of month, or ``fallback`` when none is set."""
+        if self.pay_date:
+            return sorted(self.pay_date)[0]
+        return fallback
+
+    def _get_implicit_anchor(self, reference_date: date) -> date:
+        """
+        Fallback anchor (unadjusted first pay date) used when no ``start_date``
+        is given for an anchored frequency (weekly, biweekly, bimonthly,
+        quarterly, yearly, once).
+
+        The anchor is the first date strictly after the *first* reference date
+        this income is asked about that falls on the first ``pay_date`` day
+        (clamped to month length); with no ``pay_date`` it is the day after
+        that reference date. It is remembered on the instance so later lookups
+        stay on the same cycle — e.g. a simulation starting Jan 1 anchors a
+        biweekly paycheck with pay_date=[2] at Jan 2 and repeats every 14 days.
+        """
+        anchor = getattr(self, '_implicit_anchor', None)
+        if anchor is None:
+            if not self.pay_date:
+                anchor = reference_date + timedelta(days=1)
+            else:
+                day = self._first_pay_day(reference_date.day)
+                anchor = clamped_date(reference_date.year, reference_date.month, day)
+                if anchor <= reference_date:
+                    y, m = add_months(reference_date.year, reference_date.month, 1)
+                    anchor = clamped_date(y, m, day)
+            self._implicit_anchor = anchor
+        return anchor
+
+    def _raw_pay_dates(self, start_date: date, end_date: date) -> list[date]:
+        """
+        Unadjusted (pre-weekend-shift) pay dates in (start_date, end_date],
+        according to the income frequency.
+        """
+        raw = []
+        frequency = self.frequency
+        anchor = getattr(self, 'start_date', None)
+
+        if frequency == IncomeFrequency.ONCE:
+            occurrence = anchor or self._get_implicit_anchor(start_date)
+            if start_date < occurrence <= end_date:
+                raw.append(occurrence)
+            return raw
+
+        if frequency in self._DAY_STEPS:
+            step = self._DAY_STEPS[frequency]
+            if anchor is None:
+                anchor = self._get_implicit_anchor(start_date)
+            current = next_by_days(anchor, step, start_date, allow_before=False)
+            while current <= end_date:
+                raw.append(current)
+                current += timedelta(days=step)
+            return raw
+
+        if frequency in self._MONTH_STEPS:
+            step = self._MONTH_STEPS[frequency]
+            if anchor is not None:
+                a_year, a_month, day, allow_before = anchor.year, anchor.month, anchor.day, False
+            else:
+                implicit = self._get_implicit_anchor(start_date)
+                a_year, a_month, allow_before = implicit.year, implicit.month, True
+                day = self._first_pay_day(implicit.day)
+            current = next_by_months(a_year, a_month, day, step, start_date, allow_before)
+            while current <= end_date:
+                raw.append(current)
+                current = next_by_months(a_year, a_month, day, step, current, allow_before)
+            return raw
+
+        # MONTHLY / SEMIMONTHLY: every configured pay day of every month
+        if self.pay_date is None or len(self.pay_date) == 0:
+            # No specific pay dates, use the start_date's day as the pay day
+            pay_date_list = [start_date.day]
+        else:
+            pay_date_list = sorted(self.pay_date)
+
+        year, month = start_date.year, start_date.month
+        while date(year, month, 1) <= end_date:
+            for pay_day in pay_date_list:
+                # Handle month-end edge cases (e.g., 31st in February)
+                candidate = clamped_date(year, month, pay_day)
+                if start_date < candidate <= end_date:
+                    raw.append(candidate)
+            year, month = add_months(year, month, 1)
+        return raw
+
     def get_pay_dates_in_range(self, start_date: date, end_date: date) -> list[date]:
         """
         Get all pay dates that fall within a date range.
-        
-        For semimonthly income, this returns all pay dates (e.g., both 15th and 31st)
-        that fall within the range. Pay dates that fall on weekends are adjusted
-        to the Friday before.
-        
+
+        Monthly/semimonthly income returns every configured ``pay_date`` day
+        (e.g. both the 15th and the 31st, clamped to month length). Weekly,
+        biweekly, bimonthly, quarterly, yearly and one-time income follow
+        their frequency from ``start_date`` (or the implicit anchor, see
+        ``_get_implicit_anchor``). Pay dates that fall on weekends are
+        adjusted to the Friday before — including a paycheck whose raw date is
+        just past ``end_date`` but shifts back into the range.
+
         Args:
             start_date: Start of the date range (exclusive)
             end_date: End of the date range (inclusive)
-            
+
         Returns:
             List of dates when income is received within the range
         """
-        import calendar
-        
-        pay_dates = []
-        
-        if self.pay_date is None or len(self.pay_date) == 0:
-            # No specific pay dates, use the start_date's day as the pay day
-            pay_day = start_date.day
-            pay_date_list = [pay_day]
-        else:
-            pay_date_list = sorted(self.pay_date)
-        
-        # Iterate through each month in the range
-        current_year = start_date.year
-        current_month = start_date.month
-        
-        while True:
-            for pay_day in pay_date_list:
-                # Handle month-end edge cases (e.g., 31st in February)
-                last_day_of_month = calendar.monthrange(current_year, current_month)[1]
-                actual_day = min(pay_day, last_day_of_month)
-                
-                try:
-                    raw_pay_date = date(current_year, current_month, actual_day)
-                    # Adjust for weekends - move to Friday before
-                    adjusted_pay_date = self._adjust_for_weekend(raw_pay_date)
-                    if start_date < adjusted_pay_date <= end_date:
-                        pay_dates.append(adjusted_pay_date)
-                except ValueError:
-                    continue
-            
-            # Move to next month
-            if current_month == 12:
-                current_year += 1
-                current_month = 1
-            else:
-                current_month += 1
-            
-            # Stop if we've passed the end date
-            if date(current_year, current_month, 1) > end_date:
-                break
-        
+        # Look a couple of days past end_date: a Saturday/Sunday pay date
+        # right after the window shifts back to the Friday inside it.
+        lookahead_end = end_date + timedelta(days=self._MAX_WEEKEND_SHIFT)
+        pay_dates = set()
+        for raw_pay_date in self._raw_pay_dates(start_date, lookahead_end):
+            adjusted_pay_date = self._adjust_for_weekend(raw_pay_date)
+            if start_date < adjusted_pay_date <= end_date:
+                pay_dates.add(adjusted_pay_date)
         return sorted(pay_dates)
 
     def validate_distribution(self, bank) -> bool:
@@ -255,71 +335,24 @@ class IncomeSource:
 
     def get_next_pay_date(self, reference_date: date) -> date:
         """
-        Calculate the next pay date relative to a reference date.
-        
-        For semimonthly income, this handles multiple pay dates per month
-        (e.g., [15, 31] for 15th and last day of month).
-        
-        Pay dates that fall on weekends are adjusted to the Friday before.
+        Calculate the next pay date strictly after a reference date.
+
+        Honors the income frequency (see ``get_pay_dates_in_range``), handles
+        multiple pay days per month for semimonthly income (e.g. [15, 31]),
+        and adjusts weekend pay dates to the Friday before. Returns
+        ``date.max`` for one-time income whose pay date has already passed.
         """
-        year = reference_date.year
-        month = reference_date.month
-
-        if self.pay_date is None or len(self.pay_date) == 0:
-            # No specific pay date, assume same day of month
-            try:
-                next_pay = date(year, month, reference_date.day)
-            except ValueError:
-                next_pay = date(year, month, 28)
-            
-            # Adjust for weekends
-            next_pay = self._adjust_for_weekend(next_pay)
-            
-            if next_pay <= reference_date:
-                # Pay date has passed this month, move to next month
-                if month == 12:
-                    year += 1
-                    month = 1
-                else:
-                    month += 1
-                try:
-                    next_pay = date(year, month, reference_date.day)
-                except ValueError:
-                    next_pay = date(year, month, 28)
-                next_pay = self._adjust_for_weekend(next_pay)
-            return next_pay
-
-        # Handle list of pay dates (e.g., [15, 31] for semimonthly)
-        sorted_pay_dates = sorted(self.pay_date)
-        
-        # Helper function to get valid date (handles month-end edge cases like 31st in Feb)
-        def get_valid_date(y: int, m: int, day: int) -> date:
-            import calendar
-            last_day_of_month = calendar.monthrange(y, m)[1]
-            actual_day = min(day, last_day_of_month)
-            return date(y, m, actual_day)
-        
-        # Look for next pay date in current month
-        for day in sorted_pay_dates:
-            try:
-                raw_date = get_valid_date(year, month, day)
-                # Adjust for weekends
-                check_date = self._adjust_for_weekend(raw_date)
-                if check_date > reference_date:
-                    return check_date
-            except ValueError:
-                continue
-        
-        # No valid pay date found in current month, move to next month
-        if month == 12:
-            year += 1
-            month = 1
-        else:
-            month += 1
-        
-        # Return first pay date of next month (adjusted for weekends)
-        raw_date = get_valid_date(year, month, sorted_pay_dates[0])
-        return self._adjust_for_weekend(raw_date)
+        window_days = 400  # covers every frequency, including yearly
+        window_start = reference_date
+        for _ in range(3):
+            window_end = window_start + timedelta(days=window_days)
+            upcoming = self.get_pay_dates_in_range(window_start, window_end)
+            if upcoming:
+                return upcoming[0]
+            if self.frequency == IncomeFrequency.ONCE:
+                break
+            window_start = window_end
+        return date.max
 
     def copy(self):
         """Create a deep copy of this income source."""

@@ -4,7 +4,9 @@ version = "0.2.0"
 description = "Professional personal finance management system with projections, optimization, and persistent SQLite storage"
 requires-python = ">=3.13"
 dependencies = [
+    "flask>=3.0.0",
     "flask-cors>=6.0.2",
+    "graphene>=3.3.0",
     "openpyxl>=3.1.5",
     "sqlalchemy>=2.0.46",
 ]

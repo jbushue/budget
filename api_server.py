@@ -7,9 +7,11 @@ Run with: python api_server.py
 Then access GraphQL playground at: http://localhost:4000/graphql
 """
 
+import os
+import threading
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import json
 from models.graphql_schema import schema
 from models.finance_manager import FinanceManager
 
@@ -19,14 +21,24 @@ def create_app():
     app = Flask(__name__)
     CORS(app)  # Enable CORS
 
-    # Initialize the finance manager
+    # Initialize the finance manager. One manager is shared by all requests,
+    # so GraphQL operations are serialized with a lock.
     manager = FinanceManager([], [], [])
+    lock = threading.Lock()
     manager.initialize_database()
 
     # Try to load from database
     try:
         if manager.load_from_database():
             print("✓ Loaded data from database")
+            # Auto-reset bill periods that have rolled over
+            reset_count = manager.auto_reset_periods()
+            if reset_count > 0:
+                print(f"✓ Auto-reset {reset_count} bill period(s)")
+            # Record daily net worth snapshot
+            snap = manager.record_net_worth_snapshot()
+            if snap:
+                print(f"✓ Net worth snapshot: ${snap['net_worth']:,.2f}")
         else:
             print("ℹ️  No data in database. Use GraphQL mutations to create data.")
     except Exception as e:
@@ -54,14 +66,15 @@ def create_app():
               </head>
               <body>
                 <div id="root"></div>
+                <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+                <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
                 <script src="https://cdn.jsdelivr.net/npm/graphiql@3/graphiql.min.js"></script>
                 <script>
                   const fetcher = GraphiQL.createFetcher({
                     url: '/graphql',
                   });
-                  ReactDOM.render(
+                  ReactDOM.createRoot(document.getElementById('root')).render(
                     React.createElement(GraphiQL, { fetcher }),
-                    document.getElementById('root'),
                   );
                 </script>
               </body>
@@ -69,7 +82,7 @@ def create_app():
             '''
 
         # Handle POST requests
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         query = data.get('query')
         variables = data.get('variables')
 
@@ -78,11 +91,12 @@ def create_app():
 
         try:
             # Execute the query
-            result = schema.execute(
-                query,
-                variable_values=variables,
-                context_value={'manager': manager}
-            )
+            with lock:
+                result = schema.execute(
+                    query,
+                    variable_values=variables,
+                    context_value={'manager': manager}
+                )
 
             response = {}
             if result.data:
@@ -90,7 +104,10 @@ def create_app():
             if result.errors:
                 response['errors'] = [{'message': str(e)} for e in result.errors]
 
-            return jsonify(response), 200 if not result.errors else 400
+            # Always return 200 for GraphQL responses per the GraphQL-over-HTTP spec.
+            # Errors are communicated in the response body, not via HTTP status codes.
+            # Returning 400 causes Apollo client to throw network errors.
+            return jsonify(response), 200
         except Exception as e:
             return jsonify({'errors': [{'message': str(e)}]}), 500
 
@@ -136,6 +153,10 @@ if __name__ == '__main__':
     print("✓ API Info: http://localhost:4000/")
     print("\n" + "=" * 80 + "\n")
 
+    # Debug mode (auto-reload + interactive debugger) is opt-in: the Werkzeug
+    # debugger allows arbitrary code execution, so never expose it on the network.
+    debug = os.environ.get('BUDGET_DEBUG') == '1'
+    host = os.environ.get('BUDGET_HOST', '127.0.0.1')
     app = create_app()
-    app.run(debug=True, host='0.0.0.0', port=4000)
+    app.run(debug=debug, host=host, port=4000)
 

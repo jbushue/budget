@@ -11,10 +11,55 @@ from models.payment_optimizer import PaymentOptimizer
 class FinancialReport:
     """Generates comprehensive financial reports and projections."""
 
-    def __init__(self, banks: list[Bank], income_sources: list[IncomeSource], bills: list[Bill]):
+    # Cash-flow entry types that move money out of bank accounts to pay
+    # obligations (deferred entries are excluded — no money moved).
+    PAYMENT_TYPES = {
+        "BILL_PAYMENT": "bills",
+        "CREDIT_PAYMENT": "credit_payments",
+        "MORTGAGE_PAYMENT": "mortgage_payments",
+        "HELOC_PAYMENT": "heloc_payments",
+        "BILL_GROUP_PAYMENT": "group_payments",
+    }
+    DEFERRED_TYPES = {
+        "BILL_DEFERRED", "CREDIT_PAYMENT_DEFERRED", "MORTGAGE_DEFERRED",
+        "HELOC_PAYMENT_DEFERRED", "BILL_GROUP_DEFERRED",
+    }
+
+    def __init__(self, banks: list[Bank], income_sources: list[IncomeSource], bills: list[Bill],
+                 bill_groups: list = None):
         self.banks = banks
         self.income_sources = income_sources
         self.bills = bills
+        self.bill_groups = bill_groups or []
+
+    def _copy_state(self):
+        """
+        Deep-copy banks, income, bills and bill groups in ONE call so linked
+        bills (AccountLinkedBill / GroupLinkedBill) keep pointing at the copied
+        accounts/groups instead of the real ones.
+        """
+        return deepcopy((self.banks, self.income_sources, self.bills, self.bill_groups))
+
+    def _new_simulator(self) -> TimelineSimulator:
+        """TimelineSimulator over an isolated copy of the current state."""
+        banks, income, bills, groups = self._copy_state()
+        return TimelineSimulator(banks, income, bills, groups)
+
+    def _interest_is_charged(self, cf_item: dict) -> bool:
+        """True for interest charged on debt (credit/HELOC), False for interest earned."""
+        kind = cf_item.get("account_kind")
+        if kind is not None:
+            return kind in ("credit", "heloc")
+        acct = cf_item.get("account", "")
+        bank_name = cf_item.get("bank")
+        for bank in self.banks:
+            if bank_name and bank.name != bank_name:
+                continue
+            if acct in bank.accounts:
+                return False
+            if acct in bank.credit_accounts or acct in bank.heloc_accounts:
+                return True
+        return False
 
     def current_snapshot(self) -> str:
         """Generate a snapshot of current financial state."""
@@ -67,7 +112,7 @@ class FinancialReport:
         start_date: date,
         end_date: date,
         include_optimization: bool = True
-    ) -> str:
+    ) -> dict:
         """
         Generate a detailed projection report for a date range.
 
@@ -75,6 +120,9 @@ class FinancialReport:
             start_date: Projection start date
             end_date: Projection end date
             include_optimization: Whether to include optimized payment plan
+
+        Returns:
+            Dictionary with 'text' (formatted report string) and 'result' (raw simulation data)
         """
         lines = []
         lines.append("=" * 80)
@@ -82,78 +130,237 @@ class FinancialReport:
         lines.append("=" * 80)
 
         # Simulate with current defaults
-        simulator = TimelineSimulator(
-            deepcopy(self.banks),
-            deepcopy(self.income_sources),
-            deepcopy(self.bills)
-        )
+        simulator = self._new_simulator()
 
         result = simulator.project_balances(start_date, end_date)
 
-        # Timeline summary
+        # ── Starting Balances ──
+        lines.append("\n" + "─" * 80)
+        lines.append("STARTING BALANCES:")
+        lines.append("─" * 80)
+
+        if result["snapshots"]:
+            first_snap = result["snapshots"][0]
+            for account_name, balance in sorted(first_snap["balances"].items()):
+                lines.append(f"  💰 {account_name}: ${balance:,.2f}")
+            for account_name, balance in sorted(first_snap.get("credit_balances", {}).items()):
+                if balance > 0:
+                    lines.append(f"  💳 {account_name}: ${balance:,.2f} owed")
+            for account_name, balance in sorted(first_snap.get("mortgage_balances", {}).items()):
+                if balance > 0:
+                    lines.append(f"  🏠 {account_name}: ${balance:,.2f} remaining")
+
+        # ── Monthly Cash Flow Summaries ──
         lines.append("\n" + "=" * 80)
-        lines.append("TIMELINE EVENTS:")
+        lines.append("MONTHLY CASH FLOW SUMMARIES:")
         lines.append("=" * 80)
 
-        for event in result["events"]:
-            lines.append(
-                f"{event.event_date}: [{event.event_type}] {event.description} "
-                f"(${event.amount:,.2f})"
-            )
+        # Group cash flow by year-month
+        monthly_data = {}
+        for cf_item in result["cash_flow"]:
+            cf_date = cf_item["date"]
+            ym_key = (cf_date.year, cf_date.month)
+            if ym_key not in monthly_data:
+                monthly_data[ym_key] = {
+                    "income": 0.0,
+                    "bills": 0.0,
+                    "credit_payments": 0.0,
+                    "mortgage_payments": 0.0,
+                    "heloc_payments": 0.0,
+                    "group_payments": 0.0,
+                    "extra_payments": 0.0,
+                    "interest_earned": 0.0,
+                    "interest_charged": 0.0,
+                    "deferred": [],
+                }
+            md = monthly_data[ym_key]
+            cf_type = cf_item["type"]
+            amount = cf_item["amount"]
 
-        # Cash flow summary
+            if cf_type == "INCOME":
+                md["income"] += amount
+            elif cf_type in self.PAYMENT_TYPES:
+                md[self.PAYMENT_TYPES[cf_type]] += abs(amount)
+            elif cf_type in ("EXTRA_CREDIT_PAYMENT", "PROMO_PAYOFF"):
+                md["extra_payments"] += abs(amount)
+            elif cf_type == "INTEREST":
+                if amount > 0:
+                    # Earned on bank accounts vs. charged on credit/HELOC debt.
+                    # Charged interest increases debt; it is not a cash outflow.
+                    if self._interest_is_charged(cf_item):
+                        md["interest_charged"] += amount
+                    else:
+                        md["interest_earned"] += amount
+            elif cf_type in self.DEFERRED_TYPES:
+                md["deferred"].append(cf_item)
+
+        # Find end-of-month snapshots for balance display
+        month_end_snapshots = {}
+        for snapshot in result["snapshots"]:
+            snap_date = snapshot["date"]
+            ym_key = (snap_date.year, snap_date.month)
+            month_end_snapshots[ym_key] = snapshot  # Last snapshot of each month wins
+
+        # Print monthly summaries
+        import calendar
+        for ym_key in sorted(monthly_data.keys()):
+            year, month = ym_key
+            month_name = calendar.month_name[month]
+            md = monthly_data[ym_key]
+
+            # Cash outflows only — interest charged on debt is shown separately
+            # (it is paid through the credit/HELOC payments above).
+            total_outflows = (md["bills"] + md["credit_payments"] + md["mortgage_payments"]
+                              + md["heloc_payments"] + md["group_payments"] + md["extra_payments"])
+            net = md["income"] + md["interest_earned"] - total_outflows
+
+            lines.append(f"\n{'─' * 80}")
+            lines.append(f"  📅 {month_name} {year}")
+            lines.append(f"{'─' * 80}")
+            lines.append(f"    💵 Income:              ${md['income']:>12,.2f}")
+            if md["interest_earned"] > 0:
+                lines.append(f"    🏦 Interest Earned:     ${md['interest_earned']:>12,.2f}")
+            lines.append(f"    📄 Bills:              -${md['bills']:>12,.2f}")
+            if md["credit_payments"] > 0:
+                lines.append(f"    💳 Credit Payments:    -${md['credit_payments']:>12,.2f}")
+            if md["mortgage_payments"] > 0:
+                lines.append(f"    🏠 Mortgage Payments:  -${md['mortgage_payments']:>12,.2f}")
+            if md["heloc_payments"] > 0:
+                lines.append(f"    🏦 HELOC Payments:     -${md['heloc_payments']:>12,.2f}")
+            if md["group_payments"] > 0:
+                lines.append(f"    📦 Group Payments:     -${md['group_payments']:>12,.2f}")
+            if md["extra_payments"] > 0:
+                lines.append(f"    🎯 Extra Payments:     -${md['extra_payments']:>12,.2f}")
+            if md["interest_charged"] > 0:
+                lines.append(f"    ⚠️  Interest Charged:   ${md['interest_charged']:>12,.2f} (added to debt)")
+
+            if net >= 0:
+                lines.append(f"    {'─' * 40}")
+                lines.append(f"    ✅ Net Cash Flow:       ${net:>12,.2f}")
+            else:
+                lines.append(f"    {'─' * 40}")
+                lines.append(f"    🔴 Net Cash Flow:      -${abs(net):>12,.2f}")
+
+            # Show deferred/failed payments
+            if md["deferred"]:
+                lines.append(f"    ⚠️  Deferred Payments:")
+                for d in md["deferred"]:
+                    lines.append(f"       - {d['description']}: ${abs(d['amount']):,.2f}")
+
+            # Show end-of-month balances
+            snap = month_end_snapshots.get(ym_key)
+            if snap:
+                lines.append(f"    ── End of Month Balances ──")
+                for acct_name, bal in sorted(snap["balances"].items()):
+                    lines.append(f"      💰 {acct_name}: ${bal:,.2f}")
+                for acct_name, bal in sorted(snap.get("credit_balances", {}).items()):
+                    if bal > 0:
+                        lines.append(f"      💳 {acct_name}: ${bal:,.2f} owed")
+                    else:
+                        lines.append(f"      💳 {acct_name}: ✅ PAID OFF")
+                for acct_name, bal in sorted(snap.get("mortgage_balances", {}).items()):
+                    if bal > 0:
+                        lines.append(f"      🏠 {acct_name}: ${bal:,.2f} remaining")
+
+        # ── Overall Summary ──
         lines.append("\n" + "=" * 80)
-        lines.append("CASH FLOW SUMMARY:")
+        lines.append("OVERALL SUMMARY:")
         lines.append("=" * 80)
 
-        income_total = sum(cf["amount"] for cf in result["cash_flow"] if cf["type"] == "INCOME")
-        expense_total = sum(cf["amount"] for cf in result["cash_flow"] if cf["type"] == "BILL_PAYMENT")
-        interest_total = sum(cf["amount"] for cf in result["cash_flow"] if cf["type"] == "INTEREST")
+        total_income = sum(md["income"] for md in monthly_data.values())
+        total_interest_earned = sum(md["interest_earned"] for md in monthly_data.values())
+        total_bills = sum(md["bills"] for md in monthly_data.values())
+        total_credit_pmts = sum(md["credit_payments"] for md in monthly_data.values())
+        total_mortgage_pmts = sum(md["mortgage_payments"] for md in monthly_data.values())
+        total_heloc_pmts = sum(md["heloc_payments"] for md in monthly_data.values())
+        total_group_pmts = sum(md["group_payments"] for md in monthly_data.values())
+        total_extra_pmts = sum(md["extra_payments"] for md in monthly_data.values())
+        total_interest_charged = sum(md["interest_charged"] for md in monthly_data.values())
+        total_outflows = (total_bills + total_credit_pmts + total_mortgage_pmts
+                          + total_heloc_pmts + total_group_pmts + total_extra_pmts)
+        net_total = total_income + total_interest_earned - total_outflows
 
-        lines.append(f"Total Income: ${income_total:,.2f}")
-        lines.append(f"Total Expenses: ${-expense_total:,.2f}")
-        lines.append(f"Total Interest: ${interest_total:,.2f}")
-        lines.append(f"Net Change: ${income_total + expense_total + interest_total:,.2f}")
+        lines.append(f"  Total Income:            ${total_income:>14,.2f}")
+        if total_interest_earned > 0:
+            lines.append(f"  Total Interest Earned:   ${total_interest_earned:>14,.2f}")
+        lines.append(f"  Total Bills:            -${total_bills:>14,.2f}")
+        if total_credit_pmts > 0:
+            lines.append(f"  Total Credit Payments:  -${total_credit_pmts:>14,.2f}")
+        if total_mortgage_pmts > 0:
+            lines.append(f"  Total Mortgage Payments:-${total_mortgage_pmts:>14,.2f}")
+        if total_heloc_pmts > 0:
+            lines.append(f"  Total HELOC Payments:   -${total_heloc_pmts:>14,.2f}")
+        if total_group_pmts > 0:
+            lines.append(f"  Total Group Payments:   -${total_group_pmts:>14,.2f}")
+        if total_extra_pmts > 0:
+            lines.append(f"  Total Extra Payments:   -${total_extra_pmts:>14,.2f}")
+        if total_interest_charged > 0:
+            lines.append(f"  Total Interest Charged:  ${total_interest_charged:>14,.2f} (added to debt)")
+        lines.append(f"  {'─' * 40}")
+        if net_total >= 0:
+            lines.append(f"  ✅ Net Change:           ${net_total:>14,.2f}")
+        else:
+            lines.append(f"  🔴 Net Change:          -${abs(net_total):>14,.2f}")
 
-        # Final balances
+        # ── Final Balances ──
         lines.append("\n" + "=" * 80)
         lines.append("FINAL ACCOUNT BALANCES:")
         lines.append("=" * 80)
 
-        total_final = 0
+        total_bank = 0
         for account_name, balance in sorted(result["final_balances"].items()):
-            lines.append(f"  {account_name}: ${balance:,.2f}")
-            total_final += balance
+            lines.append(f"  💰 {account_name}: ${balance:,.2f}")
+            total_bank += balance
 
-        lines.append(f"\n  TOTAL: ${total_final:,.2f}")
+        total_credit = 0
+        for account_name, balance in sorted(result.get("credit_final_balances", {}).items()):
+            if balance > 0:
+                lines.append(f"  💳 {account_name}: ${balance:,.2f} owed")
+            else:
+                lines.append(f"  💳 {account_name}: ✅ PAID OFF")
+            total_credit += balance
 
-        # Optimization recommendation
+        total_mortgage = 0
+        for account_name, balance in sorted(result.get("mortgage_final_balances", {}).items()):
+            if balance > 0:
+                lines.append(f"  🏠 {account_name}: ${balance:,.2f} remaining")
+            else:
+                lines.append(f"  🏠 {account_name}: ✅ PAID OFF")
+            total_mortgage += balance
+
+        lines.append(f"\n  Total Bank Balance:      ${total_bank:>14,.2f}")
+        if total_credit > 0:
+            lines.append(f"  Total Credit Owed:      -${total_credit:>14,.2f}")
+        if total_mortgage > 0:
+            lines.append(f"  Total Mortgage Owed:    -${total_mortgage:>14,.2f}")
+        net_worth = total_bank - total_credit - total_mortgage
+        lines.append(f"  {'─' * 40}")
+        lines.append(f"  Net Worth:               ${net_worth:>14,.2f}")
+
+        # ── Optimization ──
         if include_optimization:
             lines.append("\n" + "=" * 80)
             lines.append("PAYMENT OPTIMIZATION:")
             lines.append("=" * 80)
 
-            optimizer = PaymentOptimizer(
-                deepcopy(self.banks),
-                deepcopy(self.income_sources),
-                deepcopy(self.bills)
-            )
+            banks, income, bills, groups = self._copy_state()
+            optimizer = PaymentOptimizer(banks, income, bills, groups)
 
             optimized_plan = optimizer.optimize_payment_schedule(start_date, end_date)
 
-            lines.append(f"\nOptimized Plan: {optimized_plan}")
-            lines.append(f"Strategy:")
+            lines.append(f"\nStrategy:")
             for bill_name, assignment in optimized_plan.strategy.items():
                 lines.append(
                     f"  {bill_name}: Pay from {assignment['bank']}/{assignment['account']}"
                 )
 
             if optimized_plan.violations:
-                lines.append("\nViolations/Issues:")
+                lines.append("\n⚠️  Issues Detected:")
                 for violation in optimized_plan.violations:
                     lines.append(f"  - {violation}")
 
-        return "\n".join(lines)
+        report_text = "\n".join(lines)
+        return {"text": report_text, "result": result}
 
     def detailed_timeline(
         self,
@@ -167,11 +374,7 @@ class FinancialReport:
         lines.append(f"DETAILED TIMELINE: {start_date} to {end_date}")
         lines.append("=" * 120)
 
-        simulator = TimelineSimulator(
-            deepcopy(self.banks),
-            deepcopy(self.income_sources),
-            deepcopy(self.bills)
-        )
+        simulator = self._new_simulator()
 
         result = simulator.project_balances(start_date, end_date, payment_strategy)
 
@@ -200,6 +403,12 @@ class FinancialReport:
             lines.append("  Balances:")
             for account_name, balance in sorted(snapshot["balances"].items()):
                 lines.append(f"    {account_name}: ${balance:,.2f}")
+            for account_name, balance in sorted(snapshot.get("credit_balances", {}).items()):
+                if balance > 0:
+                    lines.append(f"    💳 {account_name}: ${balance:,.2f} owed")
+            for account_name, balance in sorted(snapshot.get("mortgage_balances", {}).items()):
+                if balance > 0:
+                    lines.append(f"    🏠 {account_name}: ${balance:,.2f} remaining")
 
         return "\n".join(lines)
 
@@ -215,17 +424,16 @@ class FinancialReport:
         end_date = date.today() + timedelta(days=30 * months)
         start_date = date.today()
 
-        simulator = TimelineSimulator(
-            deepcopy(self.banks),
-            deepcopy(self.income_sources),
-            deepcopy(self.bills)
-        )
+        simulator = self._new_simulator()
 
         result = simulator.project_balances(start_date, end_date)
 
-        # Monthly summaries
+        # Monthly summaries. Expenses are all payment outflows (stored as
+        # negative amounts in the cash flow, so use abs); interest counts only
+        # interest EARNED — interest charged on debt is not a cash flow.
         current_month = start_date.month
         month_cf = {"income": 0, "expenses": 0, "interest": 0}
+        expense_types = set(self.PAYMENT_TYPES) | {"EXTRA_CREDIT_PAYMENT", "PROMO_PAYOFF"}
 
         lines.append(f"\nMonthly Breakdown:")
         for cf_item in result["cash_flow"]:
@@ -246,9 +454,9 @@ class FinancialReport:
 
             if cf_item["type"] == "INCOME":
                 month_cf["income"] += cf_item["amount"]
-            elif cf_item["type"] == "BILL_PAYMENT":
-                month_cf["expenses"] += cf_item["amount"]
-            elif cf_item["type"] == "INTEREST":
+            elif cf_item["type"] in expense_types:
+                month_cf["expenses"] += abs(cf_item["amount"])
+            elif cf_item["type"] == "INTEREST" and not self._interest_is_charged(cf_item):
                 month_cf["interest"] += cf_item["amount"]
 
         # Print final month
