@@ -109,11 +109,18 @@ class PaymentOptimizer:
     - For credit payoff goal, maximize extra payments to target credit account
     """
 
-    def __init__(self, banks: list[Bank], income_sources: list[IncomeSource], bills: list[Bill], bill_groups=None):
+    def __init__(self, banks: list[Bank], income_sources: list[IncomeSource], bills: list[Bill], bill_groups=None,
+                 daily_spending: dict | None = None, fees: dict | None = None):
         self.banks = banks
         self.income_sources = income_sources
         self.bills = bills
         self.bill_groups = bill_groups or []
+        # Passed to every TimelineSimulator (see TimelineSimulator.__init__)
+        self.daily_spending = daily_spending
+        self.fees = fees
+        # Everyday spending + fees per date from the baseline run (used by
+        # the promo payoff and sweep planners as extra outflows)
+        self._other_outflows: dict = {}
 
     # ─────────────────────────────────────────────────────────────────────
     #  UNIFIED OPTIMIZATION: build events + run the optimized simulation
@@ -148,6 +155,10 @@ class PaymentOptimizer:
 
         # ── Pass 1: Baseline simulation ──────────────────────────────────
         baseline = self._run_simulation(start_date, end_date)
+        self._other_outflows = defaultdict(float)
+        for cf in baseline['cash_flow']:
+            if cf.get('type') in ('EVERYDAY_SPENDING', 'FEE') and cf.get('account'):
+                self._other_outflows[cf['date']] += -cf['amount']
 
         # Extract schedules from baseline
         bill_schedule = self._extract_bill_schedule(baseline)
@@ -260,10 +271,12 @@ class PaymentOptimizer:
                     reason=cf['type'].lower(),
                 ))
 
+        total_fees = sum(-cf['amount'] for cf in optimized_result['cash_flow'] if cf.get('type') == 'FEE')
+
         plan = PaymentPlan(
             strategy=strategy,
             total_interest_paid=total_interest,
-            total_fees=0.0,
+            total_fees=total_fees,
             final_discretionary=final_discretionary,
             violations=violations,
             extra_credit_payments=extra_credit_payments,
@@ -432,6 +445,9 @@ class PaymentOptimizer:
             checking_keys = {(b, n) for b, n, _ in checking_info}
             for cf in baseline.get('cash_flow', []):
                 if cf.get('type') == 'HELOC_PAYMENT':
+                    outflows_by_date[cf['date']] += -cf['amount']
+                elif (cf.get('type') in ('EVERYDAY_SPENDING', 'FEE')
+                      and (cf.get('bank'), cf.get('account')) in checking_keys):
                     outflows_by_date[cf['date']] += -cf['amount']
                 elif cf.get('type') == 'INCOME' and (cf.get('bank'), cf.get('account')) in checking_keys:
                     income_by_date[cf['date']] += cf['amount']
@@ -657,7 +673,9 @@ class PaymentOptimizer:
             copied_banks,
             copied_income,
             copied_bills,
-            copied_groups
+            copied_groups,
+            daily_spending=self.daily_spending,
+            fees=self.fees,
         )
         return simulator.project_balances(
             start_date, end_date, payment_strategy,
@@ -1068,6 +1086,8 @@ class PaymentOptimizer:
             sim_balance -= bills_in_period
             sim_balance -= credit_payments_in_period
             sim_balance -= mortgage_payments_in_period
+            sim_balance -= sum(amt for d, amt in self._other_outflows.items()
+                               if income_date <= d < next_income)
 
             if income_date in monthly_income_dates:
                 available_at_monthly[income_date] = max(0, sim_balance - safety_buffer)

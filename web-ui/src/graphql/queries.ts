@@ -556,8 +556,36 @@ export const UPDATE_INCOME = gql`
 `
 
 export const MARK_BILL_PAID = gql`
-  mutation MarkBillPaid($billName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String) {
-    markBillPaid(billName: $billName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate) { success message }
+  mutation MarkBillPaid($billName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String, $moveMoney: Boolean) {
+    markBillPaid(billName: $billName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate, moveMoney: $moveMoney) { success message }
+  }
+`
+
+// ── Dashboard & settings ─────────────────────────────────────────────
+
+export const GET_DASHBOARD_SUMMARY = gql`
+  query GetDashboardSummary {
+    dashboardSummary {
+      status statusTitle statusDetail
+      safeToSpend safePerDay lowestBalance lowestDate checkingNow cushion
+      overdueTotal shortTotal goalReserves everydayWeekly spendingMode
+      nextPayday horizon coveredThrough headline
+      billsThisPeriod { name billName kind dueDate amount status shortBy daysOverdue sourceAccount }
+      upcomingIncome { date name amount }
+      insights { severity category title detail impact date }
+    }
+  }
+`
+
+export const GET_SETTINGS = gql`
+  query GetSettings {
+    settings
+  }
+`
+
+export const UPDATE_SETTINGS = gql`
+  mutation UpdateSettings($changes: JSONString!) {
+    updateSettings(changes: $changes) { success message settings }
   }
 `
 

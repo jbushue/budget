@@ -4,6 +4,7 @@ Provides a GraphQL API for React Native and other web clients.
 """
 
 import graphene
+from models.gql_ext import ExtQuery, ExtMutation
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from models.finance_manager import FinanceManager
@@ -746,7 +747,7 @@ class BillGroupType(graphene.ObjectType):
 
 # ==================== Queries ====================
 
-class Query(graphene.ObjectType):
+class Query(ExtQuery, graphene.ObjectType):
     """Root query for the GraphQL API."""
 
     # Bank Queries
@@ -2110,6 +2111,9 @@ class MarkBillPaid(graphene.Mutation):
     for account-linked bills (credit/mortgage/HELOC payments). The money comes
     out of the source account (or the bill's preferred source); paying from a
     credit card charges the card.
+
+    With moveMoney: false the bill is only recorded as paid — use it when the
+    payment already happened and your balances already reflect it.
     """
     class Arguments:
         bill_name = graphene.String(required=True)
@@ -2117,10 +2121,12 @@ class MarkBillPaid(graphene.Mutation):
         source_bank = graphene.String()
         source_account = graphene.String()
         payment_date = graphene.String()  # ISO date string
+        move_money = graphene.Boolean(default_value=True)
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, bill_name, amount_paid=None, source_bank=None, source_account=None, payment_date=None):
+    def mutate(self, info, bill_name, amount_paid=None, source_bank=None, source_account=None, payment_date=None,
+               move_money=True):
         manager = info.context.get('manager')
         if not manager:
             return MarkBillPaid(success=False, message="Manager not available")
@@ -2136,6 +2142,11 @@ class MarkBillPaid(graphene.Mutation):
         pay_amount = amount_paid if amount_paid is not None else bill.effective_amount
         if pay_amount < 0:
             return MarkBillPaid(success=False, message="Amount paid cannot be negative")
+        if not move_money:
+            manager.record_bill_paid(bill, pay_amount, pay_date, src_bank, src_acct)
+            manager.save_to_database()
+            return MarkBillPaid(success=True, message=f"Bill '{bill_name}' recorded as paid")
+
         if isinstance(bill, AccountLinkedBill) and pay_amount > bill.linked_account_balance + 0.005:
             return MarkBillPaid(success=False, message=(
                 f"Payment exceeds the balance owed (${bill.linked_account_balance:,.2f})"))
@@ -3127,7 +3138,7 @@ class RemovePromoOffer(graphene.Mutation):
         return RemovePromoOffer(success=True, message=f"Promo '{promo_name}' removed")
 
 
-class Mutation(graphene.ObjectType):
+class Mutation(ExtMutation, graphene.ObjectType):
     """Root mutation for the GraphQL API."""
 
     create_bank = CreateBank.Field()

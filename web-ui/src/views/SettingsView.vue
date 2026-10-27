@@ -4,6 +4,8 @@
       <h2>Settings</h2>
     </div>
 
+    <PlanningSettings />
+
     <!-- SimpleFIN Bridge -->
     <div class="card" style="margin-bottom:1.5rem">
       <div class="card-header"><span class="card-title">🔗 SimpleFIN Bridge</span></div>
@@ -209,6 +211,7 @@ import {
   GET_SNAPSHOT, GET_SIMPLEFIN_SYNCED_ACCOUNTS,
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
+import PlanningSettings from '../components/PlanningSettings.vue'
 import { currency, fmtDate } from '../utils/format'
 import type { Bank, SimplefinStatus, SimplefinAccount, MutationPayload } from '../types'
 

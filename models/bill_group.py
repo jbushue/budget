@@ -74,6 +74,7 @@ class BillGroup:
         self.group_type = group_type  # "student_loan", "bundled_bill", etc.
         self.preferred_source_bank = preferred_source_bank
         self.preferred_source_account = preferred_source_account
+        self.created_on: date = date.today()  # restored from the database on load
         self.members: list[BillGroupMember] = members or []
         self.is_paid_this_period: bool = False
         self.payment_history: list[dict] = []

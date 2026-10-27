@@ -2,39 +2,104 @@
   <div>
     <div class="view-header">
       <h2>Dashboard</h2>
-      <button class="btn btn-outline btn-sm" @click="refetch()">Refresh</button>
+      <button class="btn btn-outline btn-sm" @click="refreshAll()">Refresh</button>
     </div>
 
     <div v-if="loading" class="loading">Loading financial snapshot...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">Error: {{ error.message }}</div>
 
     <template v-else-if="snap">
-      <!-- Discretionary Funds banner -->
-      <div v-if="safeData" class="card" :style="`margin-bottom:1.5rem;border-left:4px solid ${safeColor}`">
-        <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
-          <div>
-            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Discretionary Funds</div>
-            <div style="font-size:1.75rem;font-weight:700" :style="`color:${safeColor}`">{{ currency(safeData.safeToSpend) }}</div>
+      <template v-if="dash">
+        <!-- 1. Can my bills be paid? -->
+        <div class="card status-banner" :class="`status-${dash.status}`">
+          <div class="status-icon">{{ STATUS_ICON[dash.status] }}</div>
+          <div style="flex:1;min-width:0">
+            <div class="status-title">{{ dash.statusTitle }}</div>
+            <div class="status-detail">{{ dash.statusDetail }}</div>
           </div>
-          <div style="font-size:0.8rem;color:var(--text-muted);display:flex;gap:1.25rem;flex-wrap:wrap">
-            <span>💰 Checking: {{ currency(safeData.totalChecking) }}</span>
-            <span v-if="safeData.upcomingIncome > 0" class="positive">📥 Incoming: +{{ currency(safeData.upcomingIncome) }}</span>
-            <span>📋 Committed: -{{ currency(safeData.committedBills) }}</span>
-            <span>📅 Through: {{ fmtDate(safeData.horizonDate) }}</span>
+          <router-link to="/optimizer" class="btn btn-outline btn-sm">See the plan</router-link>
+        </div>
+
+        <div class="grid grid-2" style="margin-bottom:1.5rem;align-items:start">
+          <!-- 2. How much can I spend? -->
+          <div class="card">
+            <div class="card-header"><span class="card-title">💵 Safe to spend</span></div>
+            <div class="safe-amount" :class="dash.safeToSpend > 0 ? 'positive' : 'negative'">{{ currency(dash.safeToSpend) }}</div>
+            <div style="font-size:0.9rem;margin-bottom:0.75rem">
+              <template v-if="dash.nextPayday">
+                That's about <strong>{{ currency(dash.safePerDay) }}/day</strong> until your {{ fmtDateShort(dash.nextPayday) }} paycheck
+                ({{ daysUntil(dash.nextPayday) }} day{{ daysUntil(dash.nextPayday) === 1 ? '' : 's' }}).
+              </template>
+              <template v-else>No upcoming income found — this is what you can spend over the next few weeks.</template>
+            </div>
+            <div v-if="dash.everydayWeekly > 0" class="hint">
+              On top of your usual {{ currency(dash.everydayWeekly) }}/week everyday spending
+              ({{ dash.spendingMode === 'learned' ? 'learned from your transactions' : 'set in Settings' }}).
+            </div>
+            <div v-else class="hint hint-warn">
+              ⚠️ Everyday spending (groceries, gas, eating out) isn't set, so this assumes you spend nothing besides bills.
+              <router-link to="/settings">Set it in Settings</router-link> for an accurate number.
+            </div>
+            <details style="margin-top:0.75rem;font-size:0.8rem;color:var(--text-muted)">
+              <summary style="cursor:pointer">How this is worked out</summary>
+              <table style="margin-top:0.4rem">
+                <tr><td>Checking today</td><td style="text-align:right">{{ currency(dash.checkingNow) }}</td></tr>
+                <tr><td>Lowest point ({{ fmtDateShort(dash.lowestDate) }}), after bills{{ dash.everydayWeekly > 0 ? ' and everyday spending' : '' }}</td><td style="text-align:right">{{ currency(dash.lowestBalance) }}</td></tr>
+                <tr><td>− Cushion you keep</td><td style="text-align:right">{{ currency(dash.cushion) }}</td></tr>
+                <tr v-if="dash.overdueTotal"><td>− Overdue bills not marked paid</td><td style="text-align:right">{{ currency(dash.overdueTotal) }}</td></tr>
+                <tr v-if="dash.shortTotal"><td>− Bills that can't be covered</td><td style="text-align:right">{{ currency(dash.shortTotal) }}</td></tr>
+                <tr v-if="dash.goalReserves"><td>− Set aside for goals</td><td style="text-align:right">{{ currency(dash.goalReserves) }}</td></tr>
+                <tr style="font-weight:600"><td>= Safe to spend</td><td style="text-align:right">{{ currency(dash.safeToSpend) }}</td></tr>
+              </table>
+              <p style="margin:0.4rem 0 0">Spending today lowers every later day's balance, so the limit is set by your lowest projected point through {{ fmtDateShort(dash.horizon) }}.</p>
+            </details>
+          </div>
+
+          <!-- 3. This pay period's bills -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">🧾 Bills {{ dash.nextPayday ? `before your ${fmtDateShort(dash.nextPayday)} paycheck` : 'coming up' }}</span>
+            </div>
+            <div v-if="!dash.billsThisPeriod.length" class="empty-state" style="padding:1rem"><p>Nothing due before your next paycheck. 🎉</p></div>
+            <ul v-else class="period-list">
+              <li v-for="b in dash.billsThisPeriod" :key="b.billName + b.dueDate" :class="`period-${b.status}`">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:500">{{ b.name }}</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted)">
+                    <template v-if="b.status === 'overdue'">Was due {{ fmtDateShort(b.dueDate) }} ({{ b.daysOverdue }}d ago)</template>
+                    <template v-else>Due {{ fmtDateShort(b.dueDate) }}</template>
+                    <template v-if="b.sourceAccount"> · {{ b.sourceAccount }}</template>
+                  </div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-weight:600">{{ currency(b.amount) }}</div>
+                  <span class="badge" :class="PERIOD_BADGE[b.status].cls">{{ PERIOD_BADGE[b.status].label }}<template v-if="b.status === 'short'"> {{ currency(b.shortBy) }}</template></span>
+                </div>
+                <button v-if="b.status !== 'paid'" class="btn btn-sm btn-outline" style="margin-left:0.5rem" @click="payBill = { name: b.name, billName: b.billName, amount: b.amount, sourceAccount: b.sourceAccount }">Mark paid</button>
+              </li>
+            </ul>
+            <div v-if="dash.upcomingIncome.length" style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem">
+              💰 Next paychecks:
+              <span v-for="(inc, i) in dash.upcomingIncome" :key="i">{{ i ? ', ' : '' }}{{ fmtDateShort(inc.date) }} {{ inc.name }} {{ currency(inc.amount) }}</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Top recommendations from the payment analyzer -->
-      <div v-if="topInsights.length" class="card" style="margin-bottom:1.5rem">
-        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-          <span class="card-title">🧭 What to do next</span>
-          <router-link to="/optimizer" style="font-size:0.8rem">See the full payment plan →</router-link>
+        <!-- Top recommendations -->
+        <div v-if="dash.insights.length" class="card" style="margin-bottom:1.5rem">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <span class="card-title">🧭 What to do next</span>
+            <router-link to="/optimizer" style="font-size:0.8rem">See the full payment plan →</router-link>
+          </div>
+          <InsightList :items="dash.insights" compact />
         </div>
-        <div v-if="insightsData" style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.6rem">{{ insightsData.headline }}</div>
-        <InsightList :items="topInsights" compact />
-      </div>
+      </template>
+      <div v-else-if="dashLoading" class="loading">Checking your bills...</div>
+      <div v-else-if="dashError" class="card" style="color:var(--danger);margin-bottom:1.5rem">Could not check your bills: {{ dashError.message }}</div>
 
+      <MarkPaidDialog :bill="payBill" @close="payBill = null" @paid="refreshAll" />
+
+      <h3 style="margin:0 0 0.75rem;font-size:1rem;color:var(--text-muted)">Details</h3>
       <!-- KPI row -->
       <div class="grid grid-4" style="margin-bottom:1.5rem">
         <div class="card stat-card">
@@ -184,7 +249,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
 import {
@@ -202,44 +267,55 @@ import {
   GET_SNAPSHOT,
   GET_PROJECTION,
   GET_SIMPLEFIN_SYNCED_ACCOUNTS,
-  GET_SAFE_TO_SPEND,
   GET_NET_WORTH_HISTORY,
   GET_BILL_PAYMENT_HISTORY,
-  GET_PAYMENT_INSIGHTS,
+  GET_DASHBOARD_SUMMARY,
 } from '../graphql/queries'
 import InsightList from '../components/InsightList.vue'
-import { currency, fmtDate, frequencyLabel } from '../utils/format'
-import type { FinancialSnapshot, Projection, SimplefinSyncedAccount, SafeToSpend, NetWorthSnapshot, BillPaymentHistory, PaymentInsights } from '../types'
+import MarkPaidDialog, { type PayableBill } from '../components/MarkPaidDialog.vue'
+import { currency, fmtDate, fmtDateShort, frequencyLabel, daysFromNow } from '../utils/format'
+import type { FinancialSnapshot, Projection, SimplefinSyncedAccount, NetWorthSnapshot, BillPaymentHistory, DashboardSummary, PeriodBillStatus } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler, Legend)
 
 const { result, loading, error, refetch } = useQuery<{ snapshot: FinancialSnapshot }>(GET_SNAPSHOT)
-const { result: projResult, loading: projLoading, error: projError } = useQuery<{ projection: Projection }>(GET_PROJECTION, { variables: { days: 90 } })
+const { result: projResult, loading: projLoading, error: projError, refetch: refetchProj } = useQuery<{ projection: Projection }>(GET_PROJECTION, { variables: { days: 90 } })
+const { result: dashResult, loading: dashLoading, error: dashError, refetch: refetchDash } = useQuery<{ dashboardSummary: DashboardSummary | null }>(
+  GET_DASHBOARD_SUMMARY, { fetchPolicy: 'cache-and-network' })
 const { result: syncedResult } = useQuery<{ simplefinSyncedAccounts: SimplefinSyncedAccount[] }>(GET_SIMPLEFIN_SYNCED_ACCOUNTS)
 
-// New enhancement queries
-const { result: safeResult } = useQuery<{ safeToSpend: SafeToSpend | null }>(GET_SAFE_TO_SPEND)
 const { result: nwResult, loading: nwLoading, error: nwError } = useQuery<{ netWorthHistory: NetWorthSnapshot[] }>(GET_NET_WORTH_HISTORY, { variables: { limit: 90 } })
-const { result: bphResult, loading: bphLoading, error: bphError } = useQuery<{ billPaymentHistory: BillPaymentHistory[] }>(GET_BILL_PAYMENT_HISTORY, { variables: { limit: 20 } })
-
-const { result: insightsResult } = useQuery<{ paymentInsights: PaymentInsights | null }>(GET_PAYMENT_INSIGHTS, { variables: { days: 30 } })
+const { result: bphResult, loading: bphLoading, error: bphError, refetch: refetchBph } = useQuery<{ billPaymentHistory: BillPaymentHistory[] }>(GET_BILL_PAYMENT_HISTORY, { variables: { limit: 20 } })
 
 const snap = computed(() => result.value?.snapshot)
-const insightsData = computed(() => insightsResult.value?.paymentInsights)
-// The three most important items (the list is already ranked by the backend)
-const topInsights = computed(() => (insightsData.value?.insights ?? []).slice(0, 3))
+const dash = computed(() => dashResult.value?.dashboardSummary)
 const projData = computed(() => projResult.value?.projection)
-const safeData = computed(() => safeResult.value?.safeToSpend)
+
+const payBill = ref<PayableBill | null>(null)
+
+function refreshAll() {
+  refetch()
+  refetchDash()
+  refetchProj()
+  refetchBph()
+}
+
+const STATUS_ICON: Record<DashboardSummary['status'], string> = { ok: '✅', warning: '⚠️', danger: '🚨' }
+
+const PERIOD_BADGE: Record<PeriodBillStatus, { label: string; cls: string }> = {
+  paid: { label: 'Paid', cls: 'badge-success' },
+  covered: { label: 'Covered', cls: 'badge-info' },
+  covered_by_plan: { label: 'Covered with plan', cls: 'badge-warning' },
+  short: { label: 'Short', cls: 'badge-danger' },
+  overdue: { label: 'Overdue', cls: 'badge-danger' },
+}
+
+function daysUntil(iso: string): number {
+  return Math.max(1, daysFromNow(iso) + 1)
+}
 const netWorthData = computed(() => nwResult.value?.netWorthHistory ?? [])
 const billPayments = computed(() => bphResult.value?.billPaymentHistory ?? [])
 
-const safeColor = computed(() => {
-  if (!safeData.value) return 'var(--text-muted)'
-  const val = safeData.value.safeToSpend
-  if (val >= 500) return 'var(--success)'
-  if (val >= 100) return 'var(--warning)'
-  return 'var(--danger)'
-})
 
 // Build a Set of "bankName:accountName" keys for synced accounts
 const syncedKeys = computed(() => {
@@ -339,6 +415,21 @@ const chartOptions = {
 </script>
 
 <style scoped>
+.status-banner { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; border-left: 6px solid var(--border); }
+.status-ok { border-left-color: var(--success); background: var(--success-light); }
+.status-warning { border-left-color: var(--warning); background: var(--warning-light); }
+.status-danger { border-left-color: var(--danger); background: var(--danger-light); }
+.status-icon { font-size: 2rem; }
+.status-title { font-size: 1.15rem; font-weight: 700; }
+.status-detail { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.15rem; }
+.safe-amount { font-size: 2.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 0.4rem; }
+.hint { font-size: 0.8rem; color: var(--text-muted); }
+.hint-warn { color: #92400e; background: var(--warning-light); padding: 0.4rem 0.6rem; border-radius: var(--radius); }
+.period-list { list-style: none; margin: 0; padding: 0; }
+.period-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+.period-list li:last-child { border-bottom: none; }
+.period-paid { opacity: 0.6; }
+.period-short, .period-overdue { background: var(--danger-light); margin: 0 -0.5rem; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
 .sync-badge {
   font-size: 0.7rem;
   cursor: help;

@@ -350,6 +350,7 @@ class DatabaseRepository:
             db_bill.is_paid_this_period = bill.is_paid_this_period
             db_bill.carryover_balance = getattr(bill, 'carryover_balance', 0.0)
             db_bill.start_date = getattr(bill, 'start_date', None)
+            db_bill.late_fee = getattr(bill, 'late_fee', None)
 
             # Update floating bill fields
             if isinstance(bill, FloatingBill):
@@ -377,6 +378,7 @@ class DatabaseRepository:
                 'is_paid_this_period': bill.is_paid_this_period,
                 'carryover_balance': getattr(bill, 'carryover_balance', 0.0),
                 'start_date': getattr(bill, 'start_date', None),
+                'late_fee': getattr(bill, 'late_fee', None),
             }
 
             # Add floating bill specifics if applicable
@@ -499,6 +501,9 @@ class DatabaseRepository:
                 bill.carryover_balance = getattr(db_bill, 'carryover_balance', None) or 0.0
                 bill.payment_history = self._payment_history_from_db(db_bill)
                 bill.start_date = db_bill.start_date
+                bill.late_fee = getattr(db_bill, 'late_fee', None)
+                if db_bill.created_at:
+                    bill.created_on = db_bill.created_at.date()
                 bills.append(bill)
             elif db_bill.bill_type.value == "floating":
                 # Use stored estimated_amount if available, else fall back to amount
@@ -530,6 +535,9 @@ class DatabaseRepository:
                 bill.carryover_balance = getattr(db_bill, 'carryover_balance', None) or 0.0
                 bill.payment_history = self._payment_history_from_db(db_bill)
                 bill.start_date = db_bill.start_date
+                bill.late_fee = getattr(db_bill, 'late_fee', None)
+                if db_bill.created_at:
+                    bill.created_on = db_bill.created_at.date()
                 bills.append(bill)
             else:
                 bill = Bill(
@@ -547,6 +555,9 @@ class DatabaseRepository:
                 bill.carryover_balance = getattr(db_bill, 'carryover_balance', None) or 0.0
                 bill.payment_history = self._payment_history_from_db(db_bill)
                 bill.start_date = db_bill.start_date
+                bill.late_fee = getattr(db_bill, 'late_fee', None)
+                if db_bill.created_at:
+                    bill.created_on = db_bill.created_at.date()
                 bills.append(bill)
 
         return bills
@@ -756,6 +767,8 @@ class DatabaseRepository:
                 members=members,
             )
             group.is_paid_this_period = db_group.is_paid_this_period
+            if getattr(db_group, 'created_at', None):
+                group.created_on = db_group.created_at.date()
             if db_group.last_paid_date:
                 group.payment_history.append({"date": db_group.last_paid_date})
             groups.append(group)

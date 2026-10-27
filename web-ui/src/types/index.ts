@@ -367,6 +367,70 @@ export interface WhatIfResult {
   scenario: OutcomeSummary
 }
 
+export type PeriodBillStatus = 'paid' | 'covered' | 'covered_by_plan' | 'short' | 'overdue'
+
+export interface PeriodBill {
+  name: string
+  /** Name to pass to markBillPaid */
+  billName: string
+  kind: string
+  dueDate: string
+  amount: number
+  status: PeriodBillStatus
+  shortBy: number
+  daysOverdue: number
+  sourceAccount: string
+}
+
+export interface DashboardSummary {
+  status: 'ok' | 'warning' | 'danger'
+  statusTitle: string
+  statusDetail: string
+  safeToSpend: number
+  safePerDay: number
+  lowestBalance: number
+  lowestDate: string | null
+  checkingNow: number
+  cushion: number
+  overdueTotal: number
+  shortTotal: number
+  goalReserves: number
+  everydayWeekly: number
+  spendingMode: 'manual' | 'learned'
+  nextPayday: string | null
+  horizon: string
+  coveredThrough: string
+  headline: string
+  billsThisPeriod: PeriodBill[]
+  upcomingIncome: { date: string; name: string; amount: number }[]
+  insights: Insight[]
+}
+
+/** App settings as returned by the `settings` query (secrets omitted). */
+export interface AppSettings {
+  cushion: number
+  spending_mode: 'manual' | 'learned'
+  everyday_weekly: number
+  spending_account: string
+  card_late_fee: number
+  default_late_fee: number
+  overdraft_fee: number
+  auto_match_bills: boolean
+  dismissed_recurring: string[]
+  alert_days_before_due: number
+  alert_low_balance: boolean
+  browser_notifications: boolean
+  email_enabled: boolean
+  email_to: string
+  smtp_host: string
+  smtp_port: number
+  smtp_user: string
+  smtp_use_tls: boolean
+  password_set: boolean
+  smtp_password_set: boolean
+  [key: string]: unknown
+}
+
 export type InsightSeverity = 'urgent' | 'warning' | 'savings' | 'tip' | 'good'
 
 export interface Insight {

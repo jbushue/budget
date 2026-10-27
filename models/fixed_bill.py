@@ -69,6 +69,12 @@ class Bill:
         self.is_paid_this_period = False
         self.carryover_balance: float = 0.0  # Underpayment carried to next period
 
+        # Fee if paid late (None = use the app-wide default from settings)
+        self.late_fee: float | None = None
+        # When the bill was added (restored from the database on load); a bill
+        # can't be overdue for a due date before it existed
+        self.created_on: date = date.today()
+
     @property
     def effective_amount(self) -> float:
         """Amount actually due this period, including any carryover from underpayment."""
