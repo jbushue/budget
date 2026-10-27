@@ -537,3 +537,93 @@ export interface MutationPayload {
   success: boolean
   message?: string | null
 }
+
+// ── Ledger (transactions, categories, budgets) ──
+
+export interface LedgerTransaction {
+  id: number
+  date: string
+  description: string
+  payee: string
+  amount: number            // negative = money out
+  bankName: string
+  accountName: string
+  category: string | null
+  source: 'simplefin' | 'csv' | 'manual'
+  matchedBill: string | null
+  notes: string
+}
+
+export interface TransactionPage {
+  total: number
+  totalIn: number
+  totalOut: number
+  items: LedgerTransaction[]
+}
+
+export interface Category {
+  name: string
+  kind: 'expense' | 'income' | 'transfer'
+  isEveryday: boolean
+  monthlyBudget: number | null
+  color: string | null
+}
+
+export interface CategoryRule {
+  id: number
+  pattern: string
+  category: string
+  priority: number
+}
+
+export interface BudgetLine {
+  category: string
+  color: string | null
+  isEveryday: boolean
+  budget: number | null
+  spent: number
+  remaining: number | null
+  percent: number | null
+  projected: number
+  status: 'ok' | 'warning' | 'over' | 'no_budget'
+}
+
+export interface BudgetStatus {
+  month: string
+  daysElapsed: number
+  daysInMonth: number
+  totalBudget: number
+  totalSpent: number
+  totalBudgetedSpent: number
+  uncategorizedSpent: number
+  income: number
+  lines: BudgetLine[]
+}
+
+export interface SpendingMonth {
+  month: string
+  income: number
+  spending: number
+  net: number
+  byCategory: string | Record<string, number>
+}
+
+export interface SpendingReport {
+  colors: string | Record<string, string>
+  months: SpendingMonth[]
+}
+
+export interface ImportResult extends MutationPayload {
+  imported: number | null
+  duplicates: number | null
+  matchedBills: number | null
+  errors: string[] | null
+}
+
+export interface CsvPreview {
+  columns: string[]
+  mapping: string | Record<string, number>
+  rowCount: number
+  errors: string[]
+  rows: { date: string; description: string; amount: number; category: string | null }[]
+}

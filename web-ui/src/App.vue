@@ -34,6 +34,8 @@ const navItems = [
   { path: '/bills', icon: '📋', label: 'Bills' },
   { path: '/bill-groups', icon: '🎓', label: 'Loan Groups' },
   { path: '/income', icon: '💵', label: 'Income' },
+  { path: '/transactions', icon: '🧾', label: 'Transactions' },
+  { path: '/budgets', icon: '🎯', label: 'Budgets' },
   { path: '/timeline', icon: '📅', label: 'Timeline' },
   { path: '/optimizer', icon: '⚡', label: 'Optimizer' },
   { path: '/debt-payoff', icon: '📉', label: 'Debt Payoff' },
