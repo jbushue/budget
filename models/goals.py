@@ -70,7 +70,7 @@ def _goal_dict(manager, g: db.SavingsGoalModel, today: date) -> dict:
             paydays = _paydays_until(manager, today, g.target_date)
             per_paycheck = remaining / paydays if paydays else remaining
         # On track = saved at least the share of the target that time elapsed implies
-        created = g.created_at.date() if g.created_at else today
+        created = db.local_date(g.created_at) if g.created_at else today
         total_days = max(1, (g.target_date - created).days)
         expected = g.target_amount * min(1.0, max(0.0, (today - created).days / total_days))
         on_track = g.saved_amount + 0.005 >= expected

@@ -6,6 +6,7 @@ Bridges between the in-memory models and SQLAlchemy ORM.
 import json
 from sqlalchemy.orm import Session
 from models.database import (
+    local_date,
     get_session, BankModel, BankAccountModel, CreditAccountModel,
     BillModel, IncomeSourceModel, PromoOfferModel, MortgageAccountModel,
     MortgagePaymentModel, BillGroupModel, BillGroupMemberModel,
@@ -503,7 +504,7 @@ class DatabaseRepository:
                 bill.start_date = db_bill.start_date
                 bill.late_fee = getattr(db_bill, 'late_fee', None)
                 if db_bill.created_at:
-                    bill.created_on = db_bill.created_at.date()
+                    bill.created_on = local_date(db_bill.created_at)
                 bills.append(bill)
             elif db_bill.bill_type.value == "floating":
                 # Use stored estimated_amount if available, else fall back to amount
@@ -537,7 +538,7 @@ class DatabaseRepository:
                 bill.start_date = db_bill.start_date
                 bill.late_fee = getattr(db_bill, 'late_fee', None)
                 if db_bill.created_at:
-                    bill.created_on = db_bill.created_at.date()
+                    bill.created_on = local_date(db_bill.created_at)
                 bills.append(bill)
             else:
                 bill = Bill(
@@ -557,7 +558,7 @@ class DatabaseRepository:
                 bill.start_date = db_bill.start_date
                 bill.late_fee = getattr(db_bill, 'late_fee', None)
                 if db_bill.created_at:
-                    bill.created_on = db_bill.created_at.date()
+                    bill.created_on = local_date(db_bill.created_at)
                 bills.append(bill)
 
         return bills
@@ -768,7 +769,7 @@ class DatabaseRepository:
             )
             group.is_paid_this_period = db_group.is_paid_this_period
             if getattr(db_group, 'created_at', None):
-                group.created_on = db_group.created_at.date()
+                group.created_on = local_date(db_group.created_at)
             if db_group.last_paid_date:
                 group.payment_history.append({"date": db_group.last_paid_date})
             groups.append(group)

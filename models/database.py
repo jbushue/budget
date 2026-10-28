@@ -22,6 +22,13 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 def utc_now():
     return datetime.now(timezone.utc)
 
+
+def local_date(dt):
+    """Calendar date in local time for a stored timestamp (SQLite hands back naive UTC)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone().date()
+
 # Create engine and session
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
