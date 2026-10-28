@@ -201,7 +201,7 @@
           <div class="empty-state">
             <div class="icon">🔮</div>
             <p v-if="scenarioEmpty">The scenario returned no results. Check your modifications and try again.</p>
-            <p v-else>Configure modifications on the left and click "Run Scenario" to see the impact.</p>
+            <p v-else>Build a scenario and click "Run Scenario" to see the impact.</p>
           </div>
         </div>
       </div>

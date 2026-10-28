@@ -107,4 +107,8 @@ defineExpose({ refetch })
 .a-detail { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.1rem; }
 .a-actions { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
 .a-actions button { background: none; border: none; padding: 0; font-size: 0.75rem; color: var(--primary); cursor: pointer; }
+@media (max-width: 767px) {
+  .panel { position: fixed; left: 0.5rem; right: 0.5rem; top: calc(60px + env(safe-area-inset-top)); width: auto; max-width: none; max-height: calc(100dvh - 80px); }
+  .a-actions button { font-size: 0.85rem; padding: 0.3rem 0; }
+}
 </style>

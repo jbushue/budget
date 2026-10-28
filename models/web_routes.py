@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import io
+import mimetypes
 import os
 import shutil
 import sqlite3
@@ -32,6 +33,13 @@ PROTECTED = ("/graphql", "/files/")
 LOCAL_ADDRS = {"127.0.0.1", "::1", "localhost"}
 DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web-ui", "dist")
 SQLITE_MAGIC = b"SQLite format 3\x00"
+
+# Windows takes MIME types from the registry, where .js is often "text/plain" —
+# browsers refuse to run module scripts served that way, leaving a blank page.
+for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css"),
+                    ("application/manifest+json", ".webmanifest"), ("image/svg+xml", ".svg"),
+                    ("application/json", ".json"), ("image/png", ".png")):
+    mimetypes.add_type(_type, _ext)
 
 
 def client_is_local() -> bool:

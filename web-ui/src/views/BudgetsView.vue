@@ -2,9 +2,9 @@
   <div>
     <div class="view-header">
       <h2>Budgets</h2>
-      <div style="display:flex;gap:0.5rem;align-items:center">
-        <button class="btn btn-outline btn-sm" @click="shiftMonth(-1)">‹</button>
-        <input v-model="month" type="month" style="margin:0" />
+      <div class="month-nav">
+        <button class="btn btn-outline btn-sm" aria-label="Previous month" @click="shiftMonth(-1)">‹</button>
+        <input v-model="month" type="month" />
         <button class="btn btn-outline btn-sm" :disabled="isCurrentMonth" @click="shiftMonth(1)">›</button>
       </div>
     </div>
@@ -297,6 +297,8 @@ async function recategorize() {
 </script>
 
 <style scoped>
+.month-nav { display: flex; flex-wrap: nowrap !important; gap: 0.5rem; align-items: center; }
+.month-nav input { margin: 0; width: 11rem; min-width: 0; flex: 0 1 11rem; }
 .stat-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem; }
 .budget-line { padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
 .budget-line:last-child { border-bottom: none; }

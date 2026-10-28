@@ -430,6 +430,13 @@ const chartOptions = {
 .period-list { list-style: none; margin: 0; padding: 0; }
 .period-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
 .period-list li:last-child { border-bottom: none; }
+@media (max-width: 767px) {
+  .status-banner { flex-wrap: wrap; gap: 0.6rem 0.85rem; }
+  .status-banner > .btn { flex: 1 1 100%; }
+  .status-icon { font-size: 1.6rem; }
+  .status-title { font-size: 1.05rem; }
+  .safe-amount { font-size: 2.1rem; }
+}
 .period-paid { opacity: 0.6; }
 .period-short, .period-overdue { background: var(--danger-light); margin: 0 -0.5rem; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
 .sync-badge {

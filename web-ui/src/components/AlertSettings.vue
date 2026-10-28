@@ -145,7 +145,7 @@ async function togglePreview() {
 .help { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.6rem; }
 .sub-h { margin: 0.75rem 0 0.4rem; font-size: 0.9rem; }
 .checks { display: flex; flex-direction: column; gap: 0.4rem; justify-content: center; }
-.checks label, .inline { display: flex; gap: 0.4rem; align-items: center; font-size: 0.85rem; font-weight: normal; }
+.checks label, .inline { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; font-weight: normal; text-transform: none; letter-spacing: normal; color: var(--text); }
 .inline { margin-bottom: 0.6rem; }
 .preview { background: var(--bg, #f8fafc); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-size: 0.78rem; white-space: pre-wrap; margin-top: 0.75rem; }
 </style>

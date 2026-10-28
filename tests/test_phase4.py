@@ -181,3 +181,15 @@ class TestLateFee:
         fresh = FinanceManager([], [], [])
         fresh.load_from_database()
         assert next(b for b in fresh.bills if b.bill_name == "Water").late_fee == 9
+
+
+class TestBuiltUi:
+
+    def test_assets_served_with_browser_mime_types(self, client, tmp_path, monkeypatch):
+        """The built UI's JS must not be served as text/plain (Windows registry default)."""
+        import mimetypes
+        from models import web_routes
+        assert mimetypes.guess_type("x.js")[0] == "text/javascript"
+        assert mimetypes.guess_type("x.css")[0] == "text/css"
+        assert mimetypes.guess_type("x.webmanifest")[0] == "application/manifest+json"
+        assert web_routes.DIST_DIR.endswith("dist")

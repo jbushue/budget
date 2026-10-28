@@ -3,7 +3,7 @@
     <div class="view-header">
       <h2>Reports</h2>
       <div class="chip-group" style="margin:0">
-        <button v-for="n in [3, 6, 12]" :key="n" class="chip" :class="{ active: months === n }" @click="months = n">{{ n }} months</button>
+        <button v-for="n in [3, 6, 12]" :key="n" class="chip" :class="{ selected: months === n }" @click="months = n">{{ n }} months</button>
       </div>
     </div>
 
@@ -49,7 +49,7 @@
           </div>
           <div class="split">
             <div style="height:260px;max-width:300px;flex:1"><Doughnut :data="categoryChart" :options="doughnutOptions" /></div>
-            <table class="cat-table">
+            <div class="cat-table scroll-x"><table>
               <thead><tr><th>Category</th><th style="text-align:right">{{ monthLabel(selectedMonth, true) }}</th><th style="text-align:right">Average</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="row in categoryRows" :key="row.name">
@@ -61,13 +61,13 @@
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </table></div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-header"><span class="card-title">Category trends</span></div>
-          <div class="table-wrap">
+          <div class="table-wrap no-stack">
             <table>
               <thead>
                 <tr><th>Category</th><th v-for="m in report.months" :key="m.month" style="text-align:right">{{ monthLabel(m.month, true) }}</th></tr>
@@ -221,7 +221,8 @@ const lineOptions: ChartOptions<'line'> = {
 <style scoped>
 .sub { font-size: 0.8rem; color: var(--text-muted); }
 .split { display: flex; gap: 1.5rem; align-items: flex-start; flex-wrap: wrap; }
-.cat-table { flex: 2; min-width: 280px; }
+.cat-table { flex: 2 1 280px; min-width: 0; }
+@media (max-width: 767px) { .split > div:first-child { flex: 1 1 100% !important; max-width: 240px !important; margin: 0 auto; height: 220px !important; } }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.3rem; }
 .total td { font-weight: 600; border-top: 2px solid var(--border-strong); }
 .card + .card { margin-top: 1.5rem; }

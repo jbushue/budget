@@ -457,6 +457,11 @@ async function importResult(run: () => Promise<ImportResult | null | undefined>)
 .filters input, .filters select { margin: 0; }
 .summary { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; font-size: 0.9rem; margin-bottom: 0.75rem; }
 .remember { margin-left: auto; font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 0.35rem; align-items: center; }
+.remember input { width: auto; }
+@media (max-width: 767px) {
+  .remember { margin-left: 0; flex-basis: 100%; }
+  .filters input[type="date"] { flex: 1 1 140px; }
+}
 .sub { font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
 .src { font-size: 0.7rem; opacity: 0.7; }
 td select { padding: 0.25rem 0.4rem; font-size: 0.82rem; width: 100%; margin: 0; }

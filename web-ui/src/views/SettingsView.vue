@@ -165,7 +165,7 @@
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
         Save or load your financial data from the SQLite database on the server.
       </p>
-      <div style="display:flex;gap:0.75rem">
+      <div style="display:flex;flex-wrap:wrap;gap:0.75rem">
         <button class="btn btn-success" @click="saveDb" :disabled="saving">
           {{ saving ? 'Saving...' : 'Save to Database' }}
         </button>
