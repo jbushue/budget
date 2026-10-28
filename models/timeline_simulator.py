@@ -44,12 +44,25 @@ class TimelineSimulator:
     through the BILL_DUE event type.
     """
 
-    def __init__(self, banks: list[Bank], income_sources: list[IncomeSource], bills: list[Bill], bill_groups: list[BillGroup] = None):
+    def __init__(self, banks: list[Bank], income_sources: list[IncomeSource], bills: list[Bill],
+                 bill_groups: list[BillGroup] = None, daily_spending: dict | None = None,
+                 fees: dict | None = None):
+        """
+        Args:
+            daily_spending: everyday spending taken out each day, as
+                {"amount": per-day amount, "bank": ..., "account": ...}.
+                It always happens (it may push the account below $0).
+            fees: {"card_late_fee", "default_late_fee", "overdraft_fee"}.
+                Late fees are charged when a payment can't be made; the
+                overdraft fee each time a checking account drops below $0.
+        """
         self.banks = banks
         self.income_sources = income_sources
         self.bills = bills
         self.bill_groups = bill_groups or []
         self.events: list[TimelineEvent] = []
+        self.daily_spending = daily_spending if daily_spending and daily_spending.get("amount", 0) > 0 else None
+        self.fees = fees or {}
 
         # Pre-compute grouped account keys so we can suppress individual linked bill events
         self._grouped_account_keys: set[tuple[str, str]] = set()
@@ -258,6 +271,11 @@ class TimelineSimulator:
         # inside the simulation set the flag too, but must not suppress the
         # following period, so later occurrences ignore it.
         first_occurrence_seen: set[int] = set()
+        # Checking accounts currently below $0 (overdraft fee charged once per dip)
+        overdrawn: set[str] = {
+            f"{b.name}:{a.account_name}" for b in self.banks for a in b.get_all_accounts()
+            if a.balance < 0
+        }
 
         current_date = start_date
         while current_date <= end_date:
@@ -389,6 +407,7 @@ class TimelineSimulator:
                                     "error": "No account has sufficient funds",
                                     **self._linked_bill_names(bill),
                                 })
+                                self._charge_late_fee(bill, current_date, cash_flow)
                                 break
 
                             try:
@@ -467,6 +486,7 @@ class TimelineSimulator:
                                     "error": str(e),
                                     **self._linked_bill_names(bill),
                                 })
+                                self._charge_late_fee(bill, current_date, cash_flow)
                             break
 
                 elif event.event_type == "INTEREST":
@@ -579,6 +599,7 @@ class TimelineSimulator:
                                         "bank": source_bank.name if source_bank else "(none)",
                                         "error": str(e)
                                     })
+                                    self._charge_late_fee(bill, current_date, cash_flow)
                             else:
                                 cash_flow.append({
                                     "date": current_date,
@@ -589,6 +610,7 @@ class TimelineSimulator:
                                     "bank": source_bank.name if source_bank else "(none)",
                                     "error": "No account has sufficient funds",
                                 })
+                                self._charge_late_fee(bill, current_date, cash_flow)
                             break
 
                 # ── Optimization event processing ────────────────────────────
@@ -596,6 +618,12 @@ class TimelineSimulator:
                                           "HELOC_PARK", "HELOC_RECALL",
                                           "EXTRA_CREDIT_PAYMENT", "PROMO_PAYOFF"):
                     self._process_optimization_event(event, current_date, cash_flow)
+
+            # Everyday spending (groceries, gas, ...) happens every day
+            if self.daily_spending:
+                self._apply_daily_spending(current_date, cash_flow)
+            # Overdraft fee each time a checking account newly drops below $0
+            self._charge_overdraft_fees(current_date, cash_flow, overdrawn)
 
             # Create snapshot for this date
             snapshot = {"date": current_date, "balances": {}, "credit_balances": {}, "mortgage_balances": {}, "heloc_balances": {}}
@@ -718,6 +746,90 @@ class TimelineSimulator:
             "cash_flow": cash_flow,
             "events": processed_events
         }
+
+    # ── Everyday spending and fees ────────────────────────────────────
+
+    def _spending_account(self):
+        """(bank, account) everyday spending comes out of: the configured one, else main checking."""
+        spend = self.daily_spending or {}
+        bank = self._get_bank_by_name(spend.get("bank")) if spend.get("bank") else None
+        if bank and spend.get("account") in bank.accounts:
+            return bank, bank.accounts[spend["account"]]
+        checking = [(b, a) for b in self.banks for a in b.get_all_accounts()
+                    if a.account_type.value == "checking"]
+        if checking:
+            return max(checking, key=lambda x: x[1].balance)
+        accounts = [(b, a) for b in self.banks for a in b.get_all_accounts()]
+        return accounts[0] if accounts else (None, None)
+
+    def _force_withdraw(self, account, amount: float, description: str, when: date):
+        """Withdraw even if it overdraws the account (spending and fees happen regardless)."""
+        account.balance -= amount
+        account._record_transaction("WITHDRAWAL", -amount, description, when)
+
+    def _apply_daily_spending(self, current_date: date, cash_flow: list[dict]):
+        bank, account = self._spending_account()
+        if account is None:
+            return
+        amount = round(self.daily_spending["amount"], 2)
+        self._force_withdraw(account, amount, "Everyday spending", current_date)
+        cash_flow.append({
+            "date": current_date,
+            "type": "EVERYDAY_SPENDING",
+            "description": "Everyday spending",
+            "amount": -amount,
+            "account": account.account_name,
+            "bank": bank.name,
+        })
+
+    def _late_fee_for(self, bill: Bill) -> float:
+        own = getattr(bill, "late_fee", None)
+        if own is not None:
+            return max(0.0, own)
+        if isinstance(bill, AccountLinkedBill) and bill.linked_account_type in ("credit", "heloc"):
+            return max(0.0, self.fees.get("card_late_fee", 0.0))
+        return max(0.0, self.fees.get("default_late_fee", 0.0))
+
+    def _charge_late_fee(self, bill: Bill, current_date: date, cash_flow: list[dict]):
+        """Late fee for a payment that couldn't be made: cards add it to the balance,
+        other bills take it from checking (you'll owe it with the next payment)."""
+        fee = self._late_fee_for(bill)
+        if fee <= 0:
+            return
+        name = bill.linked_group.group_name if isinstance(bill, GroupLinkedBill) else bill.bill_name
+        entry = {"date": current_date, "type": "FEE", "fee_kind": "late",
+                 "description": f"Late fee: {name}", "amount": -fee, "bill": name}
+        if isinstance(bill, AccountLinkedBill) and bill.linked_account_type in ("credit", "heloc"):
+            acct = bill.linked_account
+            acct.balance += fee
+            if hasattr(acct, "regular_balance"):
+                acct.regular_balance += fee
+            entry.update(account=acct.account_name, bank=bill.linked_bank_name)
+        else:
+            bank, account = self._spending_account()
+            if account is None:
+                return
+            self._force_withdraw(account, fee, f"Late fee: {name}", current_date)
+            entry.update(account=account.account_name, bank=bank.name)
+        cash_flow.append(entry)
+
+    def _charge_overdraft_fees(self, current_date: date, cash_flow: list[dict], overdrawn: set[str]):
+        fee = max(0.0, self.fees.get("overdraft_fee", 0.0))
+        for bank in self.banks:
+            for acc in bank.get_all_accounts():
+                key = f"{bank.name}:{acc.account_name}"
+                if acc.balance < -0.005:
+                    if key not in overdrawn:
+                        overdrawn.add(key)
+                        if fee > 0 and acc.account_type.value == "checking":
+                            self._force_withdraw(acc, fee, "Overdraft fee", current_date)
+                            cash_flow.append({
+                                "date": current_date, "type": "FEE", "fee_kind": "overdraft",
+                                "description": f"Overdraft fee: {acc.account_name}", "amount": -fee,
+                                "account": acc.account_name, "bank": bank.name,
+                            })
+                else:
+                    overdrawn.discard(key)
 
     def _get_bank_by_name(self, bank_name: str) -> Bank | None:
         """Get a bank by name."""

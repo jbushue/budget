@@ -127,7 +127,7 @@ def summarize_simulation(result: dict, banks) -> dict:
             if key in keys and (lowest is None or bal < lowest):
                 lowest, lowest_date, lowest_account = bal, snap["date"], key
 
-    charged = earned = 0.0
+    charged = earned = fees = spending = 0.0
     paid_count = 0
     late = []
     for cf in result["cash_flow"]:
@@ -137,6 +137,10 @@ def summarize_simulation(result: dict, banks) -> dict:
                 charged += cf["amount"]
             else:
                 earned += cf["amount"]
+        elif t == "FEE":
+            fees += -cf["amount"]
+        elif t == "EVERYDAY_SPENDING":
+            spending += -cf["amount"]
         elif t in PAID_TYPES:
             paid_count += 1
         elif t in DEFERRED_TYPES:
@@ -159,6 +163,8 @@ def summarize_simulation(result: dict, banks) -> dict:
         "payments_on_time": paid_count,
         "late_payments": late,
         "pending_deferred_interest": _r(pending),
+        "fees": _r(fees),
+        "everyday_spending": _r(spending),
     }
 
 
@@ -211,6 +217,9 @@ def describe_outcome_change(base: dict, other: dict, base_label: str, other_labe
     di = other["interest_charged"] - base["interest_charged"]
     if abs(di) >= 0.01:
         lines.append(f"Interest charged on debt {'goes up' if di > 0 else 'goes down'} by {_money(di)}.")
+    df = other.get("fees", 0.0) - base.get("fees", 0.0)
+    if abs(df) >= 0.01:
+        lines.append(f"Late and overdraft fees {'go up' if df > 0 else 'go down'} by {_money(df)}.")
     de = other["interest_earned"] - base["interest_earned"]
     if abs(de) >= 0.01:
         lines.append(f"Interest earned on savings {'goes up' if de > 0 else 'goes down'} by {_money(de)}.")
@@ -235,14 +244,17 @@ class PaymentInsightsAnalyzer:
     def analyze(self) -> dict:
         m = self.manager
         banks, income, bills, groups = deepcopy((m.banks, m.income_sources, m.bills, m.bill_groups))
-        baseline = TimelineSimulator(banks, income, bills, groups).project_balances(self.start, self.end)
+        baseline = TimelineSimulator(banks, income, bills, groups, **m.sim_options()).project_balances(
+            self.start, self.end)
 
         banks2, income2, bills2, groups2 = deepcopy((m.banks, m.income_sources, m.bills, m.bill_groups))
-        optimizer = PaymentOptimizer(banks2, income2, bills2, groups2)
+        optimizer = PaymentOptimizer(banks2, income2, bills2, groups2, **m.sim_options())
         optimized, plan = optimizer.run_optimized_simulation(self.start, self.end)
 
         base_sum = summarize_simulation(baseline, m.banks)
         opt_sum = summarize_simulation(optimized, m.banks)
+        # Kept for callers that need the raw runs (e.g. the dashboard)
+        self.baseline, self.optimized, self.plan = baseline, optimized, plan
 
         self._income_dates = sorted({cf["date"] for cf in baseline["cash_flow"] if cf["type"] == "INCOME"})
         self._snapshots = {s["date"]: s for s in baseline["snapshots"]}
@@ -375,6 +387,8 @@ class PaymentInsightsAnalyzer:
             "shortfall": 0.0,
             "fixes": [],
             "advice": "",
+            "late_fee": 0.0,
+            "bill_name": bill.bill_name if bill is not None else name,
         }
         if status == "already_paid":
             row["advice"] = "Already paid for this period — nothing to do."
@@ -434,6 +448,17 @@ class PaymentInsightsAnalyzer:
             row["advice"] += " Comes out of your current balance (no paycheck before it)."
         return row
 
+    def _late_fee(self, bill) -> float:
+        if bill is None:
+            return 0.0
+        own = getattr(bill, "late_fee", None)
+        if own is not None:
+            return max(0.0, own)
+        fees = self.manager.fees or {}
+        if isinstance(bill, AccountLinkedBill) and bill.linked_account_type in ("credit", "heloc"):
+            return fees.get("card_late_fee", 0.0)
+        return fees.get("default_late_fee", 0.0)
+
     def _late_advice(self, row, bill, due, amount, opt_status):
         snap = self._snapshots.get(due)
         balances = []
@@ -476,8 +501,11 @@ class PaymentInsightsAnalyzer:
                          f"({(nxt - due).days} days late).")
         row["fixes"] = fixes
         where = f" in {best[2]}" if best[2] else ""
+        fee = self._late_fee(bill)
+        fee_text = f"Expect a late fee of about {_money(fee)}" if fee > 0 else "Late payments can bring late fees"
+        row["late_fee"] = _r(fee)
         row["advice"] = (f"Not enough money{where} on {_day(due)} — short about {_money(short)}. "
-                         "Late payments can bring late fees, and loans/cards 30+ days late can hurt your credit.")
+                         f"{fee_text}, and loans/cards 30+ days late can hurt your credit.")
 
     # ── bill groups ───────────────────────────────────────────────────
 

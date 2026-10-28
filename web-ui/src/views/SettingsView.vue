@@ -4,6 +4,11 @@
       <h2>Settings</h2>
     </div>
 
+    <PlanningSettings />
+    <AlertSettings />
+    <DataFiles />
+    <SecuritySettings />
+
     <!-- SimpleFIN Bridge -->
     <div class="card" style="margin-bottom:1.5rem">
       <div class="card-header"><span class="card-title">🔗 SimpleFIN Bridge</span></div>
@@ -160,7 +165,7 @@
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
         Save or load your financial data from the SQLite database on the server.
       </p>
-      <div style="display:flex;gap:0.75rem">
+      <div style="display:flex;flex-wrap:wrap;gap:0.75rem">
         <button class="btn btn-success" @click="saveDb" :disabled="saving">
           {{ saving ? 'Saving...' : 'Save to Database' }}
         </button>
@@ -209,6 +214,10 @@ import {
   GET_SNAPSHOT, GET_SIMPLEFIN_SYNCED_ACCOUNTS,
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
+import PlanningSettings from '../components/PlanningSettings.vue'
+import AlertSettings from '../components/AlertSettings.vue'
+import DataFiles from '../components/DataFiles.vue'
+import SecuritySettings from '../components/SecuritySettings.vue'
 import { currency, fmtDate } from '../utils/format'
 import type { Bank, SimplefinStatus, SimplefinAccount, MutationPayload } from '../types'
 

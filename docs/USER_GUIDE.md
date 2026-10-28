@@ -1,6 +1,6 @@
 # Budget Manager — Web Interface User Guide
 
-Budget Manager models your real finances — bank accounts, credit cards, loans, bills, and income — and projects them forward day by day. It tells you how much you can safely spend, warns you before an account runs dry, and suggests where to move money to pay less interest.
+Budget Manager models your real finances — bank accounts, credit cards, loans, bills, and income — and projects them forward day by day. The Dashboard answers two questions at a glance: **can my bills be paid?** and **how much can I spend without going under?** It also tracks your real transactions, budgets, and savings goals, recognizes bill payments in your bank activity, warns you before an account runs dry, and suggests where to move money to pay less interest.
 
 This guide covers every page of the web interface, what each number means, and how it is calculated.
 
@@ -15,13 +15,19 @@ This guide covers every page of the web interface, what each number means, and h
 5. [Bills & Payments](#5-bills--payments)
 6. [Loan Groups](#6-loan-groups-bill-groups)
 7. [Income](#7-income)
-8. [Timeline & Projection](#8-timeline--projection)
-9. [Payment Optimizer](#9-payment-optimizer)
-10. [Debt Payoff Estimator](#10-debt-payoff-estimator)
-11. [What-If Scenarios](#11-what-if-scenarios)
-12. [Settings](#12-settings)
-13. [Recommended monthly routine](#13-recommended-monthly-routine)
-14. [Troubleshooting & FAQ](#14-troubleshooting--faq)
+8. [Transactions](#8-transactions)
+9. [Budgets](#9-budgets)
+10. [Goals & Sinking Funds](#10-goals--sinking-funds)
+11. [Timeline & Projection](#11-timeline--projection)
+12. [Payment Optimizer](#12-payment-optimizer)
+13. [Debt Payoff Estimator](#13-debt-payoff-estimator)
+14. [What-If Scenarios](#14-what-if-scenarios)
+15. [Reports](#15-reports)
+16. [Alerts](#16-alerts)
+17. [Settings](#17-settings)
+18. [Using it on your phone, and installing it](#18-using-it-on-your-phone-and-installing-it)
+19. [Recommended routine](#19-recommended-routine)
+20. [Troubleshooting & FAQ](#20-troubleshooting--faq)
 
 ---
 
@@ -55,11 +61,13 @@ npm install                     # first time only
 npm run dev                     # http://localhost:3000
 ```
 
-The web UI forwards all data requests (`/graphql`, `/health`) to the API server, so both must be running.
+The web UI forwards all data requests (`/graphql`, `/files`, `/auth`, `/health`) to the API server, so both must be running.
+
+**One window instead of two:** run `npm run build` in `web-ui` once; after that `python api_server.py` serves the web interface itself at <http://localhost:4000>.
 
 ### Where your data lives
 
-Everything is stored in a single SQLite file: **`~/.budget_app/finance.db`** (on Windows, `C:\Users\<you>\.budget_app\finance.db`). Every change you make in the UI is saved immediately — there is no "Save" step. Back up this file to back up your budget.
+Everything is stored in a single SQLite file: **`~/.budget_app/finance.db`** (on Windows, `C:\Users\<you>\.budget_app\finance.db`). Every change you make in the UI is saved immediately — there is no "Save" step. **Settings → Data & backup → Download backup** saves a copy of it (§17).
 
 ### First-time setup checklist
 
@@ -69,13 +77,15 @@ Work through the pages in this order — each step builds on the previous one:
 2. **Income** → add each paycheck and (optionally) how it is split between accounts.
 3. **Bills** → add recurring bills. Credit card, mortgage, and HELOC payments are created for you automatically.
 4. **Loan Groups** → (optional) bundle loans that are paid with a single payment, such as student loans.
-5. **Dashboard** → check that the totals look right.
+5. **Settings → Planning** → set your **cushion** and your **everyday spending** (groceries, gas, eating out — anything that isn't a bill). These drive Safe to spend.
+6. **Transactions** → (optional, recommended) download them from SimpleFIN or import a CSV from your bank. Bill payments in them are recognized automatically, and everyday spending can be learned from them.
+7. **Dashboard** → check that the status and Safe to spend look right.
 
 ### Server options
 
 | Environment variable | Default | Effect |
 |---|---|---|
-| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. Leave as-is unless you know you need LAN access. |
+| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. Leave as-is: the web interface reaches the API through its proxy, including from your phone (§18). |
 | `BUDGET_DEBUG` | off | Set to `1` for auto-reload and detailed errors while developing. **Never** enable this on a shared network — the debugger allows running code on your machine. |
 
 ---
@@ -135,7 +145,19 @@ Each bill tracks whether it has been **paid this period**. Marking a bill paid:
 
 Paid bills are **reset automatically** once their next due date passes (this runs each time the API server starts, and on demand with **🔄 Auto-Reset** on the Bills page).
 
-In projections, a bill already marked paid is skipped for the *current* period only — every later period is paid normally.
+In projections, a bill already marked paid is skipped for the *current* period only — every later period is paid normally. Paying an **overdue** bill counts for the missed due date, so the next one still shows as owed.
+
+**Record only.** If your balances are already up to date (for example, synced with SimpleFIN), the payment has already left your account — taking it out again would count it twice. The Pay / Mark paid dialog has a checkbox, *Take the money out of the account in this app now*; leave it off to just record the payment. It's off by default when you use SimpleFIN. Bill payments recognized in your transactions (§8) are always recorded this way.
+
+### Everyday spending and the cushion
+
+Bills aren't everything you spend. **Everyday spending** — groceries, gas, eating out, the odd purchase — is set in *Settings → Planning* as a weekly amount, or learned from your transactions (the average of the last 8 weeks of spending in "everyday" categories, once there are at least 3 weeks of history). Every projection takes it out of checking a day at a time.
+
+The **cushion** is money you always want left in checking for surprises. Safe to spend never dips into it, and alerts warn you when checking is projected to fall below it.
+
+### Fees
+
+Projections charge the fees you'd really pay: a **late fee** when a payment can't be made on its due date (set app-wide in *Settings → Planning*, for cards/HELOCs and for other bills, and per bill on the bill form), and an **overdraft fee** each time checking would go below $0. Fees show up in the Optimizer and What-If comparisons.
 
 ### Payment sources
 
@@ -162,48 +184,70 @@ The projection is a **copy** — running it never changes your real balances.
 
 ## 3. Dashboard
 
-**Route:** `/` · The home page; a one-screen summary of where you stand.
+**Route:** `/` · Open it and you know where you stand.
 
-### Discretionary Funds (banner)
+### Status banner — can my bills be paid?
 
-> *How much can I spend before my next couple of paychecks without coming up short?*
+One line, colored by how things look:
+
+| Banner | Means |
+|---|---|
+| ✅ **All bills through *date* are covered** | Every bill and your everyday spending fit, and checking stays above your cushion. The date is at least a month out (through your second payday). |
+| ⚠️ **Bills are covered — if you follow the plan** | Paying everything on its due date leaves a bill short, but the Optimizer's plan (moving money from savings, timing payments) covers it. **See the plan** shows how. |
+| ⚠️ **Bills past due and not marked paid** | A due date has passed with no payment recorded. Mark them paid if you've paid them; until then their amount is held back from Safe to spend. |
+| ⚠️ **Checking gets tight** | Everything is paid, but checking drops below your cushion. |
+| 🚨 ***Bill* can't be paid on *date*** | Even the optimized plan comes up short. **See the plan** for ways to cover it. |
+| 🚨 **Checking goes negative** | Everyday spending would overdraw checking before the next paycheck. |
+
+### 💵 Safe to spend — how much can I spend?
+
+The extra you can spend **on top of** your usual everyday spending without missing a bill or dipping into your cushion:
 
 ```
-Discretionary Funds = all checking balances
-                    + income expected before the horizon
-                    − unpaid bills due before the horizon
+Safe to spend = lowest projected checking balance, through your second payday
+                (after every bill on its due date and your everyday spending)
+              − your cushion
+              − overdue bills not marked paid
+              − bills that can't be covered
+              − money set aside in checking for goals
 ```
 
-- **Horizon** ("📅 Through") = your *second* upcoming pay date (looking up to 75 days ahead). With only one upcoming pay date it is that date + 14 days; with no income at all, today + 28 days.
-- **💰 Checking** – current total of all checking accounts.
-- **📥 Incoming** – every paycheck (full amount) expected before the horizon.
-- **📋 Committed** – every *unpaid* bill due before the horizon, including card minimums, mortgage/HELOC payments, and loan groups (with any carryover). Already-paid bills and $0 card minimums are excluded.
+It's the *lowest* point that matters, not a total: a dollar spent today lowers every later day's balance too. Below it, **$/day** spreads it over the days until your next paycheck. *How this is worked out* shows each line. If everyday spending isn't set, a warning says so — the number would assume you spend nothing besides bills.
 
-The banner is **green** at $500 or more, **amber** from $100 to $499, and **red** below $100.
+### 🧾 Bills before your next paycheck
+
+A checklist of what's due this pay period (plus anything overdue), each with a status:
+
+| Badge | Means |
+|---|---|
+| **Paid** | Marked paid for this due date. |
+| **Covered** | There will be enough on the due date. |
+| **Covered with plan** | Covered if you follow the Optimizer's plan. |
+| **Short $X** | There won't be enough; X is how much is missing. |
+| **Overdue** | The due date passed with no payment recorded. |
+
+**Mark paid** opens a quick dialog (amount, date, account, and whether to take the money out in the app — see "Record only" in §2). Your next paychecks are listed underneath.
+
+### 🔗 Bill payments found in your transactions
+
+When imported transactions look like bill payments but aren't certain enough to record automatically, they're listed here: **Yes, it's *bill*** records the payment (no money moves), **Not a bill** stops suggesting it. See §8.
 
 ### 🧭 What to do next
 
-The three most important recommendations for the next 30 days, from the same analysis as the Payment Optimizer (§9). They're ranked: 🚨 urgent (a bill that can't be paid), ⚠️ warnings, then 💡 money-saving moves, then 📈 tips. The line above them is the plan's one-sentence summary. **See the full payment plan →** opens the Optimizer with the full details. The card is hidden when there's nothing to show.
+The three most important recommendations for the next 30 days, from the same analysis as the Payment Optimizer (§12). They're ranked: 🚨 urgent (a bill that can't be paid), ⚠️ warnings, then 💡 money-saving moves, then 📈 tips. **See the full payment plan →** opens the Optimizer.
 
-### KPI cards
+### Details
 
-| Card | Meaning |
-|---|---|
-| **Total Assets** | Sum of all checking and savings balances. (Home value is not included.) |
-| **Total Liabilities** | Credit card balances + mortgage principal + HELOC balances. |
-| **Net Worth** | Assets − liabilities. |
-| **Banks** | Number of banks you've added. |
+Below the summary:
 
-### Panels
+- **Total Assets / Total Liabilities / Net Worth / Banks** – checking + savings; card, mortgage and HELOC balances; the difference (home value isn't included).
+- **Banks & Accounts** – every account grouped by bank. Debts are shown as negative. 🔄 marks accounts kept in sync by SimpleFIN.
+- **Upcoming Bills (30 days)** and **Upcoming Income (30 days)**.
+- **📈 Net Worth Over Time** – from daily snapshots (recorded at server start and the first Dashboard visit each day); appears after two days of history.
+- **90-Day Balance Projection** – checking + savings over the next 90 days (the optimized projection, §12).
+- **💳 Recent Bill Payments** – the latest payments recorded.
 
-- **Banks & Accounts** – every account grouped by bank, with type badges. Debts are shown as negative. 🔄 marks accounts kept in sync by SimpleFIN.
-- **Upcoming Bills (30 days)** – everything due in the next 30 days, soonest first: 💳 card payments, 🏠 mortgage, 🏦 HELOC, groups, and regular bills. Paid items show **✓ Paid** with the amount struck through. Amounts include carryover.
-- **Upcoming Income (30 days)** – each income source's next pay date and amount.
-- **📈 Net Worth Over Time** – assets, liabilities, and net worth from daily snapshots. A snapshot is recorded the first time the Dashboard is opened each day (and at server start). The chart appears once there are at least two days of history.
-- **90-Day Balance Projection** – projected total of checking + savings over the next 90 days (from the optimized projection — see §9).
-- **💳 Recent Bill Payments** – the latest payments recorded with **Pay** on the Bills page: bill, amount, source account, date.
-
-**Refresh** reloads the summary. Every page fetches fresh data each time you open it.
+The 🔔 bell at the top right of every page lists alerts (§16). **Refresh** reloads everything.
 
 ---
 
@@ -338,6 +382,7 @@ Rows include regular bills, credit card payments (cards with a balance that aren
 | Frequency | Monthly, Weekly, Bi-weekly, Quarterly, Semi-annual, Yearly, One-time. |
 | Due Month (1-12) | Yearly / Semi-annual: which month it's due (semi-annual repeats six months later). |
 | Start / First Due Date (optional) | For weekly, bi-weekly, quarterly, semi-annual, yearly, and one-time bills: the date of one actual occurrence. The schedule repeats from this date (every 7 / 14 days, every 3 / 6 / 12 months, or just once). Set this for accurate weekly and bi-weekly projections. |
+| Late fee (optional) | What's charged if it's paid late. Blank uses the default from *Settings → Planning*. |
 | Preferred Source Bank / Account (optional) | Where it's normally paid from. "Auto" lets the app choose. |
 
 **Edit** lets you change everything except the name and type. Choosing "Auto (no preference)" clears the preferred source.
@@ -359,8 +404,9 @@ Rows include regular bills, credit card payments (cards with a balance that aren
 | Amount Paid | The amount due (bills: amount + carryover; cards: the minimum payment). |
 | Source Bank / Account | The preferred source (cards: the first checking account if none). Credit cards are listed as "(credit card)" — paying with a card **charges** that card. |
 | Payment Date | Today. |
+| Take the money out of the account in this app now | On, unless you use SimpleFIN. Turn it off when your balances already include this payment ("Record only", §2) — then only the paid status and history change. |
 
-On confirm:
+On confirm (with money taken out):
 
 - the money leaves the source account (rejected with a message if funds or credit are insufficient — nothing changes),
 - **bills:** the bill is marked paid; paying less than due shows "$X will carry over to next period",
@@ -373,6 +419,10 @@ On confirm:
 ### 🔄 Auto-Reset
 
 Marks paid items unpaid when their next due date (after the last payment) has arrived. This also runs automatically every time the server starts, so you normally don't need it.
+
+### 🔁 Repeating charges that aren't bills yet
+
+When your transactions show the same payee charging you on a steady schedule (weekly, every two weeks, monthly, quarterly, or yearly) with similar amounts, and it isn't a bill yet, it's listed at the top of the Bills page with how often, the typical amount (and range, if it varies), and when it's next expected. **Add as bill** creates it (fixed, or variable if the amount moves around) so projections and Safe to spend account for it; **Dismiss** hides the suggestion for good.
 
 ---
 
@@ -432,11 +482,68 @@ Example: $500 → Savings, blank → Checking. With no distribution set, the who
 
 ---
 
-## 8. Timeline & Projection
+## 8. Transactions
+
+**Route:** `/transactions` · Your real bank and card activity. Transactions power budgets, reports, the learned everyday spending, and automatic bill matching. Adding them never changes account balances.
+
+### Getting transactions in
+
+- **⟳ Download from SimpleFIN** (when SimpleFIN is connected) – fetches the last 90 days for every mapped account. Run it again any time; transactions already downloaded are skipped.
+- **⬆ Import CSV** – download a CSV from your bank's website (usually "Download" or "Export" on the account activity page), pick which account it belongs to, and choose the file. The date, description, and amount columns are detected for you — or pick them yourself, including files with separate *money out* / *money in* columns. Check the preview: money spent should show with a "−"; if it doesn't, tick *Purchases show as positive numbers*. Re-importing the same file skips what's already there.
+- **+ Add** – enter one by hand.
+
+### Categories
+
+Every transaction gets a category automatically: your own rules first, then a built-in list of common merchants (Kroger → Groceries, Shell → Gas & Transport, Netflix → Entertainment, …). Change one with the category dropdown in its row. With **Remember category choices for similar transactions** ticked, a rule is added at the same time, so future transactions from that payee (and existing uncategorized ones) get the same category. ⚠ **Uncategorized** in the filter shows what still needs a category.
+
+Filter by text, category, account, and date range; the totals above the table (in / out) cover everything that matches, not just the rows shown.
+
+### Bill payments in your transactions
+
+After every import, outgoing transactions are compared with your bills. A transaction matches a bill when it's within 10 days before to 7 days after a due date and the amount fits:
+
+- **Certain** – the amount fits *and* the description names the bill (or it's the same payee as an earlier confirmed payment). With *Mark bills paid automatically* on (Settings → Alerts), these are recorded right away.
+- **Likely** – the exact amount near the due date, but the description doesn't say. These are listed under **🔗 Bill payments found in your transactions** (here and on the Dashboard) for you to confirm or dismiss.
+
+Recording a match marks the bill paid **without moving money** — the payment already happened and your balances already reflect it. Matched transactions show a ✓ badge with the bill name; **undo** removes the match and the payment it recorded.
+
+The **🔁 Repeating charges** list (also on the Bills page, §5) appears at the bottom.
+
+---
+
+## 9. Budgets
+
+**Route:** `/budgets` · Spending by category for a month, against the budgets you set. Use ‹ › or the month picker to look at other months.
+
+- **Summary cards** – spending in budgeted categories vs. the total budgeted, all spending and income, your **learned everyday spending** (weekly, from the last 8 weeks), and how much is still uncategorized (with a link to fix it).
+- **Category lines** – spent vs. budget with a progress bar. **On pace** compares how fast you're spending with how far through the month you are: "$X left — on pace for $Y" (amber) means you'll go over at this rate; red means you're already over. Refunds reduce spending. **Set budget / Change** edits a budget (blank or 0 removes it).
+- **Categories** – add, rename (transactions and rules follow), recolor, or delete. Each has a type: **Expense**, **Income**, or **Transfer** (moving money between your own accounts — ignored in spending). **Everyday** marks expense categories that aren't covered by bills; these make up the learned everyday spending.
+- **Auto-categorize rules** – "description contains *text* → category". Your rules win over the built-in list. **Re-run on uncategorized** applies all rules to transactions that don't have a category yet.
+
+---
+
+## 10. Goals & Sinking Funds
+
+**Route:** `/goals` · Money you're setting aside for something.
+
+A goal has a target amount, an optional target date, and the account the money is kept in. **+ Set aside** records money you've put toward it, **− Use** records spending it; nothing moves between accounts (do that yourself if you want the money in a different account).
+
+- **Main checking / a checking account** – the money set aside is **reserved**: it's subtracted from Safe to spend on the Dashboard, so you don't spend it by accident.
+- **A savings account** – it's already out of the way, so it isn't subtracted again.
+
+With a target date, each goal shows what's left, what to set aside **per month** and **per paycheck** to get there, and whether you're **On track** or **Behind** (saved at least as much as the time elapsed since you created it would suggest).
+
+### Sinking funds
+
+Bills that aren't paid monthly (quarterly, semi-annual, yearly) are listed under **💡 Bills that need saving up for**, with what to set aside per month. **Create sinking fund** makes a goal for the bill's amount, due on its next due date. Once that bill has been paid, the fund is used up and moves to the following due date automatically.
+
+---
+
+## 11. Timeline & Projection
 
 **Route:** `/timeline` · A day-by-day forecast of every account.
 
-Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecast is the **optimized** projection — it includes the money moves recommended by the Optimizer (see §9).
+Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecast is the **optimized** projection — it includes the money moves recommended by the Optimizer (see §12).
 
 ### Stat cards
 
@@ -444,7 +551,7 @@ Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecas
 |---|---|
 | Total Income | All paychecks in the period. |
 | Total Expenses | All bill, card, mortgage, HELOC, group, extra, and promo payments. |
-| Net Change | Change in your total cash (checking + savings) from today to the end of the period. This can be negative even when income exceeds expenses: when the optimizer parks spare cash in a HELOC (see §9), cash goes down but your HELOC debt goes down by the same amount. |
+| Net Change | Change in your total cash (checking + savings) from today to the end of the period. This can be negative even when income exceeds expenses: when the optimizer parks spare cash in a HELOC (see §12), cash goes down but your HELOC debt goes down by the same amount. |
 | Projected Net Worth | Final cash − card, mortgage, and HELOC balances (with assets/debt shown underneath). |
 
 ### Balance Over Time chart
@@ -464,7 +571,7 @@ A month grid with ← / → navigation. Each day shows colored dots — **green*
 
 ---
 
-## 9. Payment Optimizer
+## 12. Payment Optimizer
 
 **Route:** `/optimizer` · Answers *"what's the best way to get every bill paid?"* for the chosen period (30 days – 1 year, pick it top-right and click **Analyze**). It compares two versions of the same period and explains the difference in plain language:
 
@@ -494,6 +601,7 @@ It always keeps enough in checking to cover upcoming payments.
 | Lowest checking balance | Your tightest point in the period, with the account and date. The plan often lowers this on purpose: it puts idle cash to work, but always keeps a buffer (about $300). |
 | Cash at the end / Debt at the end | Bank balances / cards + loans + HELOC + mortgage at the end of the period. |
 | Interest charged / earned | On cards and HELOCs / on savings and checking. |
+| Late & overdraft fees | Shown when either plan would pay any (rates from Settings → Planning and each bill's late fee). |
 | Deferred promo interest at risk | Shown only when a 0% promo still has money owed at the end. It's the most that could be charged if that balance isn't paid before the promo expires. It's a risk, not a certain cost, so it isn't part of the bottom line. |
 | **Overall (cash − debt)** | **The bottom line.** Moving cash onto a debt lowers both cash and debt, so judge the plan by this row. |
 
@@ -550,7 +658,7 @@ If the group payment doesn't even cover the monthly interest, the card says the 
 
 ---
 
-## 10. Debt Payoff Estimator
+## 13. Debt Payoff Estimator
 
 **Route:** `/debt-payoff` · Compares three ways to pay off your debts.
 
@@ -572,7 +680,7 @@ The **Remaining Debt Over Time** chart plots all three strategies by month.
 
 ---
 
-## 11. What-If Scenarios
+## 14. What-If Scenarios
 
 **Route:** `/scenarios` · Test a change before you make it. Nothing you do here is saved.
 
@@ -598,7 +706,7 @@ The **Modifications** list shows every change; click × to undo one. **Run Scena
   - **Green**: *"You'd be $X better off"*.
   - **Amber**: *"Every bill still gets paid, but you'd be $X worse off"*.
 - **What changes**: plain-language bullets on how the scenario differs from your current plan. They cover being better or worse off, more or fewer late payments, how far your lowest checking balance moves (and when), and interest charged and earned.
-- **Comparison table**, current plan vs. scenario: late or missed payments, lowest checking balance, cash and debt at the end, interest charged, and **Overall (cash − debt)**. Green means better and red means worse.
+- **Comparison table**, current plan vs. scenario: late or missed payments, lowest checking balance, cash and debt at the end, interest charged, late & overdraft fees, and **Overall (cash − debt)**. Green means better and red means worse.
 - **Payments that would be late or missed**: the specific bills and dates the scenario breaks.
 - A **chart** of both projections day by day.
 
@@ -606,9 +714,72 @@ The **Modifications** list shows every change; click × to undo one. **Run Scena
 
 ---
 
-## 12. Settings
+## 15. Reports
+
+**Route:** `/reports` · Built from your transactions. Choose 3, 6, or 12 months.
+
+- **Averages** – monthly income, spending, and what's left over (full months only, starting from your first month with transactions).
+- **Income vs. spending** – a bar per month. Transfers between your own accounts aren't counted; the current month is partial.
+- **Where the money went** – a chart and table of spending by category for the month you pick, compared with your average for each category (▲ / ▼).
+- **Category trends** – each category month by month.
+- **Net worth** – from the daily snapshots, once there are at least two.
+
+---
+
+## 16. Alerts
+
+The **🔔** at the top right of every page counts what needs attention (red when something is urgent). Click it for the list; click an alert to go to the page that deals with it.
+
+| Alert | When |
+|---|---|
+| 🚨 *Bill* is overdue | Its due date passed with no payment recorded. |
+| 🚨 Not enough to pay *bill* | It can't be covered on its due date. |
+| ℹ️ *Bill* due today / tomorrow / *day* | It's due within the number of days you choose (Settings → Alerts; default 3). |
+| ⚠️ / 🚨 Checking dips below your cushion / goes negative | Projected low point, if *Warn when checking is projected to dip below the cushion* is on. |
+| ⚠️ *Category* is over budget · ℹ️ on pace to go over | From this month's budgets. |
+| ℹ️ *N* bill payments to review | Likely matches waiting for you (§8). |
+
+**Snooze** hides an alert for a day; **Dismiss** hides it until the situation changes (a new due date, a different amount, …). The list refreshes every 5 minutes and when you come back to the tab.
+
+**Browser notifications** (Settings → Alerts) pop up urgent and warning alerts once each, while the app is open in a tab. Your browser asks for permission the first time.
+
+**Daily email digest** (Settings → Alerts) – a morning email with the status, Safe to spend, alerts, and this pay period's bills. It needs an email account's SMTP settings; it's sent after 7am by the running API server, so the app has to be running.
+
+---
+
+## 17. Settings
 
 **Route:** `/settings`
+
+### 🧮 Planning
+
+| Setting | What it does |
+|---|---|
+| Cushion to keep in checking | Safe to spend never dips into it; alerts warn when checking is projected to fall below it. Default $200. |
+| Everyday spending comes from | The checking account groceries, gas, etc. are paid from (default: your main checking). |
+| Everyday spending | **I'll enter a weekly amount**, or **Learn it from my transactions** (average of the last 8 weeks in "everyday" categories; until there are 3 weeks of history the weekly amount is used). |
+| Weekly everyday spending | Your weekly amount (shown per day and per month too). |
+| Card / HELOC late fee, Other bills' late fee, Overdraft fee | The fees projections charge (§2). Each bill can have its own late fee. |
+
+### 🔔 Alerts, matching & email
+
+- **Remind me about bills this many days ahead** (0–30).
+- **Warn when checking is projected to dip below the cushion.**
+- **Mark bills paid automatically when a transaction clearly matches** (§8). Off = every match waits for you to confirm.
+- **Browser notifications for urgent alerts.**
+- **Daily email digest** – *Send to*, the SMTP server, port, username, and password (for Gmail: `smtp.gmail.com`, port 587, your address, and an *app password*). The password is stored but never shown again. **Send a test digest now** saves and sends one immediately; **Preview digest** shows today's text.
+
+### 💾 Data & backup
+
+- **⬇ Export to Excel** – accounts, bills, income, promos, and loan groups in a spreadsheet that can be imported back.
+- **⬇ Blank template** / **⬆ Import from Excel** – fill in the template (example rows marked `EXAMPLE` are skipped) and import it. Importing only adds new items; anything with the same name is skipped.
+- **⬇ Transactions (CSV)** – every transaction with its category and matched bill.
+- **⬇ Download backup** – a complete copy of the database (everything, including transactions, budgets, goals, and settings). Keep one somewhere safe.
+- **⬆ Restore from backup** – replaces **all** current data with a backup file. A copy of the current data is saved to `~/.budget_app/backups/` first.
+
+### 🔒 Security
+
+Set a password to use the app from other devices (§18). Once set, every device — this computer included — signs in, and stays signed in for 30 days. **Change password** and **Remove password** need the current password and sign everyone out; **Sign out** signs out this browser.
 
 ### 🔗 SimpleFIN Bridge (automatic balance sync)
 
@@ -619,7 +790,7 @@ The **Modifications** list shows every change; click × to undo one. **Run Scena
 3. In **Account Mapping**, pick the local bank and account for each SimpleFIN account and click **Map**. The type (bank / credit / mortgage / heloc) is filled in automatically.
 4. Click **🔄 Sync Balances Now** whenever you want fresh balances. The result lists each account's change.
 
-Mapped accounts show 🔄 across the app and get a **Txns** button on the Accounts page. **✕** unmaps an account; **Disconnect** removes the connection and all mappings. Only mapped accounts are updated.
+Mapped accounts show 🔄 across the app and get a **Txns** button on the Accounts page. **✕** unmaps an account; **Disconnect** removes the connection and all mappings. Only mapped accounts are updated. To store transactions (for budgets, reports, and bill matching), use **Download from SimpleFIN** on the Transactions page (§8).
 
 ### Database
 
@@ -636,18 +807,42 @@ The API endpoint and a link to the **GraphQL Playground**, an interactive consol
 
 ---
 
-## 13. Recommended monthly routine
+## 18. Using it on your phone, and installing it
 
-1. **Sync or update balances** – Settings → Sync Balances Now, or Accounts → Update.
-2. **Record actual amounts** for Variable bills when statements arrive (Bills → **$**).
-3. **Pay** bills as you pay them in real life (Bills → **Pay**), so the paid status, carryover, and balances stay accurate.
-4. **Check the Dashboard**: the banner, **What to do next**, and Upcoming Bills.
-5. **Open the Optimizer** and work through the Recommendations, top to bottom. Fix anything marked **Short**, pay card/loan payments on payday where it saves money, and check promo deadlines.
+**From your phone or another computer on your network:**
+
+1. On the computer that runs the app, open *Settings → Security* and set a password. (Until you do, the app only answers this computer — anyone else on your Wi-Fi sees a message asking for a password to be set.)
+2. Find that computer's network address (on Windows: `ipconfig`, look for *IPv4 Address*, e.g. `192.168.1.20`).
+3. On your phone, open `http://192.168.1.20:3000` and sign in.
+
+**Installing it as an app:** in Chrome or Edge, use *Install app* (in the address bar or menu); on iPhone, *Share → Add to Home Screen*. It opens in its own window with its own icon. Full install with offline start needs the app to be served from `localhost` or over HTTPS; from a plain `http://` network address, adding it to the home screen still works as a shortcut.
+
+> The app has no HTTPS of its own. On your home network the password keeps others out, but don't expose it to the internet without putting it behind something that adds HTTPS.
+
+---
+
+## 19. Recommended routine
+
+**A quick look, any day:** open the Dashboard. The banner tells you whether every bill is covered; **Safe to spend** is what you can spend beyond your usual everyday spending. Check the 🔔 if it shows a number.
+
+**Each payday (or weekly):**
+1. **Get transactions in** – Transactions → Download from SimpleFIN (or import your bank's CSV). Bill payments in them are recorded automatically; confirm any listed under *Bill payments found*.
+2. **Update balances** – Settings → Sync Balances Now, or Accounts → Update.
+3. **Mark paid** anything in the Dashboard checklist you've paid that wasn't recognized (leave *Take the money out* off if your balances already reflect it).
+4. **Categorize** anything uncategorized (Transactions → ⚠ Uncategorized).
+5. **Set aside** money for your goals.
+
+**Monthly:**
+1. **Record actual amounts** for Variable bills when statements arrive (Bills → **$**).
+2. **Review Budgets** and adjust them; check **Reports** for trends.
+3. **Open the Optimizer** and work through the recommendations: fix anything **Short**, pay card/loan payments on payday where it saves money, check promo deadlines.
+4. Add any **repeating charges** suggested on the Bills page.
+5. **Download a backup** (Settings → Data & backup).
 6. Occasionally revisit **Debt Payoff** and **What-If** for bigger decisions.
 
 ---
 
-## 14. Troubleshooting & FAQ
+## 20. Troubleshooting & FAQ
 
 **The web page loads but shows errors / no data.**
 The API server isn't running or isn't reachable. Check Settings → API Connection, and make sure the "Budget API Server" window is open (or run `python api_server.py`).
@@ -665,7 +860,25 @@ It includes enough to pay off each 0% promo before it expires (see §2). Pay at 
 Use **Reset** to mark it unpaid, then correct the source account's balance with Accounts → **Update** (Reset doesn't refund the payment).
 
 **Can I import my data from a spreadsheet?**
-Yes, through the command-line menu: run `python cli.py`, then **6. Database & File Management** → Import from Excel / Export to Excel / Generate template. Template example rows are marked `EXAMPLE` and skipped. Importing skips items that already exist.
+Yes: *Settings → Data & backup* → **Blank template**, fill it in, then **Import from Excel** (the command-line menu, `python cli.py`, can do the same). Template example rows are marked `EXAMPLE` and skipped. Importing skips items that already exist.
+
+**Safe to spend seems too high.**
+Check that everyday spending is set (the Dashboard warns if it isn't), and that bills you've already paid are marked paid — and ones you haven't, aren't. Open *How this is worked out* under the number to see each piece.
+
+**A bill payment was matched to the wrong bill.**
+Click **undo** on the transaction's ✓ badge (Transactions page). That removes the payment it recorded; then confirm the right bill or mark it paid by hand.
+
+**A bill shows as overdue but I paid it.**
+Mark it paid (Dashboard checklist or Bills → Pay) with the date you paid, and leave *Take the money out* off if your balance already reflects it.
+
+**My phone says a password needs to be set.**
+That's the protection for devices other than the one running the app. Set a password in *Settings → Security* on that computer (§18).
+
+**I forgot the password.**
+Stop the API server, then on the computer that runs it delete the password setting: `python -c "from models.app_settings import update_settings; update_settings({'password_hash': ''})"` from the project folder. Start the server again; only that computer can open the app until you set a new password.
+
+**Restoring a backup went wrong.**
+The data that was replaced is in `~/.budget_app/backups/before-restore-<date-time>.db` — restore that file the same way.
 
 **Where are the numbers for projections coming from?**
 Everything is computed from what you've entered: balances, income schedules, bills, and account terms. Keep balances current for accurate forecasts.

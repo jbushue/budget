@@ -196,6 +196,7 @@ export const GET_ALL_BILLS = gql`
       minAmount
       maxAmount
       startDate
+      lateFee
       nextDueDate
       preferredSourceBank
       preferredSourceAccount
@@ -333,6 +334,8 @@ const OUTCOME_FIELDS = `
   interestEarned
   paymentsOnTime
   pendingDeferredInterest
+  fees
+  everydaySpending
   latePayments { date name amount }
 `
 
@@ -433,6 +436,7 @@ export const CREATE_BILL = gql`
     $minAmount: Float
     $maxAmount: Float
     $startDate: String
+    $lateFee: Float
   ) {
     createBill(
       billName: $billName
@@ -446,6 +450,7 @@ export const CREATE_BILL = gql`
       minAmount: $minAmount
       maxAmount: $maxAmount
       startDate: $startDate
+      lateFee: $lateFee
     ) {
       success
       message
@@ -544,8 +549,8 @@ export const UPDATE_CREDIT_BALANCE = gql`
 `
 
 export const UPDATE_BILL = gql`
-  mutation UpdateBill($billName: String!, $amount: Float, $dueDate: Int, $preferredSourceBank: String, $preferredSourceAccount: String, $frequency: String, $dueMonth: Int, $startDate: String, $minAmount: Float, $maxAmount: Float) {
-    updateBill(billName: $billName, amount: $amount, dueDate: $dueDate, preferredSourceBank: $preferredSourceBank, preferredSourceAccount: $preferredSourceAccount, frequency: $frequency, dueMonth: $dueMonth, startDate: $startDate, minAmount: $minAmount, maxAmount: $maxAmount) { success message }
+  mutation UpdateBill($billName: String!, $amount: Float, $dueDate: Int, $preferredSourceBank: String, $preferredSourceAccount: String, $frequency: String, $dueMonth: Int, $startDate: String, $minAmount: Float, $maxAmount: Float, $lateFee: Float) {
+    updateBill(billName: $billName, amount: $amount, dueDate: $dueDate, preferredSourceBank: $preferredSourceBank, preferredSourceAccount: $preferredSourceAccount, frequency: $frequency, dueMonth: $dueMonth, startDate: $startDate, minAmount: $minAmount, maxAmount: $maxAmount, lateFee: $lateFee) { success message }
   }
 `
 
@@ -556,8 +561,52 @@ export const UPDATE_INCOME = gql`
 `
 
 export const MARK_BILL_PAID = gql`
-  mutation MarkBillPaid($billName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String) {
-    markBillPaid(billName: $billName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate) { success message }
+  mutation MarkBillPaid($billName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String, $moveMoney: Boolean) {
+    markBillPaid(billName: $billName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate, moveMoney: $moveMoney) { success message }
+  }
+`
+
+// ── Dashboard & settings ─────────────────────────────────────────────
+
+export const GET_ALERTS = gql`
+  query GetAlerts { alerts { key severity title detail link date } }
+`
+
+export const DISMISS_ALERT = gql`
+  mutation DismissAlert($key: String!, $days: Int) { dismissAlert(key: $key, days: $days) { success message } }
+`
+
+export const GET_DIGEST_PREVIEW = gql`
+  query GetDigestPreview { digestPreview }
+`
+
+export const SEND_DIGEST_EMAIL = gql`
+  mutation SendDigestEmail { sendDigestEmail { success message } }
+`
+
+export const GET_DASHBOARD_SUMMARY = gql`
+  query GetDashboardSummary {
+    dashboardSummary {
+      status statusTitle statusDetail
+      safeToSpend safePerDay lowestBalance lowestDate checkingNow cushion
+      overdueTotal shortTotal goalReserves everydayWeekly spendingMode
+      nextPayday horizon coveredThrough headline
+      billsThisPeriod { name billName kind dueDate amount status shortBy daysOverdue sourceAccount }
+      upcomingIncome { date name amount }
+      insights { severity category title detail impact date }
+    }
+  }
+`
+
+export const GET_SETTINGS = gql`
+  query GetSettings {
+    settings
+  }
+`
+
+export const UPDATE_SETTINGS = gql`
+  mutation UpdateSettings($changes: JSONString!) {
+    updateSettings(changes: $changes) { success message settings }
   }
 `
 

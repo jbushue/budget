@@ -201,7 +201,7 @@
           <div class="empty-state">
             <div class="icon">🔮</div>
             <p v-if="scenarioEmpty">The scenario returned no results. Check your modifications and try again.</p>
-            <p v-else>Configure modifications on the left and click "Run Scenario" to see the impact.</p>
+            <p v-else>Build a scenario and click "Run Scenario" to see the impact.</p>
           </div>
         </div>
       </div>
@@ -506,6 +506,7 @@ const outcomeRows = computed<OutcomeRow[]>(() => {
     { label: 'Cash at the end', base: b.endingCash, scen: s.endingCash, better: 1, fmt: currency },
     { label: 'Debt at the end', base: b.endingDebt, scen: s.endingDebt, better: -1, fmt: currency },
     { label: 'Interest charged', base: b.interestCharged, scen: s.interestCharged, better: -1, fmt: currency },
+    { label: 'Late & overdraft fees', base: b.fees, scen: s.fees, better: -1, fmt: currency },
     { label: 'Overall (cash − debt)', base: overall(b), scen: overall(s), better: 1, fmt: currency },
   ]
 })

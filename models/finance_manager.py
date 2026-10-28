@@ -48,6 +48,66 @@ class FinanceManager:
         # from wiping the database on the next save.
         self._db_sync_deletions = False
 
+        # Planning settings (see apply_settings / models/app_settings.py).
+        # Defaults keep the plain library behaviour: no everyday spending, no fees.
+        self.cushion: float = 0.0
+        self.everyday_spending: dict | None = None  # {"amount": per day, "bank", "account", "weekly", "mode"}
+        self.fees: dict = {}
+
+    # ========== Planning settings ==========
+
+    def record_bill_paid(self, bill, amount: float = None, payment_date: date = None,
+                         source_bank: str = "", source_account: str = "") -> None:
+        """
+        Mark a bill paid WITHOUT moving any money — for payments that already
+        happened in real life (your balances already reflect them, e.g. via
+        SimpleFIN sync or a transaction match). Card/loan balances are left alone.
+        """
+        from models.fixed_bill import Bill as _Bill, FloatingBill as _Floating
+        from models.dashboard import overdue_due_date, settle_paid_flag
+        payment_date = payment_date or date.today()
+        was_overdue = overdue_due_date(bill, payment_date) is not None
+        if amount is None:
+            amount = bill.effective_amount
+        if isinstance(bill, _Floating):
+            bill.mark_paid(source_bank, source_account, amount, payment_date)
+        else:
+            _Bill.mark_paid(bill, source_bank, source_account, amount, payment_date)
+        if isinstance(bill, GroupLinkedBill):
+            bill.linked_group.mark_paid(payment_date)
+        settle_paid_flag(bill, was_overdue)
+        self.invalidate_plan_cache()
+
+    def sim_options(self) -> dict:
+        """Keyword arguments every TimelineSimulator/PaymentOptimizer should get."""
+        return {"daily_spending": self.everyday_spending, "fees": self.fees}
+
+    def apply_settings(self, settings: dict) -> None:
+        """Load planning settings (cushion, everyday spending, fees) into the manager."""
+        self.cushion = max(0.0, float(settings.get("cushion", 0.0)))
+        self.fees = {k: float(settings.get(k, 0.0)) for k in ("card_late_fee", "default_late_fee", "overdraft_fee")}
+
+        weekly = float(settings.get("everyday_weekly", 0.0))
+        mode = settings.get("spending_mode", "manual")
+        if mode == "learned":
+            try:
+                from models.ledger import learned_everyday_weekly
+                learned = learned_everyday_weekly()
+                if learned is not None:
+                    weekly = learned
+                else:
+                    mode = "manual"  # not enough history yet
+            except Exception:
+                mode = "manual"
+        bank = account = None
+        if settings.get("spending_account") and ":" in settings["spending_account"]:
+            bank, account = settings["spending_account"].split(":", 1)
+        self.everyday_spending = (
+            {"amount": weekly / 7.0, "weekly": round(weekly, 2), "mode": mode, "bank": bank, "account": account}
+            if weekly > 0 else None
+        )
+        self.invalidate_plan_cache()
+
     # ========== Linked Bill Auto-Creation ==========
 
     def _ensure_linked_bills(self):
@@ -372,7 +432,7 @@ class FinanceManager:
 
         if optimized:
             optimizer = PaymentOptimizer(
-                copied_banks, copied_income, copied_bills, copied_groups
+                copied_banks, copied_income, copied_bills, copied_groups, **self.sim_options()
             )
             result, _ = optimizer.run_optimized_simulation(
                 start_date, end_date,
@@ -383,7 +443,7 @@ class FinanceManager:
             return result
         else:
             simulator = TimelineSimulator(
-                copied_banks, copied_income, copied_bills, copied_groups
+                copied_banks, copied_income, copied_bills, copied_groups, **self.sim_options()
             )
             return simulator.project_balances(start_date, end_date, payment_strategy)
 
@@ -541,7 +601,8 @@ class FinanceManager:
             copied_banks,
             copied_income,
             copied_bills,
-            copied_groups
+            copied_groups,
+            **self.sim_options(),
         )
 
         return optimizer.optimize_payment_schedule(
@@ -571,7 +632,8 @@ class FinanceManager:
             copied_banks,
             copied_income,
             copied_bills,
-            copied_groups
+            copied_groups,
+            **self.sim_options(),
         )
 
         return optimizer.generate_multiple_strategies(start_date, end_date, num_strategies)
@@ -752,7 +814,15 @@ class FinanceManager:
             except Exception:
                 pass
 
-        discretionary = total_checking + upcoming_income - committed
+        # The headline number comes from the dashboard's projection (lowest
+        # checking balance − cushion − overdue/short bills, with everyday
+        # spending) so every screen shows the same safe-to-spend. The totals
+        # above remain as the breakdown.
+        try:
+            from models.dashboard import build_dashboard
+            discretionary = build_dashboard(self, today)["safe_to_spend"]
+        except Exception:
+            discretionary = total_checking + upcoming_income - committed
         return {
             'safe_to_spend': round(discretionary, 2),
             'total_checking': round(total_checking, 2),
@@ -874,7 +944,7 @@ class FinanceManager:
         )
         baseline_sim = TimelineSimulator(
             baseline_banks, baseline_income,
-            baseline_bills, baseline_groups
+            baseline_bills, baseline_groups, **self.sim_options()
         )
         baseline = baseline_sim.project_balances(date.today(), end)
         
@@ -1002,7 +1072,7 @@ class FinanceManager:
                             )
         
         # Run scenario simulation WITH bill groups
-        scenario_sim = TimelineSimulator(mod_banks, mod_income, mod_bills, mod_bill_groups)
+        scenario_sim = TimelineSimulator(mod_banks, mod_income, mod_bills, mod_bill_groups, **self.sim_options())
         scenario = scenario_sim.project_balances(date.today(), end)
         
         # Calculate deltas
@@ -1154,6 +1224,11 @@ class FinanceManager:
 
             repo.close()
             self._db_sync_deletions = True
+            try:
+                from models.app_settings import get_settings
+                self.apply_settings(get_settings())
+            except Exception as e:
+                print(f"⚠️  Could not load settings: {e}")
             return True
         except Exception as e:
             print(f"❌ Error loading from database: {e}")

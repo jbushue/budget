@@ -52,6 +52,7 @@ body {
 .app-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -153,7 +154,9 @@ body {
 
 .main-content {
   flex: 1;
+  min-width: 0;          /* let wide content scroll inside, not stretch the page */
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 2rem 2.5rem;
   background: var(--bg);
 }
@@ -173,6 +176,8 @@ body {
 
 .card-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 1rem;
@@ -193,6 +198,7 @@ body {
   display: grid;
   gap: 1rem;
 }
+.grid > * { min-width: 0; }  /* long content can't force a column wider than its share */
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
@@ -200,8 +206,11 @@ body {
 @media (max-width: 1024px) {
   .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
 }
-@media (max-width: 640px) {
-  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+@media (max-width: 720px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+@media (max-width: 340px) {
+  .grid-4 { grid-template-columns: 1fr; }
 }
 
 /* ── Stat card ────────────────────────────────────────────────────── */
@@ -249,6 +258,8 @@ body {
 /* ── Tables ───────────────────────────────────────────────────────── */
 .table-wrap {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
   border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: var(--surface);
@@ -373,6 +384,13 @@ select {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+}
+
 input:focus,
 select:focus {
   outline: none;
@@ -383,6 +401,7 @@ select:focus {
 /* ── Badges ────────────────────────────────────────────────────────── */
 .badge {
   display: inline-block;
+  white-space: nowrap;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.68rem;
@@ -399,6 +418,8 @@ select:focus {
 /* ── View headers ─────────────────────────────────────────────────── */
 .view-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 1.75rem;
@@ -446,6 +467,7 @@ select:focus {
 
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 1.25rem;
@@ -517,7 +539,8 @@ select:focus {
   border: 1px solid var(--border);
 }
 
-.progress-bar .fill {
+.progress-bar .fill,
+.progress-bar .progress-fill {
   height: 100%;
   border-radius: 4px;
   transition: width 0.3s ease;
@@ -595,3 +618,194 @@ select:focus {
   transform: rotate(90deg);
 }
 
+
+/* ════════════════════════════════════════════════════════════════════
+   Responsive layout
+   ≥1200px  full sidebar · 768–1199px  icon sidebar (toggle remembered)
+   <768px   top bar + slide-in menu, single-column content
+   ════════════════════════════════════════════════════════════════════ */
+
+.mobile-bar, .drawer-backdrop, .mobile-only { display: none; }
+
+img, canvas, svg, video { max-width: 100%; }
+canvas { display: block; }
+
+/* Any element can opt into horizontal scrolling on small screens */
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+
+/* Wide, data-heavy tables keep their columns and scroll sideways */
+.table-wrap > table { min-width: 100%; }
+
+/* Inline button/control rows wrap instead of overflowing */
+.btn { white-space: nowrap; justify-content: center; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+@media (max-width: 1199px) {
+  .main-content { padding: 1.75rem 1.5rem; }
+  /* Tablets: tighter tables so wide ones (Bills, Accounts) fit without scrolling */
+  th, td { padding: 0.55rem 0.6rem; }
+  th { font-size: 0.7rem; letter-spacing: 0.02em; }
+  table { font-size: 0.82rem; }
+  td .btn-sm { padding: 0.3rem 0.55rem; }
+  /* Action buttons in the last column may wrap onto two lines */
+  td:last-child[style*="nowrap"] { white-space: normal !important; }
+  td:last-child .btn { margin-top: 0.1rem; margin-bottom: 0.1rem; }
+}
+
+@media (max-width: 767px) {
+  .app-layout { flex-direction: column; }
+
+  /* Top bar */
+  .mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: 56px;
+    flex: 0 0 56px;
+    padding: 0 0.75rem;
+    background: var(--sidebar-bg);
+    color: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    padding-top: env(safe-area-inset-top);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .menu-btn {
+    background: none; border: none; color: #fff; font-size: 1.4rem;
+    width: 44px; height: 44px; border-radius: 8px; cursor: pointer;
+  }
+  .menu-btn:active { background: rgba(255,255,255,0.1); }
+  .mobile-title { flex: 1; font-weight: 700; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Sidebar becomes an off-canvas drawer (always full width labels) */
+  .sidebar,
+  .sidebar-collapsed .sidebar {
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    width: min(280px, 85vw);
+    min-width: 0;
+    z-index: 80;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    padding-top: env(safe-area-inset-top);
+  }
+  .drawer-open .sidebar { transform: translateX(0); }
+  .sidebar-collapsed .nav-label, .sidebar-collapsed .logo { display: inline; }
+  .sidebar-collapsed .sidebar-header { justify-content: space-between; padding: 1.25rem 1rem; }
+  .nav-item { padding: 0.85rem 1.15rem; font-size: 0.95rem; }
+  .drawer-backdrop {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    z-index: 70;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .drawer-open .drawer-backdrop { opacity: 1; pointer-events: auto; }
+  .desktop-only { display: none; }
+  .mobile-only { display: inline-flex; }
+
+  /* Content */
+  .main-content { padding: 1rem 0.85rem calc(1.5rem + env(safe-area-inset-bottom)); }
+  .main-content > .top-bar { display: none; }   /* the bell lives in the top bar */
+
+  .view-header { margin-bottom: 1rem; padding-bottom: 0.75rem; }
+  .view-header h2 { font-size: 1.25rem; }
+  .view-header > div { flex-wrap: wrap; }
+
+  .card { padding: 1rem; border-radius: var(--radius); }
+  .card-title { font-size: 0.85rem; }
+  .stat-card { padding: 1rem 0.6rem; }
+  .stat-value { font-size: 1.25rem; overflow-wrap: anywhere; }
+  .stat-label { font-size: 0.68rem; }
+
+  th, td { padding: 0.55rem 0.6rem; }
+  table { font-size: 0.82rem; }
+
+  /* 16px inputs stop iOS from zooming in when a field is focused */
+  input, select, textarea { font-size: 16px; }
+
+  /* Comfortable touch targets */
+  .btn { min-height: 40px; }
+  .btn-sm { min-height: 34px; }
+  .chip { padding: 0.45rem 0.9rem; }
+
+  /* Dialogs become bottom sheets */
+  .modal-overlay { align-items: flex-end; }
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 1.25rem 1rem calc(1rem + env(safe-area-inset-bottom));
+  }
+  .modal-actions { position: sticky; bottom: calc(-1rem - env(safe-area-inset-bottom)); background: var(--surface); padding-bottom: 0.5rem; }
+  .modal-actions .btn { flex: 1 1 auto; }
+
+  .empty-state { padding: 2rem 0.5rem; }
+
+  /* ── Stacked tables: each row becomes a card, each cell "Label ...... value" ──
+     (labels come from utils/stackTables.ts; wrap a table in .no-stack to opt out) */
+  .table-wrap:not(.no-stack) { border: none; background: transparent; overflow: visible; }
+  .table-wrap:not(.no-stack) > table,
+  .table-wrap:not(.no-stack) > table > tbody,
+  .table-wrap:not(.no-stack) > table > tfoot,
+  .table-wrap:not(.no-stack) > table > tbody > tr,
+  .table-wrap:not(.no-stack) > table > tfoot > tr { display: block; width: 100%; }
+  .table-wrap:not(.no-stack) > table > thead { display: none; }
+  .table-wrap:not(.no-stack) > table > tbody > tr,
+  .table-wrap:not(.no-stack) > table > tfoot > tr {
+    background: var(--surface) !important;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    margin-bottom: 0.6rem;
+    padding: 0.35rem 0;
+    box-shadow: var(--shadow);
+  }
+  .table-wrap:not(.no-stack) td {
+    display: flex;
+    flex-wrap: wrap;           /* several buttons/values wrap under each other, still right-aligned */
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: right !important;
+    border: none !important;
+    padding: 0.35rem 0.85rem !important;
+    width: auto !important;
+    white-space: normal !important;
+    background: transparent !important;
+    min-height: 2rem;
+  }
+  .table-wrap:not(.no-stack) td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    margin-right: auto;
+    max-width: 45%;
+    text-align: left;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+  .table-wrap:not(.no-stack) td > * { max-width: 100%; }
+  .table-wrap:not(.no-stack) td select { width: auto; min-width: 0; flex: 1 1 auto; max-width: 60%; }
+  /* Cells without a heading (actions, spanning rows) */
+  .table-wrap:not(.no-stack) td[data-label=""] { justify-content: flex-end; flex-wrap: wrap; }
+  .table-wrap:not(.no-stack) td[data-label=""]::before { display: none; }
+  .table-wrap:not(.no-stack) td[colspan] { justify-content: center; text-align: center !important; }
+  /* The first cell reads as the card's title */
+  .table-wrap:not(.no-stack) td:first-child { font-weight: 600; }
+  .table-wrap:not(.no-stack) td:first-child[data-label=""] { justify-content: flex-start; text-align: left !important; display: block; }
+  /* Tables that must stay side by side still scroll sideways */
+  .no-stack.table-wrap, .no-stack .table-wrap { overflow-x: auto; }
+
+  /* Safety net: inline flex rows in pages and dialogs wrap rather than overflow */
+  .main-content [style*="display:flex"], .main-content [style*="display: flex"],
+  .modal [style*="display:flex"], .modal [style*="display: flex"] { flex-wrap: wrap; }
+}
+
+@media (hover: none) {
+  tbody tr:hover td { background: inherit; }
+}

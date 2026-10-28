@@ -4,6 +4,7 @@ Provides a GraphQL API for React Native and other web clients.
 """
 
 import graphene
+from models.gql_ext import ExtQuery, ExtMutation
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from models.finance_manager import FinanceManager
@@ -256,6 +257,7 @@ class BillType(graphene.ObjectType):
     linked_account_name = graphene.String()
     linked_account_type = graphene.String()
     start_date = graphene.String()
+    late_fee = graphene.Float(description="Fee if paid late (null = the default from settings)")
 
 
 def _iso(d):
@@ -322,6 +324,7 @@ def _bill_to_type(bill) -> 'BillType':
         linked_account_name=bill.linked_account.account_name if is_linked else None,
         linked_account_type=getattr(bill, 'linked_account_type', None) if is_linked else None,
         start_date=_iso(getattr(bill, 'start_date', None)),
+        late_fee=getattr(bill, 'late_fee', None),
     )
 
 
@@ -602,6 +605,8 @@ class OutcomeSummaryType(graphene.ObjectType):
     late_payments = graphene.List(LatePaymentType)
     pending_deferred_interest = graphene.Float(
         description="Deferred interest unpaid 0% promos would trigger after the window")
+    fees = graphene.Float(description="Late and overdraft fees in the window")
+    everyday_spending = graphene.Float(description="Everyday spending allowance included in the window")
 
 
 class WhatIfResultType(graphene.ObjectType):
@@ -746,7 +751,7 @@ class BillGroupType(graphene.ObjectType):
 
 # ==================== Queries ====================
 
-class Query(graphene.ObjectType):
+class Query(ExtQuery, graphene.ObjectType):
     """Root query for the GraphQL API."""
 
     # Bank Queries
@@ -1715,6 +1720,7 @@ class CreateBill(graphene.Mutation):
         preferred_source_bank = graphene.String()
         preferred_source_account = graphene.String()
         start_date = graphene.String()
+        late_fee = graphene.Float(description="Fee if paid late (omit to use the default from settings)")
 
     bill = graphene.Field(BillType)
     success = graphene.Boolean()
@@ -1722,7 +1728,7 @@ class CreateBill(graphene.Mutation):
 
     def mutate(self, info, bill_name, amount, due_date, frequency, due_month=None, bill_type="fixed",
                min_amount=None, max_amount=None, preferred_source_bank=None, preferred_source_account=None,
-               start_date=None):
+               start_date=None, late_fee=None):
         manager = info.context.get('manager')
         if not manager:
             return CreateBill(success=False, message="Manager not available")
@@ -1747,6 +1753,10 @@ class CreateBill(graphene.Mutation):
                 bill = Bill(bill_name, amount, **common)
             else:
                 return CreateBill(success=False, message=f"Unsupported bill type '{bill_type}'. Use fixed or floating.")
+            if late_fee is not None:
+                if late_fee < 0:
+                    return CreateBill(success=False, message="Late fee can't be negative")
+                bill.late_fee = late_fee
             manager.bills.append(bill)
             manager.save_to_database()
             return CreateBill(bill=_bill_to_type(bill), success=True, message=f"Bill '{bill_name}' created")
@@ -1963,12 +1973,13 @@ class UpdateBill(graphene.Mutation):
         max_amount = graphene.Float()
         preferred_source_bank = graphene.String()
         preferred_source_account = graphene.String()
+        late_fee = graphene.Float(description="Fee if paid late; a negative value means use the default")
     success = graphene.Boolean()
     message = graphene.String()
 
     def mutate(self, info, bill_name, amount=None, due_date=None, frequency=None, due_month=None,
                start_date=None, min_amount=None, max_amount=None,
-               preferred_source_bank=None, preferred_source_account=None):
+               preferred_source_bank=None, preferred_source_account=None, late_fee=None):
         manager = info.context.get('manager')
         if not manager:
             return UpdateBill(success=False, message="Manager not available")
@@ -2002,6 +2013,8 @@ class UpdateBill(graphene.Mutation):
                 bill.due_month = due_month
             if start_date is not None:
                 bill.start_date = _parse_date(start_date, "start date")
+            if late_fee is not None:
+                bill.late_fee = late_fee if late_fee >= 0 else None
             if isinstance(bill, FloatingBill):
                 if min_amount is not None:
                     bill.min_amount = min_amount
@@ -2110,6 +2123,9 @@ class MarkBillPaid(graphene.Mutation):
     for account-linked bills (credit/mortgage/HELOC payments). The money comes
     out of the source account (or the bill's preferred source); paying from a
     credit card charges the card.
+
+    With moveMoney: false the bill is only recorded as paid — use it when the
+    payment already happened and your balances already reflect it.
     """
     class Arguments:
         bill_name = graphene.String(required=True)
@@ -2117,10 +2133,12 @@ class MarkBillPaid(graphene.Mutation):
         source_bank = graphene.String()
         source_account = graphene.String()
         payment_date = graphene.String()  # ISO date string
+        move_money = graphene.Boolean(default_value=True)
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, bill_name, amount_paid=None, source_bank=None, source_account=None, payment_date=None):
+    def mutate(self, info, bill_name, amount_paid=None, source_bank=None, source_account=None, payment_date=None,
+               move_money=True):
         manager = info.context.get('manager')
         if not manager:
             return MarkBillPaid(success=False, message="Manager not available")
@@ -2136,10 +2154,17 @@ class MarkBillPaid(graphene.Mutation):
         pay_amount = amount_paid if amount_paid is not None else bill.effective_amount
         if pay_amount < 0:
             return MarkBillPaid(success=False, message="Amount paid cannot be negative")
+        if not move_money:
+            manager.record_bill_paid(bill, pay_amount, pay_date, src_bank, src_acct)
+            manager.save_to_database()
+            return MarkBillPaid(success=True, message=f"Bill '{bill_name}' recorded as paid")
+
         if isinstance(bill, AccountLinkedBill) and pay_amount > bill.linked_account_balance + 0.005:
             return MarkBillPaid(success=False, message=(
                 f"Payment exceeds the balance owed (${bill.linked_account_balance:,.2f})"))
 
+        from models.dashboard import overdue_due_date, settle_paid_flag
+        was_overdue = overdue_due_date(bill, pay_date) is not None
         try:
             undo = _take_payment(manager, src_bank, src_acct, pay_amount, f"Bill payment: {bill_name}", pay_date)
         except ValueError as e:
@@ -2153,6 +2178,7 @@ class MarkBillPaid(graphene.Mutation):
         except ValueError as e:
             undo()
             return MarkBillPaid(success=False, message=f"Payment error: {e}")
+        settle_paid_flag(bill, was_overdue)
 
         # Persist all state changes (balances, paid flag, payment history)
         manager.save_to_database()
@@ -3127,7 +3153,7 @@ class RemovePromoOffer(graphene.Mutation):
         return RemovePromoOffer(success=True, message=f"Promo '{promo_name}' removed")
 
 
-class Mutation(graphene.ObjectType):
+class Mutation(ExtMutation, graphene.ObjectType):
     """Root mutation for the GraphQL API."""
 
     create_bank = CreateBank.Field()

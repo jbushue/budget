@@ -22,6 +22,13 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 def utc_now():
     return datetime.now(timezone.utc)
 
+
+def local_date(dt):
+    """Calendar date in local time for a stored timestamp (SQLite hands back naive UTC)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone().date()
+
 # Create engine and session
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -276,6 +283,9 @@ class BillModel(Base):
     # Schedule anchor for weekly/biweekly/quarterly/etc. bills
     start_date = Column(Date, nullable=True)
 
+    # Fee charged when this bill is paid late (None = use the app-wide default)
+    late_fee = Column(Float, nullable=True)
+
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -418,6 +428,93 @@ class BillGroupMemberModel(Base):
 
 # ==================== Initialize Database ====================
 
+# ==================== Planning, ledger, goals, alerts, auth ====================
+
+class AppSettingModel(Base):
+    """One app-wide setting (see models/app_settings.py). Value is JSON."""
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(String(4000), nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+
+class CategoryModel(Base):
+    """A spending/income category with an optional monthly budget."""
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    kind = Column(String(20), nullable=False, default="expense")  # expense | income | transfer
+    is_everyday = Column(Boolean, nullable=False, default=False)  # counts toward everyday spending
+    monthly_budget = Column(Float, nullable=True)
+    color = Column(String(20), nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+
+
+class CategoryRuleModel(Base):
+    """Auto-categorization rule: descriptions containing `pattern` get `category`."""
+    __tablename__ = "category_rules"
+
+    id = Column(Integer, primary_key=True)
+    pattern = Column(String(200), nullable=False)
+    category = Column(String(100), nullable=False)
+    priority = Column(Integer, nullable=False, default=0)  # higher wins
+    created_at = Column(DateTime, default=utc_now)
+
+
+class LedgerTransactionModel(Base):
+    """A real-world transaction (imported from SimpleFIN/CSV or entered by hand)."""
+    __tablename__ = "ledger_transactions"
+
+    id = Column(Integer, primary_key=True)
+    txn_date = Column(Date, nullable=False)
+    description = Column(String(500), nullable=False)
+    payee = Column(String(200), nullable=True)
+    amount = Column(Float, nullable=False)  # negative = money out
+    bank_name = Column(String(100), nullable=True)
+    account_name = Column(String(100), nullable=True)
+    category = Column(String(100), nullable=True)
+    source = Column(String(20), nullable=False, default="manual")  # simplefin | csv | manual
+    external_id = Column(String(200), nullable=True, unique=True)
+    matched_bill = Column(String(100), nullable=True)
+    notes = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+
+
+class SavingsGoalModel(Base):
+    """A savings goal or sinking fund."""
+    __tablename__ = "savings_goals"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    target_amount = Column(Float, nullable=False)
+    target_date = Column(Date, nullable=True)
+    bank_name = Column(String(100), nullable=True)
+    account_name = Column(String(100), nullable=True)
+    saved_amount = Column(Float, nullable=False, default=0.0)  # money set aside so far
+    linked_bill = Column(String(100), nullable=True)  # sinking fund for this bill
+    created_at = Column(DateTime, default=utc_now)
+
+
+class DismissedAlertModel(Base):
+    """An alert the user dismissed (hidden until `until`)."""
+    __tablename__ = "dismissed_alerts"
+
+    key = Column(String(300), primary_key=True)
+    until = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=utc_now)
+
+
+class AuthSessionModel(Base):
+    """A login session token (stored as a SHA-256 hash)."""
+    __tablename__ = "auth_sessions"
+
+    token_hash = Column(String(64), primary_key=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=utc_now)
+
+
 def init_db():
     """Create all tables in the database."""
     Base.metadata.create_all(bind=engine)
@@ -551,6 +648,13 @@ def _run_migrations():
             if "start_date" not in columns:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN start_date DATE"))
+
+    # Migration: per-bill late fee
+    if "bills" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("bills")]
+        if "late_fee" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE bills ADD COLUMN late_fee FLOAT"))
 
     # Migration: add last_paid_date to bill_groups (drives auto period reset)
     if "bill_groups" in inspector.get_table_names():

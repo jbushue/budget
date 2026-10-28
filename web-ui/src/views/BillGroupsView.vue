@@ -27,7 +27,7 @@
             <span v-if="g.isPaidThisPeriod" class="badge badge-success" style="margin-left:0.35rem">PAID</span>
             <span v-else class="badge badge-warning" style="margin-left:0.35rem">DUE</span>
           </div>
-          <div style="display:flex;gap:0.4rem;align-items:center">
+          <div style="display:flex;flex-wrap:wrap;gap:0.4rem;align-items:center">
             <template v-if="!g.isPaidThisPeriod">
               <button class="btn btn-success btn-sm" @click="openPayGroup(g)">Mark Paid</button>
             </template>

@@ -14,6 +14,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from models.graphql_schema import schema
 from models.finance_manager import FinanceManager
+from models import web_routes
 
 
 def create_app():
@@ -22,9 +23,13 @@ def create_app():
     CORS(app)  # Enable CORS
 
     # Initialize the finance manager. One manager is shared by all requests,
-    # so GraphQL operations are serialized with a lock.
+    # so GraphQL operations are serialized with a lock. It lives in `state` so
+    # a backup restore can swap in a freshly loaded one.
     manager = FinanceManager([], [], [])
     lock = threading.Lock()
+    state = {'manager': manager}
+    app.config['BUDGET_STATE'] = state
+    app.config['BUDGET_LOCK'] = lock
     manager.initialize_database()
 
     # Try to load from database
@@ -95,7 +100,7 @@ def create_app():
                 result = schema.execute(
                     query,
                     variable_values=variables,
-                    context_value={'manager': manager}
+                    context_value={'manager': state['manager']}
                 )
 
             response = {}
@@ -115,17 +120,22 @@ def create_app():
     @app.route('/health', methods=['GET'])
     def health():
         """Health check endpoint."""
+        m = state['manager']
         return jsonify({
             'status': 'healthy',
-            'banks': len(manager.banks),
-            'bills': len(manager.bills),
-            'income_sources': len(manager.income_sources)
+            'banks': len(m.banks),
+            'bills': len(m.bills),
+            'income_sources': len(m.income_sources)
         })
 
-    # Root endpoint with API info
-    @app.route('/', methods=['GET'])
+    # Login, file downloads/uploads, and the built web UI (if present)
+    web_routes.register(app, state, lock)
+
+    # API info (at / unless the built web UI is being served there)
+    @app.route('/api', methods=['GET'])
     def index():
-        """Root endpoint with API information."""
+        """API information."""
+        manager = state['manager']
         return jsonify({
             'name': 'Personal Finance Management System GraphQL API',
             'version': '1.0.0',
@@ -140,7 +150,27 @@ def create_app():
             }
         })
 
+    if not os.path.isdir(web_routes.DIST_DIR):
+        app.add_url_rule('/', 'api_root', index, methods=['GET'])
+
     return app
+
+
+def start_digest_thread(app):
+    """Send the optional daily email digest (checks every 30 minutes)."""
+    from models import alerts
+
+    def loop():
+        while True:
+            try:
+                if alerts.digest_due():
+                    with app.config['BUDGET_LOCK']:
+                        print('✉️ ', alerts.send_digest(app.config['BUDGET_STATE']['manager']))
+            except Exception as e:  # keep the server running whatever happens
+                print(f'⚠️  Digest email failed: {e}')
+            threading.Event().wait(1800)
+
+    threading.Thread(target=loop, daemon=True, name='digest').start()
 
 
 if __name__ == '__main__':
@@ -158,5 +188,7 @@ if __name__ == '__main__':
     debug = os.environ.get('BUDGET_DEBUG') == '1'
     host = os.environ.get('BUDGET_HOST', '127.0.0.1')
     app = create_app()
+    if not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        start_digest_thread(app)
     app.run(debug=debug, host=host, port=4000)
 

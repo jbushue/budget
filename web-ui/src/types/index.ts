@@ -105,6 +105,7 @@ export interface BillItem {
   minAmount: number | null
   maxAmount: number | null
   startDate?: string | null
+  lateFee?: number | null
   nextDueDate: string
   preferredSourceBank: string | null
   preferredSourceAccount: string | null
@@ -353,6 +354,8 @@ export interface OutcomeSummary {
   interestEarned: number
   paymentsOnTime: number
   pendingDeferredInterest: number
+  fees: number
+  everydaySpending: number
   latePayments: LatePayment[]
 }
 
@@ -365,6 +368,70 @@ export interface WhatIfResult {
   changes: string[]
   baseline: OutcomeSummary
   scenario: OutcomeSummary
+}
+
+export type PeriodBillStatus = 'paid' | 'covered' | 'covered_by_plan' | 'short' | 'overdue'
+
+export interface PeriodBill {
+  name: string
+  /** Name to pass to markBillPaid */
+  billName: string
+  kind: string
+  dueDate: string
+  amount: number
+  status: PeriodBillStatus
+  shortBy: number
+  daysOverdue: number
+  sourceAccount: string
+}
+
+export interface DashboardSummary {
+  status: 'ok' | 'warning' | 'danger'
+  statusTitle: string
+  statusDetail: string
+  safeToSpend: number
+  safePerDay: number
+  lowestBalance: number
+  lowestDate: string | null
+  checkingNow: number
+  cushion: number
+  overdueTotal: number
+  shortTotal: number
+  goalReserves: number
+  everydayWeekly: number
+  spendingMode: 'manual' | 'learned'
+  nextPayday: string | null
+  horizon: string
+  coveredThrough: string
+  headline: string
+  billsThisPeriod: PeriodBill[]
+  upcomingIncome: { date: string; name: string; amount: number }[]
+  insights: Insight[]
+}
+
+/** App settings as returned by the `settings` query (secrets omitted). */
+export interface AppSettings {
+  cushion: number
+  spending_mode: 'manual' | 'learned'
+  everyday_weekly: number
+  spending_account: string
+  card_late_fee: number
+  default_late_fee: number
+  overdraft_fee: number
+  auto_match_bills: boolean
+  dismissed_recurring: string[]
+  alert_days_before_due: number
+  alert_low_balance: boolean
+  browser_notifications: boolean
+  email_enabled: boolean
+  email_to: string
+  smtp_host: string
+  smtp_port: number
+  smtp_user: string
+  smtp_use_tls: boolean
+  password_set: boolean
+  smtp_password_set: boolean
+  [key: string]: unknown
 }
 
 export type InsightSeverity = 'urgent' | 'warning' | 'savings' | 'tip' | 'good'
@@ -472,4 +539,160 @@ export interface PaymentInsights {
 export interface MutationPayload {
   success: boolean
   message?: string | null
+}
+
+// ── Ledger (transactions, categories, budgets) ──
+
+export interface LedgerTransaction {
+  id: number
+  date: string
+  description: string
+  payee: string
+  amount: number            // negative = money out
+  bankName: string
+  accountName: string
+  category: string | null
+  source: 'simplefin' | 'csv' | 'manual'
+  matchedBill: string | null
+  notes: string
+}
+
+export interface TransactionPage {
+  total: number
+  totalIn: number
+  totalOut: number
+  items: LedgerTransaction[]
+}
+
+export interface Category {
+  name: string
+  kind: 'expense' | 'income' | 'transfer'
+  isEveryday: boolean
+  monthlyBudget: number | null
+  color: string | null
+}
+
+export interface CategoryRule {
+  id: number
+  pattern: string
+  category: string
+  priority: number
+}
+
+export interface BudgetLine {
+  category: string
+  color: string | null
+  isEveryday: boolean
+  budget: number | null
+  spent: number
+  remaining: number | null
+  percent: number | null
+  projected: number
+  status: 'ok' | 'warning' | 'over' | 'no_budget'
+}
+
+export interface BudgetStatus {
+  month: string
+  daysElapsed: number
+  daysInMonth: number
+  totalBudget: number
+  totalSpent: number
+  totalBudgetedSpent: number
+  uncategorizedSpent: number
+  income: number
+  lines: BudgetLine[]
+}
+
+export interface SpendingMonth {
+  month: string
+  income: number
+  spending: number
+  net: number
+  byCategory: string | Record<string, number>
+}
+
+export interface SpendingReport {
+  colors: string | Record<string, string>
+  months: SpendingMonth[]
+}
+
+export interface ImportResult extends MutationPayload {
+  imported: number | null
+  duplicates: number | null
+  matchedBills: number | null
+  errors: string[] | null
+}
+
+export interface CsvPreview {
+  columns: string[]
+  mapping: string | Record<string, number>
+  rowCount: number
+  errors: string[]
+  rows: { date: string; description: string; amount: number; category: string | null }[]
+}
+
+// ── Goals, bill matching, recurring charges ──
+
+export interface SavingsGoal {
+  id: number
+  name: string
+  targetAmount: number
+  savedAmount: number
+  remaining: number
+  progress: number
+  targetDate: string | null
+  monthsLeft: number | null
+  monthlyNeeded: number | null
+  perPaycheckNeeded: number | null
+  onTrack: boolean | null
+  bankName: string
+  accountName: string
+  inChecking: boolean
+  linkedBill: string | null
+  complete: boolean
+}
+
+export interface SinkingFundSuggestion {
+  billName: string
+  amount: number
+  frequency: string
+  nextDue: string
+  monthly: number
+}
+
+export interface BillMatch {
+  billName: string
+  dueDate: string
+  confidence: 'high' | 'medium'
+  reason: string
+  amount: number
+  transaction: Pick<LedgerTransaction, 'id' | 'date' | 'description' | 'amount' | 'bankName' | 'accountName'>
+}
+
+export interface RecurringCharge {
+  key: string
+  name: string
+  description: string
+  frequency: string
+  amount: number
+  variable: boolean
+  minAmount: number
+  maxAmount: number
+  count: number
+  lastDate: string
+  nextExpected: string
+  dueDay: number
+  category: string | null
+  monthlyCost: number
+}
+
+// ── Alerts ──
+
+export interface AlertItem {
+  key: string
+  severity: 'danger' | 'warning' | 'info'
+  title: string
+  detail: string
+  link: string
+  date: string
 }
