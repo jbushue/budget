@@ -426,7 +426,7 @@ const chartOptions = {
 .status-detail { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.15rem; }
 .safe-amount { font-size: 2.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 0.4rem; }
 .hint { font-size: 0.8rem; color: var(--text-muted); }
-.hint-warn { color: #92400e; background: var(--warning-light); padding: 0.4rem 0.6rem; border-radius: var(--radius); }
+.hint-warn { color: var(--warning-text); background: var(--warning-light); padding: 0.4rem 0.6rem; border-radius: var(--radius); }
 .period-list { list-style: none; margin: 0; padding: 0; }
 .period-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
 .period-list li:last-child { border-bottom: none; }

@@ -107,6 +107,7 @@
 import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Bar, Doughnut, Line } from 'vue-chartjs'
+import { themeState } from '../utils/theme'
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement,
   Tooltip, Legend, Filler, type ChartOptions, type TooltipItem,
@@ -187,7 +188,10 @@ const categoryRows = computed(() => {
 
 const categoryChart = computed(() => ({
   labels: categoryRows.value.map(r => r.name),
-  datasets: [{ data: categoryRows.value.map(r => r.amount), backgroundColor: categoryRows.value.map(r => colorOf(r.name)) }],
+  datasets: [{
+    data: categoryRows.value.map(r => r.amount), backgroundColor: categoryRows.value.map(r => colorOf(r.name)),
+    borderColor: themeState.dark ? '#151e2e' : '#ffffff',  // slice gaps match the card
+  }],
 }))
 
 const trendCategories = computed(() => {

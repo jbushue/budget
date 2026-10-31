@@ -4,6 +4,7 @@
       <h2>Settings</h2>
     </div>
 
+    <AppearanceSettings />
     <PlanningSettings />
     <AlertSettings />
     <DataFiles />
@@ -69,7 +70,7 @@
         <div v-if="sfinSyncDetails.length > 0" style="margin-bottom:1rem">
           <details>
             <summary style="font-size:0.8rem;color:var(--text-muted);cursor:pointer;margin-bottom:0.25rem">Sync details</summary>
-            <div style="font-size:0.75rem;color:var(--text-muted);padding:0.5rem;background:var(--card-bg, #1e1e2e);border-radius:4px">
+            <div style="font-size:0.75rem;color:var(--text-muted);padding:0.5rem;background:var(--surface-alt);border-radius:4px">
               <div v-for="(d, i) in sfinSyncDetails" :key="i" style="margin-bottom:0.15rem">
                 <span :style="{ color: d.status === 'updated' ? 'var(--success)' : 'var(--text-muted)' }">
                   {{ d.status === 'updated' ? '✓' : '–' }}
@@ -218,6 +219,7 @@ import PlanningSettings from '../components/PlanningSettings.vue'
 import AlertSettings from '../components/AlertSettings.vue'
 import DataFiles from '../components/DataFiles.vue'
 import SecuritySettings from '../components/SecuritySettings.vue'
+import AppearanceSettings from '../components/AppearanceSettings.vue'
 import { currency, fmtDate } from '../utils/format'
 import type { Bank, SimplefinStatus, SimplefinAccount, MutationPayload } from '../types'
 

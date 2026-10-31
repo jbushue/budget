@@ -56,6 +56,7 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 - Everything is saved automatically to a local SQLite database
 - Excel import/export and a fill-in template, a transactions CSV, and one-click database **backup / restore** — all from Settings
 - **User accounts**: everyone signs in with their own username and password and shares the same budget; new people join with an invite link from an admin. Works from your phone or other devices on your network; installable as an app (PWA)
+- **Light and dark themes** (or follow the device's setting), and a layout that adapts to phones, tablets and desktops
 
 ---
 

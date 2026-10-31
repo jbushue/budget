@@ -75,7 +75,7 @@
                   <span v-if="t.source !== 'manual'" class="src">{{ t.source === 'simplefin' ? 'SimpleFIN' : 'CSV' }}</span>
                 </div>
               </td>
-              <td class="sub">{{ t.bankName ? `${t.bankName} / ${t.accountName}` : '—' }}</td>
+              <td><span class="sub">{{ t.bankName ? `${t.bankName} / ${t.accountName}` : '—' }}</span></td>
               <td>
                 <select :value="t.category ?? ''" :class="{ uncat: !t.category }" @change="setCategory(t, ($event.target as HTMLSelectElement).value)">
                   <option value="">Uncategorized</option>
@@ -455,6 +455,7 @@ async function importResult(run: () => Promise<ImportResult | null | undefined>)
 <style scoped>
 .filters { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; padding: 0.75rem 1rem; }
 .filters input, .filters select { margin: 0; }
+.filters input[type="date"] { width: auto; flex: 0 1 165px; }
 .summary { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; font-size: 0.9rem; margin-bottom: 0.75rem; }
 .remember { margin-left: auto; font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 0.35rem; align-items: center; }
 .remember input { width: auto; }

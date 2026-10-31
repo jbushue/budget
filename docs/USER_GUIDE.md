@@ -751,6 +751,10 @@ The **🔔** at the top right of every page counts what needs attention (red whe
 
 **Route:** `/settings`
 
+### 🎨 Appearance
+
+Pick **Light**, **Dark**, or **Match device** (follows your phone or computer's light / dark setting, and switches when it does). The choice is saved on each device, so your phone and computer can differ.
+
 ### 🧮 Planning
 
 | Setting | What it does |

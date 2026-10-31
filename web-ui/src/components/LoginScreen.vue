@@ -141,7 +141,7 @@ async function submit() {
 </script>
 
 <style scoped>
-.login-wrap { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1rem; background: var(--bg, #f1f5f9); }
+.login-wrap { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 1rem; background: var(--bg); }
 .login-card { width: 100%; max-width: 400px; }
 .logo { font-size: 1.6rem; margin: 0 0 0.75rem; text-align: center; }
 .intro { font-size: 0.92rem; margin: 0 0 1rem; text-align: center; }

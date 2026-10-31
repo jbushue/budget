@@ -187,7 +187,7 @@ async function copy() {
 .inline { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; font-weight: normal; text-transform: none; letter-spacing: normal; color: var(--text); margin: 0; }
 .inline select { width: auto; }
 .invite-form { align-items: center; gap: 0.75rem 1.5rem; }
-.link-box { margin-top: 0.85rem; padding: 0.85rem; border: 1px solid var(--primary); border-radius: 8px; background: var(--bg, #f8fafc); }
+.link-box { margin-top: 0.85rem; padding: 0.85rem; border: 1px solid var(--primary); border-radius: 8px; background: var(--surface-alt); }
 .link-title { font-weight: 600; font-size: 0.88rem; margin-bottom: 0.4rem; }
 .link-row { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; }
 .link-row input { flex: 1 1 auto; min-width: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; }

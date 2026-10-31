@@ -147,5 +147,5 @@ async function togglePreview() {
 .checks { display: flex; flex-direction: column; gap: 0.4rem; justify-content: center; }
 .checks label, .inline { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; font-weight: normal; text-transform: none; letter-spacing: normal; color: var(--text); }
 .inline { margin-bottom: 0.6rem; }
-.preview { background: var(--bg, #f8fafc); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-size: 0.78rem; white-space: pre-wrap; margin-top: 0.75rem; }
+.preview { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-size: 0.78rem; white-space: pre-wrap; margin-top: 0.75rem; }
 </style>

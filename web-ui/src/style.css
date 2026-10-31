@@ -32,6 +32,56 @@
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
   --radius: 8px;
   --radius-lg: 12px;
+  --card-bg: var(--surface);
+  --table-head: #e8ecf1;
+  --row-alt: #eef2f6;
+  --scroll-thumb: #cbd5e1;
+  --scroll-thumb-hover: #94a3b8;
+  --success-text: #065f46;
+  --warning-text: #92400e;
+  --danger-text: #991b1b;
+  --info-text: #1e40af;
+  --backdrop: rgba(15, 23, 42, 0.6);
+  color-scheme: light;
+}
+
+a { color: var(--primary); }
+a:hover { color: var(--primary-hover); }
+
+/* Dark theme (Settings → Appearance). Set on <html> before the app loads, so there's no flash. */
+:root[data-theme="dark"] {
+  --bg: #0b1120;
+  --surface: #151e2e;
+  --surface-alt: #1b2537;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-light: #64748b;
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-light: rgba(59, 130, 246, 0.2);
+  --success: #10b981;
+  --success-light: rgba(16, 185, 129, 0.16);
+  --warning: #f59e0b;
+  --warning-light: rgba(245, 158, 11, 0.16);
+  --danger: #f05252;
+  --danger-light: rgba(239, 68, 68, 0.18);
+  --border: #243044;
+  --border-strong: #2f3d55;
+  --sidebar-bg: #070b14;
+  --sidebar-active: #172033;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.55), 0 4px 6px rgba(0, 0, 0, 0.4);
+  --table-head: #1b2537;
+  --row-alt: #182131;
+  --scroll-thumb: #334155;
+  --scroll-thumb-hover: #475569;
+  --success-text: #6ee7b7;
+  --warning-text: #fcd34d;
+  --danger-text: #fca5a5;
+  --info-text: #93c5fd;
+  --backdrop: rgba(0, 0, 0, 0.65);
+  color-scheme: dark;
 }
 
 html,
@@ -272,7 +322,7 @@ table {
 }
 
 thead {
-  background: #e8ecf1;
+  background: var(--table-head);
 }
 
 th {
@@ -294,7 +344,7 @@ td {
 }
 
 tbody tr:nth-child(even) {
-  background: #eef2f6;
+  background: var(--row-alt);
 }
 
 tbody tr:hover td {
@@ -410,10 +460,10 @@ select:focus {
   letter-spacing: 0.04em;
 }
 
-.badge-success { background: var(--success-light); color: #065f46; }
-.badge-warning { background: var(--warning-light); color: #92400e; }
-.badge-danger  { background: var(--danger-light); color: #991b1b; }
-.badge-info    { background: var(--primary-light); color: #1e40af; }
+.badge-success { background: var(--success-light); color: var(--success-text); }
+.badge-warning { background: var(--warning-light); color: var(--warning-text); }
+.badge-danger  { background: var(--danger-light); color: var(--danger-text); }
+.badge-info    { background: var(--primary-light); color: var(--info-text); }
 
 /* ── View headers ─────────────────────────────────────────────────── */
 .view-header {
@@ -437,7 +487,7 @@ select:focus {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--backdrop);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -581,11 +631,11 @@ select:focus {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--scroll-thumb);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--scroll-thumb-hover);
 }
 
 /* ── Section dividers inside cards ───────────────────────────────── */
@@ -647,7 +697,10 @@ canvas { display: block; }
   th { font-size: 0.7rem; letter-spacing: 0.02em; }
   table { font-size: 0.82rem; }
   td .btn-sm { padding: 0.3rem 0.55rem; }
-  /* Action buttons in the last column may wrap onto two lines */
+}
+
+/* Below wide desktops, action buttons in a table's last column may wrap onto two lines */
+@media (max-width: 1439px) {
   td:last-child[style*="nowrap"] { white-space: normal !important; }
   td:last-child .btn { margin-top: 0.1rem; margin-bottom: 0.1rem; }
 }

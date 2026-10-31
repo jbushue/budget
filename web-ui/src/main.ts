@@ -4,7 +4,10 @@ import { apolloClient } from './graphql/client'
 import { router } from './router'
 import App from './App.vue'
 import { startTableLabels } from './utils/stackTables'
+import { startTheme } from './utils/theme'
 import './style.css'
+
+startTheme()
 
 const app = createApp({
   setup() {

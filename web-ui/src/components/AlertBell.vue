@@ -90,7 +90,7 @@ defineExpose({ refetch })
 
 <style scoped>
 .bell-wrap { position: relative; }
-.bell { background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: 999px; width: 40px; height: 40px; cursor: pointer; font-size: 1.1rem; position: relative; }
+.bell { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; width: 40px; height: 40px; cursor: pointer; font-size: 1.1rem; position: relative; }
 .bell.urgent { border-color: var(--danger); }
 .count { position: absolute; top: -4px; right: -4px; background: var(--primary); color: #fff; border-radius: 999px; font-size: 0.65rem; min-width: 18px; height: 18px; line-height: 18px; padding: 0 4px; font-weight: 700; }
 .bell.urgent .count { background: var(--danger); }
@@ -98,7 +98,7 @@ defineExpose({ refetch })
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .x { background: none; border: none; cursor: pointer; color: var(--text-muted); }
 .empty { font-size: 0.9rem; color: var(--text-muted); padding: 0.5rem 0; }
-.alert { border-left: 3px solid var(--border-strong); padding: 0.5rem 0.6rem; margin-bottom: 0.4rem; border-radius: 4px; background: var(--bg, #f8fafc); }
+.alert { border-left: 3px solid var(--border-strong); padding: 0.5rem 0.6rem; margin-bottom: 0.4rem; border-radius: 4px; background: var(--surface-alt); }
 .sev-danger { border-left-color: var(--danger); }
 .sev-warning { border-left-color: var(--warning); }
 .sev-info { border-left-color: var(--primary); }
