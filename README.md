@@ -55,7 +55,7 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 **Data and access**
 - Everything is saved automatically to a local SQLite database
 - Excel import/export and a fill-in template, a transactions CSV, and one-click database **backup / restore** — all from Settings
-- Optional **password login** to use it from your phone or other devices on your network; installable as an app (PWA)
+- **User accounts**: everyone signs in with their own username and password and shares the same budget; new people join with an invite link from an admin. Works from your phone or other devices on your network; installable as an app (PWA)
 
 ---
 
@@ -88,7 +88,7 @@ The web dev server proxies the API (`/graphql`, `/files`, `/auth`), so only port
 **One server instead of two:** after `cd web-ui && npm run build`, `python api_server.py` also serves the built web interface at http://localhost:4000 — and from there it can be installed as an app.
 
 ### Using it from your phone
-The web interface (port 3000) listens on your network, but the API only answers this computer until you **set a password** in *Settings → Security*. After that, open `http://<this computer's address>:3000` on your phone and sign in (sessions last 30 days). Adding it to the home screen works there too; the offline app shell needs HTTPS or localhost.
+The first time you open the app on the computer that runs it, it asks you to create an account — that one is the admin. Until it exists, the API only answers this computer. Then open `http://<this computer's address>:3000` on your phone and sign in (sign-ins last 30 days). To add people, create an invite link in *Settings → Users* and send it to them. Adding it to the home screen works there too; the offline app shell needs HTTPS or localhost.
 
 ### Where your data lives
 `~/.budget_app/finance.db` (on Windows `C:\Users\<you>\.budget_app\finance.db`). *Settings → Data & backup → Download backup* saves a copy of it; restoring keeps a copy of the replaced data in `~/.budget_app/backups/`.
@@ -96,7 +96,7 @@ The web interface (port 3000) listens on your network, but the API only answers 
 ### Server options
 | Environment variable | Default | Purpose |
 |---|---|---|
-| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. The default is right when you use the web interface (it reaches the API through its proxy). If you expose the API directly, set a password first. |
+| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. The default is right when you use the web interface (it reaches the API through its proxy). If you expose the API directly, create the first account first. |
 | `BUDGET_DEBUG` | off | Set to `1` for Flask debug mode. |
 
 ### Command-line menu
@@ -121,7 +121,7 @@ models/
   goals.py               Savings goals and sinking funds
   bill_matching.py       Recognize bill payments in transactions; detect recurring charges
   alerts.py              Alerts and the daily email digest
-  auth.py, web_routes.py Password login, access rules, file routes, serving the built UI
+  auth.py, web_routes.py User accounts and invites, access rules, file routes, serving the built UI
   debt_estimator.py      Debt payoff strategies
   bank.py, bank_account.py, credit_card_account.py, mortgage_account.py, heloc_account.py
   fixed_bill.py          Bills, variable bills, and auto-created linked bills
@@ -194,7 +194,7 @@ Tests use a temporary database, so they never touch your real data.
 
 ## Current status
 
-Working end to end: accounts (including mortgages, HELOCs, promos), bills and loan groups, income, payments and history, projections, the dashboard and safe-to-spend, transactions, budgets, goals and sinking funds, bill matching, recurring-charge detection, alerts and the email digest, the optimizer and its recommendations, fees, debt payoff, what-if scenarios, reports, persistence, Excel import/export, backup/restore, SimpleFIN sync, password login, and the installable app.
+Working end to end: accounts (including mortgages, HELOCs, promos), bills and loan groups, income, payments and history, projections, the dashboard and safe-to-spend, transactions, budgets, goals and sinking funds, bill matching, recurring-charge detection, alerts and the email digest, the optimizer and its recommendations, fees, debt payoff, what-if scenarios, reports, persistence, Excel import/export, backup/restore, SimpleFIN sync, user accounts with invites, and the installable app.
 
 Known limitations:
 - Weekly/bi-weekly items without a start date guess their schedule; set a start date for accuracy.
@@ -203,6 +203,6 @@ Known limitations:
 - The optimizer's "pay off a specific card" goal is available from Python only, not the web interface.
 - Bill matching looks at the last 45 days of transactions; older payments can be marked paid by hand.
 - The email digest is sent by the running API server, so it only goes out while the app is running.
-- No HTTPS of its own: on your home network the password protects access, but traffic isn't encrypted. Don't expose it to the internet without a reverse proxy that adds HTTPS.
+- No HTTPS of its own: on your home network sign-in protects access, but traffic isn't encrypted. Don't expose it to the internet without a reverse proxy that adds HTTPS.
 
 No license has been chosen yet.

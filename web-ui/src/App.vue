@@ -27,6 +27,16 @@
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </nav>
+      <div v-if="authState.user" class="sidebar-footer">
+        <div class="nav-item user" :title="`Signed in as ${authState.user.username}`">
+          <span class="nav-icon">👤</span>
+          <span class="nav-label">{{ authState.user.username }}<small v-if="authState.user.is_admin"> · admin</small></span>
+        </div>
+        <button class="nav-item sign-out" title="Sign out" @click="logout()">
+          <span class="nav-icon">🚪</span>
+          <span class="nav-label">Sign out</span>
+        </button>
+      </div>
     </aside>
 
     <!-- Main content -->
@@ -42,7 +52,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AlertBell from './components/AlertBell.vue'
 import LoginScreen from './components/LoginScreen.vue'
-import { authState, checkAuth } from './utils/auth'
+import { authState, checkAuth, logout } from './utils/auth'
 
 const navItems = [
   { path: '/', icon: '📊', label: 'Dashboard' },
@@ -88,6 +98,13 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
 </script>
 
 <style scoped>
+/* Who's signed in, at the bottom of the sidebar */
+.sidebar-footer { border-top: 1px solid rgba(255, 255, 255, 0.06); padding: 0.4rem 0; }
+.sidebar-footer .user { cursor: default; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sidebar-footer .user:hover { background: none; color: #94a3b8; }
+.sidebar-footer small { color: #64748b; }
+.sign-out { width: 100%; background: none; border-top: none; border-right: none; border-bottom: none; cursor: pointer; font: inherit; font-size: 0.875rem; text-align: left; }
+
 /* Alert bell above every page, clear of each page's own header buttons */
 .top-bar { display: flex; justify-content: flex-end; margin: -1.25rem 0 0.25rem; position: relative; z-index: 40; }
 </style>

@@ -1,4 +1,4 @@
-"""Tests for alerts, password login / access rules, file routes, and per-bill late fees."""
+"""Tests for alerts, file routes, per-bill late fees and the built UI (accounts: test_accounts.py)."""
 
 import io
 import sqlite3
@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from models import alerts, auth, ledger
+from models import alerts, ledger
 from models import database as db
 from tests.test_graphql_api import api  # noqa: F401  (fixture)
 from tests.test_persistence import temp_db  # noqa: F401  (fixture)
@@ -33,7 +33,8 @@ class TestAlerts:
     def test_due_soon_low_balance_budget_and_dismiss(self, api):  # noqa: F811
         soon = date.today() + timedelta(days=1)
         api(f'mutation {{ createBill(billName: "Phone", amount: 80, dueDate: {soon.day}) {{ success }} }}')
-        api('mutation { createBill(billName: "Big", amount: 5000, dueDate: 27) { success } }')
+        big = date.today() + timedelta(days=2)  # inside the current pay period
+        api(f'mutation {{ createBill(billName: "Big", amount: 5000, dueDate: {big.day}) {{ success }} }}')
         # Spending, unlike a bill, can't be held back — it drags checking under the cushion
         api('mutation { updateSettings(changes: "{\\"everyday_weekly\\": 1400}") { success } }')
         ledger.set_budget("Dining", 10)
@@ -61,68 +62,6 @@ class TestAlerts:
         assert "Safe to spend" in out["digestPreview"]
         bad = api('mutation { sendDigestEmail { success message } }')["sendDigestEmail"]
         assert not bad["success"] and "SMTP" in bad["message"]
-
-
-class TestPasswords:
-
-    def test_hash_roundtrip(self):
-        h = auth.hash_password("correct horse")
-        assert h.startswith("pbkdf2_sha256$") and auth.verify_password("correct horse", h)
-        assert not auth.verify_password("wrong", h) and not auth.verify_password("x", "garbage")
-
-    def test_set_change_remove(self, temp_db):  # noqa: F811
-        with pytest.raises(ValueError):
-            auth.set_password("short")
-        auth.set_password("longenough1")
-        assert auth.password_set() and auth.check_password("longenough1")
-        with pytest.raises(ValueError):
-            auth.set_password("another-one", "wrong")
-        token = auth.create_session()
-        assert auth.valid_session(token)
-        auth.set_password("another-one", "longenough1")
-        assert not auth.valid_session(token)  # changing the password signs everyone out
-        auth.set_password("", "another-one")
-        assert not auth.password_set()
-
-
-class TestAccessRules:
-
-    def test_no_password_local_only(self, client):
-        assert gql(client, "{ allBanks { name } }").status_code == 200
-        r = gql(client, "{ allBanks { name } }", environ_base=REMOTE)
-        assert r.status_code == 403 and r.get_json()["error"] == "password_required"
-        # Through the Vite proxy: loopback address, real client in X-Forwarded-For
-        r = gql(client, "{ allBanks { name } }", headers={"X-Forwarded-For": "192.168.1.50"})
-        assert r.status_code == 403
-        assert client.get("/auth/status", environ_base=REMOTE).get_json() == {
-            "password_set": False, "authenticated": False, "local": False}
-        # The first password must be set from this computer
-        assert client.post("/auth/password", json={"new_password": "longenough1"},
-                           environ_base=REMOTE).status_code == 403
-
-    def test_password_login_flow(self, client):
-        r = client.post("/auth/password", json={"new_password": "longenough1"})
-        assert r.status_code == 200 and r.get_json()["success"]
-        other = client.application.test_client()  # a second device, no cookie
-        assert gql(other, "{ allBanks { name } }", environ_base=REMOTE).status_code == 401
-        assert other.post("/auth/login", json={"password": "nope"}, environ_base=REMOTE).status_code == 401
-        r = other.post("/auth/login", json={"password": "longenough1"}, environ_base=REMOTE)
-        token = r.get_json()["token"]
-        assert gql(other, "{ allBanks { name } }", environ_base=REMOTE).status_code == 200  # cookie
-        bearer = client.application.test_client()
-        assert gql(bearer, "{ allBanks { name } }", environ_base=REMOTE,
-                   headers={"Authorization": f"Bearer {token}"}).status_code == 200
-        assert other.get("/auth/status", environ_base=REMOTE).get_json()["authenticated"]
-        other.post("/auth/logout", environ_base=REMOTE)
-        assert gql(other, "{ allBanks { name } }", environ_base=REMOTE).status_code == 401
-        # Health stays open for monitoring
-        assert client.get("/health", environ_base=REMOTE).status_code == 200
-
-    def test_graphql_cannot_set_password_hash(self, client):
-        r = gql(client, 'mutation { updateSettings(changes: "{\\"password_hash\\": \\"x\\"}") { success } }')
-        assert r.get_json()["data"]["updateSettings"]["success"] is False
-        settings = gql(client, "{ settings }").get_json()["data"]["settings"]
-        assert "password_hash" not in settings and "smtp_password\"" not in settings
 
 
 class TestFiles:

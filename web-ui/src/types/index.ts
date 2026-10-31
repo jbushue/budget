@@ -429,8 +429,6 @@ export interface AppSettings {
   smtp_port: number
   smtp_user: string
   smtp_use_tls: boolean
-  password_set: boolean
-  smtp_password_set: boolean
   [key: string]: unknown
 }
 

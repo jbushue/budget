@@ -1,23 +1,24 @@
 <template>
   <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header"><span class="card-title">🔒 Security</span></div>
+    <div class="card-header">
+      <span class="card-title">🔒 Your account</span>
+      <button class="btn btn-outline btn-sm" @click="logout()">Sign out</button>
+    </div>
     <p class="help">
-      <template v-if="authState.passwordSet">
-        A password is set. Phones and other computers on your network can open the app after signing in;
-        sessions last 30 days. Changing or removing the password signs everyone out.
-      </template>
-      <template v-else>
-        No password — only this computer can open the app. Set one to use it from your phone or another
-        device on your network — open <code>http://&lt;this computer's address&gt;:3000</code> there.
-      </template>
+      Signed in as <strong>{{ authState.user?.username }}</strong>
+      <span v-if="authState.user?.is_admin" class="badge badge-info">admin</span>.
+      Everyone with an account shares this budget. Sign-ins last 30 days on each device. To use the app from a
+      phone or another computer, open <code>http://&lt;this computer's address&gt;:3000</code> there.
     </p>
+
+    <h4 class="sub-h">Change password</h4>
     <div class="grid grid-3">
-      <div v-if="authState.passwordSet" class="form-group">
+      <div class="form-group">
         <label>Current password</label>
         <input v-model="current" type="password" autocomplete="current-password" />
       </div>
       <div class="form-group">
-        <label>{{ authState.passwordSet ? 'New password' : 'Password' }}</label>
+        <label>New password</label>
         <input v-model="next" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
       </div>
       <div class="form-group">
@@ -25,21 +26,22 @@
         <input v-model="confirmPw" type="password" autocomplete="new-password" />
       </div>
     </div>
-    <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-primary" :disabled="!next || next !== confirmPw || busy" @click="save">
-        {{ authState.passwordSet ? 'Change password' : 'Set password' }}
+    <div class="btn-row">
+      <button class="btn btn-primary" :disabled="!current || !next || next !== confirmPw || busy" @click="save">
+        Change password
       </button>
-      <button v-if="authState.passwordSet" class="btn btn-outline" :disabled="!current || busy" @click="remove">Remove password</button>
-      <button v-if="authState.passwordSet" class="btn btn-outline" @click="logout()">Sign out</button>
       <span v-if="next && confirmPw && next !== confirmPw" class="negative" style="font-size:0.85rem">Passwords don't match</span>
       <span v-if="message" :class="ok ? 'positive' : 'negative'" style="font-size:0.85rem">{{ message }}</span>
     </div>
   </div>
+
+  <UsersAdmin v-if="authState.user?.is_admin" />
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { authState, logout, setPassword } from '../utils/auth'
+import { authState, changePassword, logout } from '../utils/auth'
+import UsersAdmin from './UsersAdmin.vue'
 
 const current = ref('')
 const next = ref('')
@@ -48,22 +50,17 @@ const busy = ref(false)
 const message = ref('')
 const ok = ref(true)
 
-async function run(newPassword: string) {
+async function save() {
   busy.value = true
-  const res = await setPassword(current.value, newPassword)
+  const res = await changePassword(current.value, next.value)
   busy.value = false
   ok.value = res.success
   message.value = res.message || (res.success ? 'Saved' : 'Failed')
   if (res.success) current.value = next.value = confirmPw.value = ''
 }
-
-function save() { run(next.value) }
-
-function remove() {
-  if (confirm('Remove the password? Only this computer will be able to open the app.')) run('')
-}
 </script>
 
 <style scoped>
 .help { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 0.75rem; }
+.sub-h { margin: 0.75rem 0 0.4rem; font-size: 0.9rem; }
 </style>

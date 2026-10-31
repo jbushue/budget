@@ -130,7 +130,6 @@ def update_settings(changes: dict) -> dict:
 def public_settings(settings: dict | None = None) -> dict:
     """Settings safe to send to the web UI (secrets replaced by flags)."""
     s = dict(settings or get_settings())
-    s["password_set"] = bool(s.get("password_hash"))
     s["smtp_password_set"] = bool(s.get("smtp_password"))
     for key in SECRET_KEYS:
         s.pop(key, None)

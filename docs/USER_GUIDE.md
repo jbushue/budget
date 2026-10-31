@@ -777,9 +777,20 @@ The **🔔** at the top right of every page counts what needs attention (red whe
 - **⬇ Download backup** – a complete copy of the database (everything, including transactions, budgets, goals, and settings). Keep one somewhere safe.
 - **⬆ Restore from backup** – replaces **all** current data with a backup file. A copy of the current data is saved to `~/.budget_app/backups/` first.
 
-### 🔒 Security
+### 🔒 Your account
 
-Set a password to use the app from other devices (§18). Once set, every device — this computer included — signs in, and stays signed in for 30 days. **Change password** and **Remove password** need the current password and sign everyone out; **Sign out** signs out this browser.
+Everyone signs in with their own username and password, on every device (this computer included), and stays signed in for 30 days on each. Everyone with an account sees and edits the **same** budget.
+
+- **Change password** needs your current password and signs you out on your other devices.
+- **Sign out** (here, or at the bottom of the menu) signs out this browser.
+
+### 👥 Users (admins only)
+
+- **Invite someone** – click **Create invite link** and send the link to the person. It works once, for 1, 7 or 30 days; tick *Make them an admin* if they should be able to manage accounts too. Opening the link shows a form where they choose a username and password. The link is shown only once — if it gets lost, **Revoke** it under *Unused links* and make another.
+- **Reset password** – for someone who forgot theirs: makes a one-time link (good for 2 days) where they choose a new password. It signs them out everywhere.
+- **Make admin / Remove admin**, **Delete** – there's always at least one admin, and you can't delete yourself. Deleting an account doesn't touch the budget.
+
+Admins can also back up and restore the database (*Data & backup*). A backup includes the user accounts, so restoring an older one brings back the accounts from that time.
 
 ### 🔗 SimpleFIN Bridge (automatic balance sync)
 
@@ -811,13 +822,14 @@ The API endpoint and a link to the **GraphQL Playground**, an interactive consol
 
 **From your phone or another computer on your network:**
 
-1. On the computer that runs the app, open *Settings → Security* and set a password. (Until you do, the app only answers this computer — anyone else on your Wi-Fi sees a message asking for a password to be set.)
+1. The first time you open the app on the computer that runs it, create your account — it's the admin. (Until it exists, the app only answers this computer; anyone else on your Wi-Fi sees a message saying it isn't set up yet.)
 2. Find that computer's network address (on Windows: `ipconfig`, look for *IPv4 Address*, e.g. `192.168.1.20`).
 3. On your phone, open `http://192.168.1.20:3000` and sign in.
+4. To add someone else, create an invite link in *Settings → Users* (§17). Invite links use the address you're on, so create them from the network address (not `localhost`) if the link is for another device.
 
 **Installing it as an app:** in Chrome or Edge, use *Install app* (in the address bar or menu); on iPhone, *Share → Add to Home Screen*. It opens in its own window with its own icon. Full install with offline start needs the app to be served from `localhost` or over HTTPS; from a plain `http://` network address, adding it to the home screen still works as a shortcut.
 
-> The app has no HTTPS of its own. On your home network the password keeps others out, but don't expose it to the internet without putting it behind something that adds HTTPS.
+> The app has no HTTPS of its own. On your home network sign-in keeps others out, but don't expose it to the internet without putting it behind something that adds HTTPS.
 
 ---
 
@@ -871,11 +883,14 @@ Click **undo** on the transaction's ✓ badge (Transactions page). That removes 
 **A bill shows as overdue but I paid it.**
 Mark it paid (Dashboard checklist or Bills → Pay) with the date you paid, and leave *Take the money out* off if your balance already reflects it.
 
-**My phone says a password needs to be set.**
-That's the protection for devices other than the one running the app. Set a password in *Settings → Security* on that computer (§18).
+**My phone says the app isn't set up yet.**
+No account exists yet. Open the app on the computer that runs it and create the first account there (§18).
 
-**I forgot the password.**
-Stop the API server, then on the computer that runs it delete the password setting: `python -c "from models.app_settings import update_settings; update_settings({'password_hash': ''})"` from the project folder. Start the server again; only that computer can open the app until you set a new password.
+**I forgot my password.**
+Ask an admin for a reset link (*Settings → Users → Reset password*). If you're the only admin, on the computer that runs the app run `python -m models.auth reset-password <your username>` from the project folder (`python -m models.auth users` lists the usernames).
+
+**I used a password before accounts existed.**
+It still works: sign in with the username **admin** and your old password. You can then invite others and, if you like, create yourself a new admin account.
 
 **Restoring a backup went wrong.**
 The data that was replaced is in `~/.budget_app/backups/before-restore-<date-time>.db` — restore that file the same way.

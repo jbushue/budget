@@ -23,11 +23,16 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-def local_date(dt):
-    """Calendar date in local time for a stored timestamp (SQLite hands back naive UTC)."""
+def to_local(dt):
+    """Local wall-clock time (naive) for a ``utc_now`` timestamp (SQLite hands back naive UTC)."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone().date()
+    return dt.astimezone().replace(tzinfo=None)
+
+
+def local_date(dt):
+    """Calendar date in local time for a stored ``utc_now`` timestamp."""
+    return to_local(dt).date()
 
 # Create engine and session
 engine = create_engine(DATABASE_URL, echo=False)
@@ -506,11 +511,40 @@ class DismissedAlertModel(Base):
     created_at = Column(DateTime, default=utc_now)
 
 
+class UserModel(Base):
+    """A person who can sign in. Everyone shares the same household budget."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String(32), unique=True, nullable=False)  # stored lowercase
+    password_hash = Column(String(200), nullable=False)
+    is_admin = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=utc_now)
+    last_login = Column(DateTime)
+
+
+class AuthInviteModel(Base):
+    """A one-time code: an invitation to register, or a password reset for one user."""
+    __tablename__ = "auth_invites"
+
+    id = Column(Integer, primary_key=True)
+    code_hash = Column(String(64), unique=True, nullable=False)
+    kind = Column(String(10), nullable=False, default="invite")  # invite | reset
+    make_admin = Column(Boolean, nullable=False, default=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))  # reset: whose password
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime)
+    used_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, default=utc_now)
+
+
 class AuthSessionModel(Base):
     """A login session token (stored as a SHA-256 hash)."""
     __tablename__ = "auth_sessions"
 
     token_hash = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=utc_now)
 
@@ -664,6 +698,13 @@ def _run_migrations():
                 conn.execute(text(
                     "ALTER TABLE bill_groups ADD COLUMN last_paid_date DATE"
                 ))
+
+    # Migration: sessions belong to a user (older password-only sessions stop working)
+    if "auth_sessions" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("auth_sessions")]
+        if "user_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE auth_sessions ADD COLUMN user_id INTEGER"))
 
 
 def get_session():

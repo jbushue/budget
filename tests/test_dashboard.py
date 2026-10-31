@@ -113,7 +113,7 @@ class TestSettings:
         app_settings.update_settings({"smtp_password": "hunter2"})
         pub = app_settings.public_settings()
         assert "smtp_password" not in pub and "password_hash" not in pub
-        assert pub["smtp_password_set"] is True and pub["password_set"] is False
+        assert pub["smtp_password_set"] is True and "password_set" not in pub
 
     def test_apply_settings(self):
         m = FinanceManager([], [], [])

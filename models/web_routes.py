@@ -1,15 +1,20 @@
 """
 Non-GraphQL HTTP routes for the web UI:
 
-* /auth/*   — password login (see models/auth.py) and the access rules
+* /auth/*   — user accounts: first-run setup, sign in, invite sign-up,
+              password changes and resets, and admin user management
+              (see models/auth.py)
 * /files/*  — Excel export / import / template, database backup / restore,
               transactions CSV
 * the built web UI (web-ui/dist), when it has been built, so one server
   can serve everything (and the app can be installed as a PWA)
 
 Access rules (applied to /graphql and /files/*):
-* password set   → a valid session (cookie or "Authorization: Bearer") is required
-* no password    → only requests from this computer are allowed
+* once an account exists → a valid session (cookie or "Authorization: Bearer")
+  is required, from every device
+* before any account exists → only requests from this computer are allowed
+  (the web UI asks for the first, admin, account)
+* database backup / restore → admins only
 """
 
 from __future__ import annotations
@@ -22,17 +27,20 @@ import shutil
 import sqlite3
 import tempfile
 from datetime import datetime
+from functools import wraps
 
-from flask import jsonify, request, send_file, send_from_directory
+from flask import g, jsonify, request, send_file, send_from_directory
 
 from models import auth
 from models import database as db
 
 COOKIE = "budget_session"
 PROTECTED = ("/graphql", "/files/")
+ADMIN_ONLY = ("/files/backup.db", "/files/restore")
 LOCAL_ADDRS = {"127.0.0.1", "::1", "localhost"}
 DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web-ui", "dist")
 SQLITE_MAGIC = b"SQLite format 3\x00"
+TOO_MANY = "Too many failed attempts — wait 15 minutes and try again"
 
 # Windows takes MIME types from the registry, where .js is often "text/plain" —
 # browsers refuse to run module scripts served that way, leaving a blank page.
@@ -52,6 +60,12 @@ def client_is_local() -> bool:
     return True
 
 
+def client_key() -> str:
+    """Who to count failed sign-in attempts against."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    return forwarded.split(",")[0].strip() if forwarded else (request.remote_addr or "?")
+
+
 def request_token() -> str | None:
     header = request.headers.get("Authorization", "")
     if header.startswith("Bearer "):
@@ -59,48 +73,110 @@ def request_token() -> str | None:
     return request.cookies.get(COOKIE)
 
 
-def is_authenticated() -> bool:
-    return auth.valid_session(request_token())
+def current_user() -> dict | None:
+    if "user" not in g:
+        g.user = auth.session_user(request_token())
+    return g.user
+
+
+def _fail(message: str, status: int, error: str | None = None):
+    body = {"success": False, "message": message}
+    if error:
+        body["error"] = error
+    return jsonify(body), status
+
+
+def _signed_in(user: dict, message: str = "Signed in"):
+    """Response that starts a session for ``user``."""
+    token = auth.create_session(user["id"])
+    resp = jsonify({"success": True, "message": message, "token": token, "user": user})
+    resp.set_cookie(COOKIE, token, max_age=auth.SESSION_DAYS * 86400, httponly=True, samesite="Lax",
+                    secure=request.is_secure)
+    return resp
+
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if current_user() is None:
+            return _fail("Please sign in", 401, "login_required")
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        user = current_user()
+        if user is None:
+            return _fail("Please sign in", 401, "login_required")
+        if not user["is_admin"]:
+            return _fail("Only an admin can do that", 403, "admin_required")
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def throttled(fn):
+    """Refuse clients with too many recent failed attempts."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if auth.throttled(client_key()):
+            return _fail(TOO_MANY, 429)
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 def register(app, state: dict, lock) -> None:
     """Add the routes. ``state['manager']`` is the shared FinanceManager (replaced on restore)."""
+
+    auth.migrate_legacy_password()
 
     @app.before_request
     def _guard():
         path = request.path
         if request.method == "OPTIONS" or not path.startswith(PROTECTED):
             return None
-        if auth.password_set():
-            if not is_authenticated():
-                return jsonify({"error": "login_required", "message": "Please sign in"}), 401
+        if auth.has_users():
+            user = current_user()
+            if user is None:
+                return _fail("Please sign in", 401, "login_required")
+            if path in ADMIN_ONLY and not user["is_admin"]:
+                return _fail("Only an admin can back up or restore the database", 403, "admin_required")
         elif not client_is_local():
-            return jsonify({"error": "password_required",
-                            "message": "Set a password (Settings → Security) on the computer running the app "
-                                       "to use it from other devices"}), 403
+            return _fail("Create the first account on the computer running the app, "
+                         "then sign in here", 403, "setup_required")
         return None
 
     # ── Auth ──────────────────────────────────────────────────────────
 
     @app.route("/auth/status", methods=["GET"])
     def auth_status():
-        pw = auth.password_set()
-        local = client_is_local()
-        return jsonify({"password_set": pw, "authenticated": is_authenticated() if pw else local,
-                        "local": local})
+        user = current_user()
+        return jsonify({"needs_setup": not auth.has_users(), "authenticated": user is not None,
+                        "user": user, "local": client_is_local()})
+
+    @app.route("/auth/setup", methods=["POST"])
+    def auth_setup():
+        """Create the first (admin) account — only from this computer, only once."""
+        if not client_is_local():
+            return _fail("Create the first account on the computer running the app", 403)
+        data = request.get_json(silent=True) or {}
+        try:
+            user = auth.create_first_admin(data.get("username", ""), data.get("password", ""))
+        except ValueError as e:
+            return _fail(str(e), 400)
+        return _signed_in(user, "Account created")
 
     @app.route("/auth/login", methods=["POST"])
+    @throttled
     def auth_login():
         data = request.get_json(silent=True) or {}
-        if not auth.password_set():
-            return jsonify({"success": False, "message": "No password is set"}), 400
-        if not auth.check_password(data.get("password", "")):
-            return jsonify({"success": False, "message": "Wrong password"}), 401
-        token = auth.create_session()
-        resp = jsonify({"success": True, "token": token})
-        resp.set_cookie(COOKIE, token, max_age=auth.SESSION_DAYS * 86400, httponly=True, samesite="Lax",
-                        secure=request.is_secure)
-        return resp
+        user = auth.authenticate(data.get("username", ""), data.get("password", ""))
+        if user is None:
+            auth.record_failure(client_key())
+            return _fail("Wrong username or password", 401)
+        auth.clear_failures(client_key())
+        return _signed_in(user)
 
     @app.route("/auth/logout", methods=["POST"])
     def auth_logout():
@@ -109,28 +185,108 @@ def register(app, state: dict, lock) -> None:
         resp.delete_cookie(COOKIE)
         return resp
 
+    @app.route("/auth/code/<code>", methods=["GET"])
+    @throttled
+    def auth_code(code):
+        """What an invite / reset code is for, so the page can show the right form."""
+        info = auth.inspect_code(code)
+        if info is None:
+            auth.record_failure(client_key())
+            return _fail("That link isn't valid — it may have expired or already been used", 404)
+        return jsonify({"success": True, **info})
+
+    @app.route("/auth/register", methods=["POST"])
+    @throttled
+    def auth_register():
+        """Create an account with an invite code."""
+        data = request.get_json(silent=True) or {}
+        if auth.inspect_code(data.get("code")) is None:
+            auth.record_failure(client_key())
+        try:
+            user = auth.register(data.get("code", ""), data.get("username", ""), data.get("password", ""))
+        except ValueError as e:
+            return _fail(str(e), 400)
+        return _signed_in(user, "Welcome!")
+
+    @app.route("/auth/reset", methods=["POST"])
+    @throttled
+    def auth_reset():
+        """Set a new password with a reset code from an admin."""
+        data = request.get_json(silent=True) or {}
+        if auth.inspect_code(data.get("code")) is None:
+            auth.record_failure(client_key())
+        try:
+            user = auth.reset_password(data.get("code", ""), data.get("password", ""))
+        except ValueError as e:
+            return _fail(str(e), 400)
+        return _signed_in(user, "Password changed")
+
     @app.route("/auth/password", methods=["POST"])
+    @login_required
     def auth_password():
-        """Set / change / remove (empty new_password) the password."""
-        if auth.password_set():
-            if not is_authenticated():
-                return jsonify({"success": False, "message": "Please sign in"}), 401
-        elif not client_is_local():
-            return jsonify({"success": False, "message": "Set the first password from the computer running the app"}), 403
+        """Change your own password; your other devices are signed out."""
+        data = request.get_json(silent=True) or {}
+        user = current_user()
+        try:
+            auth.change_password(user["id"], data.get("current_password", ""), data.get("new_password", ""))
+        except ValueError as e:
+            return _fail(str(e), 400)
+        auth.logout_user(user["id"], keep_token=request_token())
+        return jsonify({"success": True, "message": "Password changed — your other devices were signed out"})
+
+    # Admin: users and invites
+
+    @app.route("/auth/users", methods=["GET"])
+    @admin_required
+    def auth_users():
+        return jsonify({"success": True, "users": auth.list_users(), "invites": auth.pending_invites()})
+
+    @app.route("/auth/invites", methods=["POST"])
+    @admin_required
+    def auth_create_invite():
+        data = request.get_json(silent=True) or {}
+        code = auth.create_invite(current_user()["id"], bool(data.get("make_admin")),
+                                  data.get("days") or auth.INVITE_DAYS)
+        return jsonify({"success": True, "code": code})
+
+    @app.route("/auth/invites/<int:invite_id>", methods=["DELETE"])
+    @admin_required
+    def auth_revoke_invite(invite_id):
+        auth.revoke_invite(invite_id)
+        return jsonify({"success": True})
+
+    @app.route("/auth/users/<int:user_id>", methods=["PATCH"])
+    @admin_required
+    def auth_update_user(user_id):
         data = request.get_json(silent=True) or {}
         try:
-            auth.set_password(data.get("new_password") or "", data.get("current_password"))
+            if "is_admin" in data:
+                auth.set_admin(user_id, bool(data["is_admin"]))
         except ValueError as e:
-            return jsonify({"success": False, "message": str(e)}), 400
-        if data.get("new_password"):
-            token = auth.create_session()
-            resp = jsonify({"success": True, "message": "Password saved", "token": token})
-            resp.set_cookie(COOKIE, token, max_age=auth.SESSION_DAYS * 86400, httponly=True, samesite="Lax",
-                            secure=request.is_secure)
-            return resp
-        resp = jsonify({"success": True, "message": "Password removed — only this computer can open the app now"})
-        resp.delete_cookie(COOKIE)
-        return resp
+            return _fail(str(e), 400)
+        return jsonify({"success": True})
+
+    @app.route("/auth/users/<int:user_id>", methods=["DELETE"])
+    @admin_required
+    def auth_delete_user(user_id):
+        if user_id == current_user()["id"]:
+            return _fail("You can't delete your own account", 400)
+        try:
+            auth.delete_user(user_id)
+        except ValueError as e:
+            return _fail(str(e), 400)
+        return jsonify({"success": True})
+
+    @app.route("/auth/users/<int:user_id>/reset", methods=["POST"])
+    @admin_required
+    def auth_reset_code(user_id):
+        """A one-time code for someone who forgot their password (signs them out)."""
+        try:
+            code = auth.create_reset(user_id, current_user()["id"])
+        except ValueError as e:
+            return _fail(str(e), 400)
+        auth.logout_user(user_id)
+        return jsonify({"success": True, "code": code})
 
     # ── Files ─────────────────────────────────────────────────────────
 

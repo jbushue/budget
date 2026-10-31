@@ -17,18 +17,21 @@
       <a class="btn btn-outline btn-sm" href="/files/transactions.csv">⬇ Transactions (CSV)</a>
     </div>
 
-    <h4 class="sub-h">Backup</h4>
-    <p class="help">
-      A backup is a copy of the whole database — keep one somewhere safe. Restoring replaces <strong>all</strong>
-      current data with the backup (a copy of the current data is kept in the backups folder first).
-    </p>
-    <div class="row">
-      <a class="btn btn-success btn-sm" href="/files/backup.db">⬇ Download backup</a>
-      <label class="btn btn-danger btn-sm file-btn">
-        ⬆ Restore from backup
-        <input type="file" accept=".db,.sqlite,application/octet-stream" @change="restore" />
-      </label>
-    </div>
+    <template v-if="authState.user?.is_admin">
+      <h4 class="sub-h">Backup</h4>
+      <p class="help">
+        A backup is a copy of the whole database — keep one somewhere safe. Restoring replaces <strong>all</strong>
+        current data with the backup (a copy of the current data is kept in the backups folder first).
+      </p>
+      <div class="row">
+        <a class="btn btn-success btn-sm" href="/files/backup.db">⬇ Download backup</a>
+        <label class="btn btn-danger btn-sm file-btn">
+          ⬆ Restore from backup
+          <input type="file" accept=".db,.sqlite,application/octet-stream" @change="restore" />
+        </label>
+      </div>
+    </template>
+    <p v-else class="help" style="margin-top:0.75rem">Database backup and restore are for admins.</p>
 
     <div v-if="busy" class="loading" style="margin-top:0.75rem">Working...</div>
     <div v-if="message" class="result" :class="ok ? 'positive' : 'negative'">
@@ -41,6 +44,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApolloClient } from '@vue/apollo-composable'
+import { authState, checkAuth } from '../utils/auth'
 
 const { resolveClient } = useApolloClient()
 const busy = ref(false)
@@ -85,11 +89,13 @@ async function restore(e: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
-  if (!confirm(`Replace ALL current data with "${file.name}"?\n\nA copy of the current data is kept in the backups folder.`)) return
+  if (!confirm(`Replace ALL current data with "${file.name}"?\n\nA copy of the current data is kept in the backups folder. `
+    + 'User accounts come from the backup too, so you may need to sign in again.')) return
   const data = await send(file, '/files/restore')
   if (data) {
     details.value = data.previous_saved_to ? [`Previous data saved to ${data.previous_saved_to}`] : []
-    await resolveClient().refetchQueries({ include: 'active' })
+    await checkAuth()  // accounts were replaced as well
+    if (authState.authenticated) await resolveClient().refetchQueries({ include: 'active' })
   }
 }
 </script>
