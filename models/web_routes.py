@@ -222,14 +222,27 @@ def register(app, state: dict, lock) -> None:
         return _signed_in(user, "Password changed")
 
     @app.route("/auth/password", methods=["POST"])
-    @login_required
+    @throttled
     def auth_password():
-        """Change your own password; your other devices are signed out."""
+        """Change your own password; your other devices are signed out.
+
+        Signed in, send current_password and new_password. Without a session
+        (e.g. curl on a headless server) also send username.
+        """
         data = request.get_json(silent=True) or {}
         user = current_user()
+        if user is None:
+            if not data.get("username"):
+                return _fail("Please sign in", 401, "login_required")
+            user = auth.authenticate(data["username"], data.get("current_password", ""))
+            if user is None:
+                auth.record_failure(client_key())
+                return _fail("Wrong username or password", 401)
         try:
             auth.change_password(user["id"], data.get("current_password", ""), data.get("new_password", ""))
         except ValueError as e:
+            if "Current password" in str(e):
+                auth.record_failure(client_key())
             return _fail(str(e), 400)
         auth.logout_user(user["id"], keep_token=request_token())
         return jsonify({"success": True, "message": "Password changed — your other devices were signed out"})

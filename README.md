@@ -88,8 +88,22 @@ The web dev server proxies the API (`/graphql`, `/files`, `/auth`), so only port
 
 **One server instead of two:** after `cd web-ui && npm run build`, `python api_server.py` also serves the built web interface at http://localhost:4000 — and from there it can be installed as an app.
 
+### The admin account
+The first time `python api_server.py` starts, it creates the admin account **admin** with a random password. The password is printed in the server's output and saved in `~/.budget_app/initial-admin-password.txt` until you change it (the file is then deleted). Change it in *Settings → Your account*, or from a shell — handy on a headless server:
+
+```bash
+cat ~/.budget_app/initial-admin-password.txt
+curl -X POST http://localhost:4000/auth/password -H 'Content-Type: application/json' \
+     -d '{"username": "admin", "current_password": "<generated>", "new_password": "<yours>"}'
+```
+
+Until you change it, the web UI shows a reminder. Lost it? `python -m models.auth reset-password admin` sets a new one from the server's shell.
+
+### Running it on a headless server
+Build the web interface once (`cd web-ui && npm install && npm run build`), then start the API with `BUDGET_HOST=0.0.0.0 python api_server.py`. It serves the web interface itself on port 4000; open `http://<server address>:4000` from any device and sign in as **admin**. There's no HTTPS of its own — keep it on your home network, or put it behind a reverse proxy that adds HTTPS.
+
 ### Using it from your phone
-The first time you open the app on the computer that runs it, it asks you to create an account — that one is the admin. Until it exists, the API only answers this computer. Then open `http://<this computer's address>:3000` on your phone and sign in (sign-ins last 30 days). To add people, create an invite link in *Settings → Users* and send it to them. Adding it to the home screen works there too; the offline app shell needs HTTPS or localhost.
+Open `http://<this computer's address>:3000` on your phone and sign in (sign-ins last 30 days). To add people, create an invite link in *Settings → Users* and send it to them. Adding it to the home screen works there too; the offline app shell needs HTTPS or localhost.
 
 ### Where your data lives
 `~/.budget_app/finance.db` (on Windows `C:\Users\<you>\.budget_app\finance.db`). *Settings → Data & backup → Download backup* saves a copy of it; restoring keeps a copy of the replaced data in `~/.budget_app/backups/`.
@@ -97,7 +111,7 @@ The first time you open the app on the computer that runs it, it asks you to cre
 ### Server options
 | Environment variable | Default | Purpose |
 |---|---|---|
-| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. The default is right when you use the web interface (it reaches the API through its proxy). If you expose the API directly, create the first account first. |
+| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. The default is right when you use the web interface (it reaches the API through its proxy). Use `0.0.0.0` to reach the built-in web interface (port 4000) from other devices, e.g. on a headless server. |
 | `BUDGET_DEBUG` | off | Set to `1` for Flask debug mode. |
 
 ### Command-line menu

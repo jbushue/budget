@@ -262,3 +262,61 @@ class TestCommandLine:
             auth.set_password_for("nobody", "whatever99")
         auth.set_password_for("Jordan", "recovered1")
         assert auth.authenticate("jordan", "recovered1") and auth.session_user(token) is None
+
+
+class TestDefaultAdmin:
+
+    def test_created_once_with_saved_password(self, temp_db):  # noqa: F811
+        import os
+        password = auth.ensure_default_admin()
+        assert password and len(password) >= 16
+        user = auth.authenticate(auth.DEFAULT_ADMIN, password)
+        assert user["is_admin"] and user["must_change_password"]
+        with open(auth.initial_password_file(), encoding="utf-8") as f:
+            assert f"password: {password}" in f.read()
+        assert auth.ensure_default_admin() is None  # already there
+        auth.change_password(user["id"], password, "chosen-pass1")
+        assert not auth.get_user(user["id"])["must_change_password"]
+        assert not os.path.exists(auth.initial_password_file())
+
+    def test_not_created_when_accounts_exist(self, temp_db):  # noqa: F811
+        auth.create_user("jordan", PW, is_admin=True)
+        assert auth.ensure_default_admin() is None
+        assert [u["username"] for u in auth.list_users()] == ["jordan"]
+
+    def test_change_from_the_command_line(self, client):
+        import os
+        password = auth.ensure_default_admin()
+        shell = device(client)  # curl: no cookie
+        assert shell.post("/auth/password", json={"current_password": password, "new_password": "mine-now1"},
+                          environ_base=REMOTE).status_code == 401  # needs a username without a session
+        r = shell.post("/auth/password", json={"username": "admin", "current_password": "wrong",
+                                               "new_password": "mine-now1"}, environ_base=REMOTE)
+        assert r.status_code == 401
+        r = shell.post("/auth/password", json={"username": "admin", "current_password": password,
+                                               "new_password": "short"}, environ_base=REMOTE)
+        assert r.status_code == 400
+        r = shell.post("/auth/password", json={"username": "admin", "current_password": password,
+                                               "new_password": "mine-now1"}, environ_base=REMOTE)
+        assert r.status_code == 200 and "token" not in r.get_json()
+        assert gql(shell, "{ allBanks { name } }", environ_base=REMOTE).status_code == 401  # no session made
+        assert login(device(client), "admin", password).status_code == 401
+        r = login(device(client), "admin", "mine-now1")
+        assert r.status_code == 200 and not r.get_json()["user"]["must_change_password"]
+        assert not os.path.exists(auth.initial_password_file())
+
+    def test_guessing_through_password_change_is_throttled(self, client):
+        auth.ensure_default_admin()
+        shell = device(client)
+        for _ in range(auth.MAX_FAILURES):
+            shell.post("/auth/password", json={"username": "admin", "current_password": "guess",
+                                               "new_password": "whatever1"}, environ_base=REMOTE)
+        r = shell.post("/auth/password", json={"username": "admin", "current_password": "guess",
+                                               "new_password": "whatever1"}, environ_base=REMOTE)
+        assert r.status_code == 429
+
+    def test_status_reports_the_flag(self, client):
+        password = auth.ensure_default_admin()
+        browser = device(client)
+        login(browser, "admin", password)
+        assert browser.get("/auth/status").get_json()["user"]["must_change_password"] is True

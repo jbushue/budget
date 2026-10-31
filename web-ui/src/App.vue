@@ -42,6 +42,10 @@
     <!-- Main content -->
     <main class="main-content">
       <div class="top-bar"><AlertBell /></div>
+      <div v-if="authState.user?.must_change_password" class="pw-banner">
+        🔑 You're signed in with the generated admin password.
+        <RouterLink to="/settings">Change it in Settings → Your account</RouterLink>
+      </div>
       <RouterView />
     </main>
   </div>
@@ -104,6 +108,10 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
 .sidebar-footer .user:hover { background: none; color: #94a3b8; }
 .sidebar-footer small { color: #64748b; }
 .sign-out { width: 100%; background: none; border-top: none; border-right: none; border-bottom: none; cursor: pointer; font: inherit; font-size: 0.875rem; text-align: left; }
+
+/* Reminder while the generated admin password is still in use */
+.pw-banner { background: var(--warning-light); color: var(--warning-text); border: 1px solid var(--warning); border-radius: var(--radius); padding: 0.6rem 0.9rem; margin-bottom: 1rem; font-size: 0.88rem; }
+.pw-banner a { color: inherit; font-weight: 600; }
 
 /* Alert bell above every page, clear of each page's own header buttons */
 .top-bar { display: flex; justify-content: flex-end; margin: -1.25rem 0 0.25rem; position: relative; z-index: 40; }

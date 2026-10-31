@@ -2,8 +2,11 @@
 User accounts for the web UI.
 
 Everyone signs in with their own username and password; all users share the
-same household budget. The first account is created from the computer that
-runs the app and is an admin. After that, people join only with a one-time
+same household budget. When the server starts with no accounts it creates the
+admin account "admin" with a random password, printed once and saved to
+~/.budget_app/initial-admin-password.txt until it's changed (so a headless
+server can be set up from the command line). Started some other way, the first
+account is created in the browser on the computer that runs the app. After that, people join only with a one-time
 invite code that an admin creates (Settings → Users). Admins can also make a
 one-time password-reset code for someone who forgot theirs.
 
@@ -15,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import re
 import secrets
 import threading
@@ -90,6 +94,7 @@ def clear_failures(key: str) -> None:
 
 def _user_dict(u: db.UserModel) -> dict:
     return {"id": u.id, "username": u.username, "is_admin": bool(u.is_admin),
+            "must_change_password": bool(u.must_change_password),
             "created_at": db.to_local(u.created_at).isoformat() if u.created_at else None,
             "last_login": u.last_login.isoformat() if u.last_login else None}
 
@@ -177,6 +182,7 @@ def change_password(user_id: int, current_password: str, new_password: str) -> N
         if len(new_password or "") < MIN_LENGTH:
             raise ValueError(f"Use at least {MIN_LENGTH} characters for the password")
         user.password_hash = hash_password(new_password)
+        _password_replaced(user)
         session.commit()
     finally:
         session.close()
@@ -337,6 +343,7 @@ def reset_password(code: str, password: str) -> dict:
         if user is None:
             raise ValueError("That account no longer exists")
         user.password_hash = hash_password(password)
+        _password_replaced(user)
         row.used_at, row.used_by = datetime.now(), user.id
         session.query(db.AuthSessionModel).filter_by(user_id=user.id).delete()
         session.commit()
@@ -400,6 +407,49 @@ def logout_user(user_id: int, keep_token: str | None = None) -> None:
         session.close()
 
 
+# ── Default admin with a generated password ────────────────────────────
+
+DEFAULT_ADMIN = "admin"
+
+
+def initial_password_file() -> str:
+    return os.path.join(os.path.dirname(db.DB_PATH), "initial-admin-password.txt")
+
+
+def ensure_default_admin() -> str | None:
+    """With no accounts, create "admin" with a random password and return it (else None).
+
+    The password is also written to initial_password_file() (readable only by
+    this user where the OS supports it) until it's changed.
+    """
+    if has_users():
+        return None
+    password = secrets.token_urlsafe(12)
+    session = db.get_session()
+    try:
+        session.add(db.UserModel(username=DEFAULT_ADMIN, password_hash=hash_password(password),
+                                 is_admin=True, must_change_password=True))
+        session.commit()
+    finally:
+        session.close()
+    path = initial_password_file()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(f"username: {DEFAULT_ADMIN}\npassword: {password}\n"
+                "This file is deleted when the password is changed.\n")
+    return password
+
+
+def _password_replaced(user: db.UserModel) -> None:
+    """A chosen password replaced a generated one: drop the flag and the saved copy."""
+    if user.must_change_password:
+        user.must_change_password = False
+        try:
+            os.remove(initial_password_file())
+        except OSError:
+            pass
+
+
 # ── Upgrade from the single shared password ────────────────────────────
 
 LEGACY_USERNAME = "admin"
@@ -433,6 +483,7 @@ def set_password_for(username: str, new_password: str) -> dict:
         if len(new_password or "") < MIN_LENGTH:
             raise ValueError(f"Use at least {MIN_LENGTH} characters for the password")
         user.password_hash = hash_password(new_password)
+        _password_replaced(user)
         session.query(db.AuthSessionModel).filter_by(user_id=user.id).delete()
         session.commit()
         return _user_dict(user)

@@ -14,7 +14,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from models.graphql_schema import schema
 from models.finance_manager import FinanceManager
-from models import web_routes
+from models import auth, web_routes
 
 
 def create_app():
@@ -188,6 +188,20 @@ if __name__ == '__main__':
     debug = os.environ.get('BUDGET_DEBUG') == '1'
     host = os.environ.get('BUDGET_HOST', '127.0.0.1')
     app = create_app()
+
+    # First start: an admin account with a random password, so a headless server can be set up from a shell
+    initial_password = auth.ensure_default_admin()
+    if initial_password:
+        print("=" * 80)
+        print("🔑 Created the admin account. Its password is shown here and saved in")
+        print(f"   {auth.initial_password_file()} until you change it.")
+        print(f"\n   username: {auth.DEFAULT_ADMIN}\n   password: {initial_password}\n")
+        print("   Change it in the web UI (Settings → Your account), or from a shell:")
+        print("   curl -X POST http://localhost:4000/auth/password -H 'Content-Type: application/json' \\")
+        print(f"        -d '{{\"username\": \"admin\", \"current_password\": \"{initial_password}\", "
+              "\"new_password\": \"<your password>\"}'")
+        print("=" * 80 + "\n")
+
     if not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         start_digest_thread(app)
     app.run(debug=debug, host=host, port=4000)

@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { authState, changePassword, logout } from '../utils/auth'
+import { authState, changePassword, checkAuth, logout } from '../utils/auth'
 import UsersAdmin from './UsersAdmin.vue'
 
 const current = ref('')
@@ -56,7 +56,10 @@ async function save() {
   busy.value = false
   ok.value = res.success
   message.value = res.message || (res.success ? 'Saved' : 'Failed')
-  if (res.success) current.value = next.value = confirmPw.value = ''
+  if (res.success) {
+    current.value = next.value = confirmPw.value = ''
+    await checkAuth()  // clears the generated-password reminder
+  }
 }
 </script>
 

@@ -826,7 +826,12 @@ The API endpoint and a link to the **GraphQL Playground**, an interactive consol
 
 **From your phone or another computer on your network:**
 
-1. The first time you open the app on the computer that runs it, create your account — it's the admin. (Until it exists, the app only answers this computer; anyone else on your Wi-Fi sees a message saying it isn't set up yet.)
+1. Sign in as **admin**. The first time the API server starts it creates that account with a random password, printed in the server's output and saved in `~/.budget_app/initial-admin-password.txt` until you change it. Change it in *Settings → Your account* (a reminder shows until you do), or from a shell on the server:
+
+   ```bash
+   curl -X POST http://localhost:4000/auth/password -H 'Content-Type: application/json' \
+        -d '{"username": "admin", "current_password": "<generated>", "new_password": "<yours>"}'
+   ```
 2. Find that computer's network address (on Windows: `ipconfig`, look for *IPv4 Address*, e.g. `192.168.1.20`).
 3. On your phone, open `http://192.168.1.20:3000` and sign in.
 4. To add someone else, create an invite link in *Settings → Users* (§17). Invite links use the address you're on, so create them from the network address (not `localhost`) if the link is for another device.
@@ -887,8 +892,11 @@ Click **undo** on the transaction's ✓ badge (Transactions page). That removes 
 **A bill shows as overdue but I paid it.**
 Mark it paid (Dashboard checklist or Bills → Pay) with the date you paid, and leave *Take the money out* off if your balance already reflects it.
 
+**What's the admin password?**
+The one printed when the API server first started, also in `~/.budget_app/initial-admin-password.txt` until you change it (§18). If it's gone, run `python -m models.auth reset-password admin` on the server.
+
 **My phone says the app isn't set up yet.**
-No account exists yet. Open the app on the computer that runs it and create the first account there (§18).
+No account exists yet — this happens only if the API was started some other way than `python api_server.py`. Open the app on the computer that runs it and create the first account there, or restart the server with `python api_server.py`.
 
 **I forgot my password.**
 Ask an admin for a reset link (*Settings → Users → Reset password*). If you're the only admin, on the computer that runs the app run `python -m models.auth reset-password <your username>` from the project folder (`python -m models.auth users` lists the usernames).

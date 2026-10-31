@@ -519,6 +519,7 @@ class UserModel(Base):
     username = Column(String(32), unique=True, nullable=False)  # stored lowercase
     password_hash = Column(String(200), nullable=False)
     is_admin = Column(Boolean, nullable=False, default=False)
+    must_change_password = Column(Boolean, nullable=False, default=False)  # still the generated one
     created_at = Column(DateTime, default=utc_now)
     last_login = Column(DateTime)
 
@@ -705,6 +706,13 @@ def _run_migrations():
         if "user_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE auth_sessions ADD COLUMN user_id INTEGER"))
+
+    # Migration: flag accounts still using a generated password
+    if "users" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("users")]
+        if "must_change_password" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def get_session():
