@@ -60,6 +60,14 @@ export interface MortgageAccount {
   preferredSourceBank: string | null
   preferredSourceAccount: string | null
   status: string
+  startDate: string | null
+  marketValue: number | null
+  equity: number | null
+  escrowPropertyTax: number
+  escrowInsurance: number
+  escrowPmi: number
+  escrowHoa: number
+  escrowOther: number
 }
 
 export interface HELOCAccount {

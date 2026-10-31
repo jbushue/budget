@@ -22,6 +22,7 @@
           <span class="card-title">{{ bank.name }} <span class="badge badge-info">{{ bank.bankType }}</span></span>
           <div style="display:flex;align-items:center;gap:0.75rem">
             <span style="font-weight:600" :class="bank.totalBalance >= 0 ? 'positive' : 'negative'">{{ currency(bank.totalBalance) }}</span>
+            <button class="btn btn-outline btn-sm" @click="openEditBank(bank)">Edit</button>
             <button class="btn btn-danger btn-sm" @click="deleteBank(bank.name)">Delete Bank</button>
           </div>
         </div>
@@ -51,11 +52,12 @@
                   </td>
                   <td><span class="badge" :class="acc.accountType === 'savings' ? 'badge-success' : 'badge-info'">{{ acc.accountType }}</span></td>
                   <td>{{ pct(acc.interestRate) }}</td>
-                  <td>{{ acc.interestAccrualDate ?? '-' }}</td>
+                  <td>{{ acc.interestAccrualDate ?? (acc.interestRate > 0 ? 'Month end' : '-') }}</td>
                   <td style="text-align:right;font-weight:600" :class="acc.balance >= 0 ? 'positive' : 'negative'">{{ currency(acc.balance) }}</td>
                   <td style="text-align:right;white-space:nowrap">
                     <button v-if="isSynced(bank.name, acc.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, acc.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
                     <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, acc.accountName, 'bank')" style="margin-right:0.25rem" title="View history">Hist</button>
+                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, acc.accountType as AccountKind, acc)" style="margin-right:0.25rem">Edit</button>
                     <button class="btn btn-outline btn-sm" @click="openUpdateBalance(bank.name, acc.accountName, acc.balance)" style="margin-right:0.25rem">Update</button>
                     <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, acc.accountName, 'bank')">Del</button>
                   </td>
@@ -108,6 +110,7 @@
                     <button v-if="isSynced(bank.name, cc.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, cc.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
                     <button class="btn btn-outline btn-sm" @click="openPromos(bank.name, cc)" style="margin-right:0.25rem" title="Manage promo offers">Promos</button>
                     <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, cc.accountName, 'credit')" style="margin-right:0.25rem" title="View history">Hist</button>
+                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, 'credit', cc)" style="margin-right:0.25rem">Edit</button>
                     <button class="btn btn-outline btn-sm" @click="openUpdateCredit(bank.name, cc.accountName, cc.balance)" style="margin-right:0.25rem">Update</button>
                     <button class="btn btn-outline btn-sm" @click="openConvertToHELOC(bank.name, cc)" style="margin-right:0.25rem" title="Convert to HELOC">→ HELOC</button>
                     <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, cc.accountName, 'credit')">Del</button>
@@ -157,6 +160,7 @@
                   <td style="text-align:right;white-space:nowrap">
                     <button v-if="isSynced(bank.name, m.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, m.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
                     <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, m.accountName, 'mortgage')" style="margin-right:0.25rem" title="View history">Hist</button>
+                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, 'mortgage', m)" style="margin-right:0.25rem">Edit</button>
                     <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, m.accountName, m.currentPrincipal, 'mortgage')" style="margin-right:0.25rem">Update</button>
                     <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, m.accountName, 'mortgage')">Del</button>
                   </td>
@@ -215,6 +219,7 @@
                   <td style="text-align:right;white-space:nowrap">
                     <button v-if="isSynced(bank.name, h.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, h.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
                     <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, h.accountName, 'heloc')" style="margin-right:0.25rem" title="View history">Hist</button>
+                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, 'heloc', h)" style="margin-right:0.25rem">Edit</button>
                     <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, h.accountName, h.balance, 'heloc')" style="margin-right:0.25rem">Update</button>
                     <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, h.accountName, 'heloc')">Del</button>
                   </td>
@@ -225,6 +230,36 @@
         </div>
       </div>
     </template>
+
+    <!-- Edit Account Modal -->
+    <EditAccountModal v-if="editTarget" :kind="editTarget.kind" :bank-name="editTarget.bankName"
+                      :account="editTarget.account" :banks="banks" @close="editTarget = null" @saved="onEdited" />
+
+    <!-- Edit Bank Modal -->
+    <div v-if="bankEdit" class="modal-overlay" @click.self="bankEdit = null">
+      <div class="modal">
+        <h3>Edit Bank</h3>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.9rem">
+          Renaming keeps every account, bill and transaction connected.
+        </p>
+        <div class="form-group">
+          <label>Bank Name</label>
+          <input v-model="bankEdit.name" />
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select v-model="bankEdit.type">
+            <option value="traditional">Traditional</option>
+            <option value="credit_issuer">Credit Issuer</option>
+            <option value="mortgage_lender">Mortgage Lender</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="bankEdit = null">Cancel</button>
+          <button class="btn btn-primary" @click="saveBank" :disabled="!bankEdit.name.trim()">Save</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Create Bank Modal -->
     <div v-if="showBankModal" class="modal-overlay" @click.self="showBankModal = false">
@@ -604,16 +639,16 @@
 
         <!-- Add Promo Sub-form -->
         <div v-if="showAddPromo" class="card" style="margin-top:1rem;padding:1rem;background:var(--bg-card)">
-          <h4 style="margin-bottom:0.75rem">{{ editingPromo ? 'Edit Promo Balance' : 'Add Promo Offer' }}</h4>
-          <div v-if="!editingPromo" class="form-group">
+          <h4 style="margin-bottom:0.75rem">{{ editingPromo ? 'Edit Promo Offer' : 'Add Promo Offer' }}</h4>
+          <div class="form-group">
             <label>Promo Name</label>
             <input v-model="newPromo.promoName" placeholder="e.g. 0% APR 12 months" />
           </div>
-          <div v-if="!editingPromo" class="form-group">
+          <div class="form-group">
             <label>Months Interest-Free</label>
             <input v-model.number="newPromo.monthsInterestFree" type="number" min="1" />
           </div>
-          <div v-if="!editingPromo" class="form-group">
+          <div class="form-group">
             <label>Purchase Limit (optional)</label>
             <input v-model.number="newPromo.purchaseLimit" type="number" step="0.01" placeholder="Leave blank for unlimited" />
           </div>
@@ -621,17 +656,17 @@
             <label>Promo Balance (portion of existing balance on this promo)</label>
             <input v-model.number="newPromo.promoBalance" type="number" step="0.01" />
           </div>
-          <div v-if="!editingPromo" class="form-group">
+          <div class="form-group">
             <label>Start Date</label>
             <input v-model="newPromo.startDate" type="date" />
           </div>
-          <div v-if="!editingPromo" class="form-group">
+          <div class="form-group">
             <label>End Date (optional, calculated if blank)</label>
             <input v-model="newPromo.endDate" type="date" />
           </div>
           <div class="modal-actions">
             <button class="btn btn-outline" @click="closePromoForm()">Cancel</button>
-            <button v-if="editingPromo" class="btn btn-primary" @click="updatePromo">Update</button>
+            <button v-if="editingPromo" class="btn btn-primary" @click="updatePromo" :disabled="!newPromo.promoName || !newPromo.monthsInterestFree">Save</button>
             <button v-else class="btn btn-primary" @click="addPromo" :disabled="!newPromo.promoName || !newPromo.monthsInterestFree">Add</button>
           </div>
         </div>
@@ -658,10 +693,12 @@ import {
   CREATE_MORTGAGE_ACCOUNT,
   GET_SIMPLEFIN_TRANSACTIONS,
   ADD_PROMO_OFFER, UPDATE_PROMO_OFFER, REMOVE_PROMO_OFFER,
+  UPDATE_BANK,
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
 import { currency, pct, fmtDate, statusBadge, todayISO } from '../utils/format'
 import { runMutation } from '../utils/mutation'
+import EditAccountModal, { type AccountKind, type AnyAccount } from '../components/EditAccountModal.vue'
 import type { Bank, CreditAccount, BalanceHistoryEntry, SimplefinSyncedAccount, SimplefinTransaction, PromoOffer, MutationPayload } from '../types'
 
 const { result, loading, error, refetch } = useQuery<{ allBanks: Bank[] }>(GET_ALL_BANKS)
@@ -688,6 +725,32 @@ function syncTooltip(bankName: string, accountName: string): string {
   )
   if (!sa) return ''
   return `Synced via SimpleFIN: ${sa.sfinOrg} / ${sa.sfinName}`
+}
+
+// ── Edit account / bank
+const editTarget = ref<{ kind: AccountKind; bankName: string; account: AnyAccount } | null>(null)
+function openEdit(bankName: string, kind: AccountKind, account: AnyAccount) {
+  editTarget.value = { kind, bankName, account }
+}
+function onEdited() {
+  editTarget.value = null
+  refetch()
+}
+
+const bankEdit = ref<{ original: string; name: string; type: string } | null>(null)
+function openEditBank(bank: Bank) {
+  bankEdit.value = { original: bank.name, name: bank.name, type: bank.bankType }
+}
+const { mutate: doUpdateBank } = useMutation<{ updateBank: MutationPayload }>(UPDATE_BANK)
+async function saveBank() {
+  const b = bankEdit.value
+  if (!b) return
+  const ok = await runMutation(() => doUpdateBank({ variables: {
+    name: b.original, newName: b.name.trim(), bankType: b.type,
+  }}), 'updateBank', { failMessage: 'Failed to save the bank' })
+  if (!ok) return
+  bankEdit.value = null
+  refetch()
 }
 
 // ── Create bank
@@ -1041,6 +1104,7 @@ function closePromoForm() {
 }
 
 function openEditPromo(p: PromoOffer) {
+  editingPromoName.value = p.promoName
   newPromo.value = {
     promoName: p.promoName,
     monthsInterestFree: p.monthsInterestFree,
@@ -1073,12 +1137,19 @@ async function addPromo() {
 }
 
 const { mutate: doUpdatePromo } = useMutation<{ updatePromoOffer: MutationPayload }>(UPDATE_PROMO_OFFER)
+const editingPromoName = ref('')
 async function updatePromo() {
+  const p = newPromo.value
   const ok = await runMutation(() => doUpdatePromo({ variables: {
     bankName: promoTarget.value.bankName,
     accountName: promoTarget.value.accountName,
-    promoName: newPromo.value.promoName,
-    promoBalance: newPromo.value.promoBalance,
+    promoName: editingPromoName.value,
+    newName: p.promoName,
+    promoBalance: p.promoBalance || 0,
+    monthsInterestFree: p.monthsInterestFree,
+    purchaseLimit: p.purchaseLimit || 0,
+    startDate: p.startDate || undefined,
+    endDate: p.endDate || undefined,
   }}), 'updatePromoOffer', { failMessage: 'Failed to update promo' })
   if (!ok) return
   closePromoForm()

@@ -357,7 +357,7 @@ const comparisonRows = computed<CompRow[]>(() => {
       base: b.pendingDeferredInterest, opt: o.pendingDeferredInterest, better: -1, fmt: currency })
   }
   if (b.unpaidBills || o.unpaidBills) {
-    rows.push({ label: 'Unpaid bills', hint: 'Bills that can't be paid in the window — they're still owed',
+    rows.push({ label: 'Unpaid bills', hint: 'Bills that can’t be paid in the window — they’re still owed',
       base: b.unpaidBills, opt: o.unpaidBills, better: -1, fmt: currency })
   }
   rows.push({ label: 'Overall', hint: 'The bottom line: cash − debt − unpaid bills (and promo interest about to hit)',

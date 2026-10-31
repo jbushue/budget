@@ -15,6 +15,7 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 - Credit cards with APR, statement/due dates, minimum payments, and **0% promo offers** with deferred-interest tracking
 - **Mortgages** (amortization, escrow, equity) and **HELOCs** (draw and repayment phases)
 - Loan groups ("bill groups") — one payment split across several loans (e.g. student loans), proportionally, equally, or by fixed amounts
+- Every setting editable later; rename an account or move it to another bank and its bills, history, transactions and links follow
 - Optional automatic balance sync through [SimpleFIN Bridge](https://bridge.simplefin.org)
 
 **Bills and income**
@@ -38,7 +39,7 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 
 **Planning and analysis**
 - **Timeline** — a day-by-day projection with a financial calendar
-- **Payment Optimizer** — compares *paying every bill on its due date* with an *optimized plan* (savings sweeps, HELOC parking, promo payoffs) and explains, in plain language:
+- **Payment Optimizer** — compares *paying every bill on its due date* with an *optimized plan* (paying down costly debt with spare cash, savings sweeps, HELOC parking, promo payoffs, covering missed bills). Every move is verified in a full simulation, so the plan is never worse than paying on due dates. It explains, in plain language:
   - which bills will be short and how to fix it
   - which payments are worth making early on payday (and how much that saves) — and which aren't
   - how a loan group's payment is split, and what aiming it at the highest rate or paying a little more would save
@@ -154,7 +155,8 @@ start.bat                Windows launcher (API + web UI)
 models/
   finance_manager.py     Orchestrator: holds state, runs projections/optimization, saves/loads
   timeline_simulator.py  Day-by-day simulation of income, bills, interest, and transfers
-  payment_optimizer.py   Two-pass optimizer (routing, sweeps, HELOC parking, promo payoffs)
+  payment_optimizer.py   Optimizer: candidate plans and moves, each verified by a full simulation
+  account_edit.py        Editing/renaming banks and accounts (references follow)
   payment_insights.py    Plain-language comparison and recommendations for the Optimizer page
   dashboard.py           Dashboard summary: bills status, safe to spend, pay-period checklist
   app_settings.py        App settings (cushion, everyday spending, fees, alerts, email)

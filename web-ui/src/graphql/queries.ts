@@ -159,6 +159,14 @@ export const GET_ALL_BANKS = gql`
         preferredSourceBank
         preferredSourceAccount
         status
+        startDate
+        marketValue
+        equity
+        escrowPropertyTax
+        escrowInsurance
+        escrowPmi
+        escrowHoa
+        escrowOther
       }
       helocAccounts {
         id
@@ -1167,13 +1175,56 @@ export const UPDATE_PROMO_OFFER = gql`
     $accountName: String!
     $promoName: String!
     $promoBalance: Float
+    $newName: String
+    $monthsInterestFree: Int
+    $purchaseLimit: Float
+    $startDate: String
+    $endDate: String
   ) {
     updatePromoOffer(
       bankName: $bankName
       accountName: $accountName
       promoName: $promoName
       promoBalance: $promoBalance
+      newName: $newName
+      monthsInterestFree: $monthsInterestFree
+      purchaseLimit: $purchaseLimit
+      startDate: $startDate
+      endDate: $endDate
     ) { success message }
+  }
+`
+
+export const UPDATE_ACCOUNT = gql`
+  mutation UpdateAccount(
+    $bankName: String!, $accountName: String!, $accountType: String!,
+    $newName: String, $newBankName: String, $newAccountType: String,
+    $interestRate: Float, $interestAccrualDate: Int,
+    $creditLimit: Float, $paymentDueDate: Int, $statementDate: Int, $status: String,
+    $originalPrincipal: Float, $currentPrincipal: Float, $loanTermMonths: Int, $startDate: String,
+    $escrowPropertyTax: Float, $escrowInsurance: Float, $escrowPmi: Float, $escrowHoa: Float, $escrowOther: Float,
+    $marketValue: Float, $preferredSourceBank: String, $preferredSourceAccount: String,
+    $drawPeriodMonths: Int, $totalTermMonths: Int
+  ) {
+    updateAccount(
+      bankName: $bankName, accountName: $accountName, accountType: $accountType,
+      newName: $newName, newBankName: $newBankName, newAccountType: $newAccountType,
+      interestRate: $interestRate, interestAccrualDate: $interestAccrualDate,
+      creditLimit: $creditLimit, paymentDueDate: $paymentDueDate, statementDate: $statementDate, status: $status,
+      originalPrincipal: $originalPrincipal, currentPrincipal: $currentPrincipal,
+      loanTermMonths: $loanTermMonths, startDate: $startDate,
+      escrowPropertyTax: $escrowPropertyTax, escrowInsurance: $escrowInsurance, escrowPmi: $escrowPmi,
+      escrowHoa: $escrowHoa, escrowOther: $escrowOther,
+      marketValue: $marketValue, preferredSourceBank: $preferredSourceBank,
+      preferredSourceAccount: $preferredSourceAccount,
+      drawPeriodMonths: $drawPeriodMonths, totalTermMonths: $totalTermMonths
+    ) { success message name }
+  }
+`
+
+export const UPDATE_BANK = gql`
+  mutation UpdateBank($name: String!, $newName: String, $bankType: String) {
+    updateBank(name: $name, newName: $newName, bankType: $bankType) { success message name }
   }
 `
 

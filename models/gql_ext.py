@@ -11,6 +11,7 @@ from __future__ import annotations
 import graphene
 
 from models import app_settings
+from models.gql_accounts import AccountsMutation
 from models.gql_goals import GoalsMutation, GoalsQuery
 from models.gql_ledger import LedgerMutation, LedgerQuery
 
@@ -210,7 +211,7 @@ class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
         return f"Subject: {subject}\n\n{body}"
 
 
-class ExtMutation(LedgerMutation, GoalsMutation, graphene.ObjectType):
+class ExtMutation(LedgerMutation, GoalsMutation, AccountsMutation, graphene.ObjectType):
     update_settings = UpdateSettings.Field()
     dismiss_alert = DismissAlert.Field()
     send_digest_email = SendDigestEmail.Field()

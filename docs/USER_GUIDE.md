@@ -263,6 +263,8 @@ The 🔔 bell at the top right of every page lists alerts (§16). **Refresh** re
 | Bank Name | Required, must be unique. |
 | Type | Traditional (default) / Credit Issuer / Mortgage Lender. Informational. |
 
+**Edit** (next to the bank's total) renames the bank or changes its type. Every account, bill, transaction and SimpleFIN link stays connected.
+
 **Delete Bank** removes the bank and *all* of its accounts (and their auto-bills) after confirmation.
 
 ### Adding an account — **+ Account**
@@ -293,12 +295,19 @@ For a mortgage, the form shows the **estimated monthly payment** as you type: th
 
 If anything is wrong (duplicate name, missing limit, invalid day…), you'll see an alert explaining why and nothing is created.
 
+### Editing an account — **Edit**
+
+Every account row has an **Edit** button that opens all of the account's settings: the same fields as when it was created, plus its **Name** and **Bank** (to rename it or move it to another bank), and for cards the **Status** (active, frozen, closed). Checking and savings accounts can be switched between the two types.
+
+Renaming or moving an account takes everything with it: its `[Auto]` payment bill (with its paid status, history and pay-from account), bills and loan groups that pay from it, income splits, transactions and bill matches, savings goals, balance history and its SimpleFIN link. Change the **balance** with **Update** instead, so the change is logged in the history. A mortgage's or HELOC's **Pay From** account is used for its payment bill right away.
+
 ### Bank Accounts table
 
 Columns: **Account** (🔄 SimpleFIN tag if synced), **Type**, **APY**, **Interest Day**, **Balance**.
 
 Actions:
 
+- **Edit** – change the name, bank, type, APY or interest day (see *Editing an account*).
 - **Update** – type in the real current balance (e.g. from your banking app). The change is saved and logged.
 - **Hist** – balance history: date, previous, new, and change for each update.
 - **Txns** – recent transactions pulled from SimpleFIN (synced accounts only, read-only).
@@ -308,7 +317,7 @@ Actions:
 
 Columns: **Account** (🏷️ N = number of promos), **Status** (active / closed / frozen), **APR**, **Due Day**, **Balance**, **Limit**, **Utilization** (balance ÷ limit; green ≤ 50%, amber ≤ 80%, red above).
 
-Actions: **Update** (new balance owed), **Hist**, **Txns**, **Promos**, **→ HELOC**, **Del**.
+Actions: **Edit** (name, bank, APR, limit, due and statement days, status), **Update** (new balance owed), **Hist**, **Txns**, **Promos**, **→ HELOC**, **Del**.
 
 #### Promo Offers
 
@@ -325,7 +334,7 @@ The **Promos** dialog shows the card's total and regular (interest-bearing) bala
 | Start Date | When the promo began. |
 | End Date (optional) | Calculated from start + months if blank. |
 
-**Edit** changes a promo's balance; **Del** removes the promo and returns its balance to the regular balance.
+**Edit** changes any of a promo's fields: name, months, purchase limit, balance and dates (changing the months or start date recalculates the end date unless you give one). **Del** removes the promo and returns its balance to the regular balance.
 
 #### Convert to HELOC (**→ HELOC**)
 
@@ -335,13 +344,13 @@ Replaces a credit card with a HELOC, keeping its balance, APR, credit limit, and
 
 Columns: **Status**, **APR**, **Due Day**, **Principal**, **Monthly Payment** (P&I + escrow), **P & I** (this month's principal/interest split), **Escrow** (monthly taxes, insurance, PMI, HOA).
 
-Actions: **Update** (set the current principal), **Hist**, **Txns**, **Del**. Mortgage payments are made from the Bills page.
+Actions: **Edit** (amounts, rate, term, start date, due day, each escrow amount, market value, pay-from account, name and bank), **Update** (set the current principal), **Hist**, **Txns**, **Del**. Mortgage payments are made from the Bills page.
 
 ### HELOC Accounts table
 
 Columns: **Phase** (draw / repayment / paid_off), **APR**, **Due Day**, **Balance**, **Limit**, **Available** (draw phase only), **Min Payment** ("interest only" in the draw phase, "P+I" in repayment), **Draw Ends**.
 
-Actions: **Update**, **Hist**, **Txns**, **Del**.
+Actions: **Edit** (limit, rate, draw period, total term, start date, due day, pay-from account, name and bank), **Update**, **Hist**, **Txns**, **Del**.
 
 ---
 
@@ -577,18 +586,24 @@ A month grid with ← / → navigation. Each day shows colored dots — **green*
 **Route:** `/optimizer` · Answers *"what's the best way to get every bill paid?"* for the chosen period (30 days – 1 year, pick it top-right and click **Analyze**). It compares two versions of the same period and explains the difference in plain language:
 
 - **On due date**: every bill comes out of its usual account on the day it's due, and nothing else moves.
-- **Optimized**: the same bills, plus the optimizer's routing and transfers (below).
+- **Optimized**: the same bills, plus the optimizer's moves (below).
+
+**The optimized plan is never worse than paying on due dates.** Every move is tested in a full day-by-day simulation of your accounts, and it's only kept if it leaves you better off. A plan also may not add a late payment or a fee, or take checking below your cushion (Settings → Planning, at least $300), or below the lowest point paying on due dates would reach. If nothing helps, the plan *is* "pay everything on its due date".
 
 Nothing is changed: it's advice. The Timeline and the Dashboard chart already assume the optimized plan.
 
 ### What the optimizer does
 
-- **Savings sweeps** – parks spare checking money in savings (to earn interest) and **recalls** it before bills need it. Money stays parked for at least 7 days.
+- **Pay down costly debt** – money checking won't need for the rest of the period goes onto your highest-rate card (just before its statement day) or HELOC, which costs more than the money earns sitting in checking or savings.
+- **Savings sweeps** – parks spare checking money in savings to earn interest, and **recalls** it before bills need it.
 - **HELOC parking** – if you have a HELOC in its draw period, temporarily pays it down with spare cash (cutting interest) and draws it back before bills are due.
-- **Extra credit payments** – only when the optimizer is set to a "pay off a specific card" goal, which is currently available through the Python API/CLI, not the web UI. In the web UI the goal is always "maximize discretionary funds", so this tile normally stays empty.
-- **Promo payoffs** – schedules payments so 0% promo balances are cleared *before* they expire and trigger deferred interest.
+- **Promo payoffs** – pays off a 0% promo before it expires when its regular payments won't clear it in time, so deferred interest never hits.
+- **Covering a missed payment** – when a bill can't be paid on its due date, moves the money from savings or draws on a HELOC, if that beats paying it late and the late fee.
+- **Extra payments toward a chosen card** – with the "pay off a specific card" goal (Python API/CLI only).
 
-It always keeps enough in checking to cover upcoming payments.
+"Spare" means money a checking account never needs again in the period, after its lowest point and your cushion, so a move can't leave a later bill short.
+
+Interest everywhere is worked out on the **average daily balance**, like banks and card issuers do. Moving money the day before interest is paid doesn't earn (or save) a whole month: what counts is how long the money sits there.
 
 ### The page, top to bottom
 
@@ -603,10 +618,9 @@ It always keeps enough in checking to cover upcoming payments.
 | Cash at the end / Debt at the end | Bank balances / cards + loans + HELOC + mortgage at the end of the period. |
 | Interest charged / earned | On cards and HELOCs / on savings and checking. |
 | Late & overdraft fees | Shown when either plan would pay any (rates from Settings → Planning and each bill's late fee). |
-| Deferred promo interest at risk | Shown only when a 0% promo still has money owed at the end. It's the most that could be charged if that balance isn't paid before the promo expires. It's a risk, not a certain cost, so it isn't part of the bottom line. |
-| **Overall (cash − debt)** | **The bottom line.** Moving cash onto a debt lowers both cash and debt, so judge the plan by this row. |
-
-> The plan can occasionally come out a few dollars *worse* in a short window. For example, paying a 0% promo early leaves more of the 24% balance in place for a while. The page reports this honestly; the promo table shows what it protects you from.
+| Deferred promo interest at risk | Shown only when a 0% promo still has money owed at the end. It's the most that could be charged if that balance isn't paid before the promo expires. If the card has another payment due before the promo ends, that payment can still clear it, so it's a risk rather than a cost. If not, the interest is counted in the bottom line. |
+| Unpaid bills | Shown when a bill can't be paid in the period. It's still owed, so it counts against the bottom line. Skipping a bill isn't saving money. |
+| **Overall** | **The bottom line:** cash − debt − unpaid bills (and promo interest no payment is left to prevent). Moving cash onto a debt lowers both cash and debt, so judge the plan by this row. It's never lower for the optimized plan. |
 
 **🧭 Recommendations**: a ranked list of cards with a dollar badge (**saves $X** is money gained or avoided; **risk $X** is money at risk):
 

@@ -77,6 +77,12 @@ class MortgageAccountType(graphene.ObjectType):
     market_value = graphene.Float()
     equity = graphene.Float()
     is_paid_this_period = graphene.Boolean()
+    start_date = graphene.String()
+    escrow_property_tax = graphene.Float(description="Monthly")
+    escrow_insurance = graphene.Float(description="Monthly")
+    escrow_pmi = graphene.Float(description="Monthly")
+    escrow_hoa = graphene.Float(description="Monthly")
+    escrow_other = graphene.Float(description="Monthly")
 
 
 class HELOCAccountType(graphene.ObjectType):
@@ -186,6 +192,12 @@ class BankType(graphene.ObjectType):
                 market_value=m.market_value,
                 equity=m.equity,
                 is_paid_this_period=m.is_paid_this_period,
+                start_date=m.start_date.isoformat() if m.start_date else None,
+                escrow_property_tax=m.escrow.property_tax_monthly,
+                escrow_insurance=m.escrow.homeowners_insurance_monthly,
+                escrow_pmi=m.escrow.pmi_monthly,
+                escrow_hoa=m.escrow.hoa_monthly,
+                escrow_other=m.escrow.other_monthly,
             )
             for name, m in mortgage_dict.items()
         ]
@@ -3085,17 +3097,23 @@ class AddPromoOffer(graphene.Mutation):
 
 
 class UpdatePromoOffer(graphene.Mutation):
-    """Update the balance allocation of a promo offer."""
+    """Edit a promo offer: its balance, name, length, limit or dates."""
     class Arguments:
         bank_name = graphene.String(required=True)
         account_name = graphene.String(required=True)
         promo_name = graphene.String(required=True)
         promo_balance = graphene.Float()
+        new_name = graphene.String()
+        months_interest_free = graphene.Int()
+        purchase_limit = graphene.Float(description="0 = no limit")
+        start_date = graphene.String()
+        end_date = graphene.String()
 
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, bank_name, account_name, promo_name, promo_balance=None):
+    def mutate(self, info, bank_name, account_name, promo_name, promo_balance=None, new_name=None,
+               months_interest_free=None, purchase_limit=None, start_date=None, end_date=None):
         manager = info.context.get('manager')
         if not manager:
             return UpdatePromoOffer(success=False, message="Manager not available")
@@ -3112,15 +3130,44 @@ class UpdatePromoOffer(graphene.Mutation):
         if not promo:
             return UpdatePromoOffer(success=False, message=f"Promo '{promo_name}' not found")
 
+        try:
+            start = date.fromisoformat(start_date) if start_date else promo.start_date
+            end = date.fromisoformat(end_date) if end_date else None
+        except ValueError:
+            return UpdatePromoOffer(success=False, message="Dates must be YYYY-MM-DD")
+        if months_interest_free is not None and months_interest_free < 1:
+            return UpdatePromoOffer(success=False, message="Months interest-free must be at least 1")
+        if purchase_limit is not None and purchase_limit < 0:
+            return UpdatePromoOffer(success=False, message="Purchase limit can't be negative")
+        if promo_balance is not None and not 0 <= promo_balance <= acc.balance + 0.005:
+            return UpdatePromoOffer(success=False, message="Promo balance must be between 0 and the card's balance")
+        new_name = (new_name or "").strip() or promo_name
+        if new_name != promo_name and any(p.promo_name == new_name for p in acc.active_promos):
+            return UpdatePromoOffer(success=False, message=f"This card already has a promo named '{new_name}'")
+        redate = bool(start_date or end_date or months_interest_free is not None)
+        if redate:
+            end = end or start + timedelta(days=30 * (months_interest_free or promo.months_interest_free))
+            if end <= start:
+                return UpdatePromoOffer(success=False, message="The end date must be after the start date")
+
         if promo_balance is not None:
             old_bal = acc.promo_balance.get(promo_name, 0.0)
             delta = promo_balance - old_bal
             acc.promo_balance[promo_name] = promo_balance
             promo.amount_used = promo_balance
             acc.regular_balance = max(0, acc.regular_balance - delta)
+        if months_interest_free is not None:
+            promo.months_interest_free = months_interest_free
+        if purchase_limit is not None:
+            promo.purchase_limit = purchase_limit or None
+        if redate:
+            promo.start_date, promo.end_date = start, end
+        if new_name != promo_name:
+            acc.promo_balance[new_name] = acc.promo_balance.pop(promo_name, 0.0)
+            promo.promo_name = new_name
 
         manager.save_to_database()
-        return UpdatePromoOffer(success=True, message=f"Promo '{promo_name}' updated")
+        return UpdatePromoOffer(success=True, message=f"Promo '{new_name}' updated")
 
 
 class RemovePromoOffer(graphene.Mutation):
