@@ -584,6 +584,14 @@ export const SEND_DIGEST_EMAIL = gql`
   mutation SendDigestEmail { sendDigestEmail { success message } }
 `
 
+export const SEND_TEST_PUSH = gql`
+  mutation SendTestPush { sendTestPush { success message } }
+`
+
+export const GET_JOB_STATUS = gql`
+  query GetJobStatus { jobStatus }
+`
+
 export const GET_DASHBOARD_SUMMARY = gql`
   query GetDashboardSummary {
     dashboardSummary {

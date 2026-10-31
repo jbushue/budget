@@ -23,7 +23,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from models.graphql_schema import schema
 from models.finance_manager import FinanceManager
-from models import auth, web_routes
+from models import auth, jobs, web_routes
 
 
 def create_app():
@@ -171,23 +171,6 @@ def create_app():
     return app
 
 
-def start_digest_thread(app):
-    """Send the optional daily email digest (checks every 30 minutes)."""
-    from models import alerts
-
-    def loop():
-        while True:
-            try:
-                if alerts.digest_due():
-                    with app.config['BUDGET_LOCK']:
-                        print('✉️ ', alerts.send_digest(app.config['BUDGET_STATE']['manager']))
-            except Exception as e:  # keep the server running whatever happens
-                print(f'⚠️  Digest email failed: {e}')
-            threading.Event().wait(1800)
-
-    threading.Thread(target=loop, daemon=True, name='digest').start()
-
-
 if __name__ == '__main__':
     print("\n" + "=" * 80)
     print("🏦 PERSONAL FINANCE GRAPHQL API SERVER")
@@ -219,7 +202,7 @@ if __name__ == '__main__':
         print("=" * 80 + "\n")
 
     if not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-        start_digest_thread(app)
+        jobs.start(app)  # backups, SimpleFIN sync, digest, push, daily maintenance
     if debug:
         app.run(debug=True, host=host, port=port)
     else:

@@ -150,6 +150,19 @@ class SendDigestEmail(graphene.Mutation):
             return SendDigestEmail(success=False, message=f"Couldn't send: {e}")
 
 
+class SendTestPush(graphene.Mutation):
+    """Send a test push notification (to check the ntfy settings)."""
+    success = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info):
+        from models import notify
+        try:
+            return SendTestPush(success=True, message=notify.send_test())
+        except (ValueError, OSError) as e:
+            return SendTestPush(success=False, message=str(e))
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  Roots
 # ─────────────────────────────────────────────────────────────────────────
@@ -159,6 +172,11 @@ class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
     dashboard_summary = graphene.Field(DashboardSummaryType)
     alerts = graphene.List(AlertType, include_dismissed=graphene.Boolean())
     digest_preview = graphene.String(description="Today's digest email text")
+    job_status = graphene.JSONString(description="Last result of each background job")
+
+    def resolve_job_status(self, info):
+        from models import jobs
+        return jobs.status()
 
     def resolve_settings(self, info):
         return app_settings.public_settings()
@@ -190,3 +208,4 @@ class ExtMutation(LedgerMutation, GoalsMutation, graphene.ObjectType):
     update_settings = UpdateSettings.Field()
     dismiss_alert = DismissAlert.Field()
     send_digest_email = SendDigestEmail.Field()
+    send_test_push = SendTestPush.Field()

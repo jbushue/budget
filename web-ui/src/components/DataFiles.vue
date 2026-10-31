@@ -30,6 +30,7 @@
           <input type="file" accept=".db,.sqlite,application/octet-stream" @change="restore" />
         </label>
       </div>
+      <ServerBackups />
     </template>
     <p v-else class="help" style="margin-top:0.75rem">Database backup and restore are for admins.</p>
 
@@ -45,6 +46,7 @@
 import { ref } from 'vue'
 import { useApolloClient } from '@vue/apollo-composable'
 import { authState, checkAuth } from '../utils/auth'
+import ServerBackups from './ServerBackups.vue'
 
 const { resolveClient } = useApolloClient()
 const busy = ref(false)

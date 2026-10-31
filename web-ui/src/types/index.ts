@@ -429,7 +429,29 @@ export interface AppSettings {
   smtp_port: number
   smtp_user: string
   smtp_use_tls: boolean
+  smtp_password_set: boolean
+  push_enabled: boolean
+  ntfy_url: string
+  ntfy_token_set: boolean
+  push_min_severity: 'warning' | 'danger'
+  push_daily_summary: boolean
+  public_url: string
+  auto_backup: boolean
+  backup_hour: number
+  backup_keep: number
+  last_backup_date: string
+  simplefin_auto_sync_hours: number
+  simplefin_auto_import: boolean
+  last_simplefin_sync: string
+  last_simplefin_result: string
   [key: string]: unknown
+}
+
+/** Last result of each background job (models/jobs.py) */
+export interface JobStatus {
+  ok: boolean
+  message: string
+  at: string
 }
 
 export type InsightSeverity = 'urgent' | 'warning' | 'savings' | 'tip' | 'good'

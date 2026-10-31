@@ -31,12 +31,12 @@ from functools import wraps
 
 from flask import g, jsonify, request, send_file, send_from_directory
 
-from models import auth
+from models import auth, backups
 from models import database as db
 
 COOKIE = "budget_session"
 PROTECTED = ("/graphql", "/files/")
-ADMIN_ONLY = ("/files/backup.db", "/files/restore")
+ADMIN_ONLY = ("/files/backup.db", "/files/restore", "/files/backups")
 LOCAL_ADDRS = {"127.0.0.1", "::1", "localhost"}
 DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web-ui", "dist")
 SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -151,7 +151,7 @@ def register(app, state: dict, lock) -> None:
             user = current_user()
             if user is None:
                 return _fail("Please sign in", 401, "login_required")
-            if path in ADMIN_ONLY and not user["is_admin"]:
+            if path.startswith(ADMIN_ONLY) and not user["is_admin"]:
                 return _fail("Only an admin can back up or restore the database", 403, "admin_required")
         elif not client_is_local():
             return _fail("Create the first account on the computer running the app, "
@@ -394,35 +394,82 @@ def register(app, state: dict, lock) -> None:
         tmp = os.path.join(tmpdir, "restore.db")
         upload.save(tmp)
         try:
-            with open(tmp, "rb") as f:
-                if f.read(16) != SQLITE_MAGIC:
-                    return jsonify({"success": False, "message": "That isn't a budget backup file"}), 400
-            conn = sqlite3.connect(tmp)
-            try:
-                tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                ok = conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-            finally:
-                conn.close()
-            if not {"banks", "bills", "income_sources"} <= tables or not ok:
-                return jsonify({"success": False, "message": "That file isn't a valid budget backup"}), 400
-
-            with lock:
-                # Keep a copy of what's being replaced
-                backups = os.path.join(os.path.dirname(db.DB_PATH), "backups")
-                os.makedirs(backups, exist_ok=True)
-                safety = os.path.join(backups, f"before-restore-{datetime.now():%Y%m%d-%H%M%S}.db")
-                _sqlite_copy(db.DB_PATH, safety)
-                db.engine.dispose()
-                _sqlite_copy(tmp, db.DB_PATH)
-                db.init_db()  # bring an older backup up to the current schema
-                from models.finance_manager import FinanceManager
-                fresh = FinanceManager([], [], [])
-                fresh.load_from_database()
-                state["manager"] = fresh
+            return _restore_from(tmp)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def _restore_from(path: str):
+        """Replace the database with the backup at ``path`` (validated first)."""
+        with open(path, "rb") as f:
+            if f.read(16) != SQLITE_MAGIC:
+                return jsonify({"success": False, "message": "That isn't a budget backup file"}), 400
+        conn = sqlite3.connect(path)
+        try:
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            ok = conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        finally:
+            conn.close()
+        if not {"banks", "bills", "income_sources"} <= tables or not ok:
+            return jsonify({"success": False, "message": "That file isn't a valid budget backup"}), 400
+
+        with lock:
+            # Keep a copy of what's being replaced
+            safety = backups.run_backup("before-restore")
+            db.engine.dispose()
+            backups.sqlite_copy(path, db.DB_PATH)
+            db.init_db()  # bring an older backup up to the current schema
+            from models.finance_manager import FinanceManager
+            fresh = FinanceManager([], [], [])
+            fresh.load_from_database()
+            state["manager"] = fresh
         return jsonify({"success": True, "message": "Backup restored",
-                        "previous_saved_to": safety})
+                        "previous_saved_to": os.path.join(backups.backup_dir(), safety["name"])})
+
+    # Backups kept on the server (admins only, see ADMIN_ONLY)
+
+    @app.route("/files/backups", methods=["GET"])
+    def files_backups():
+        from models.app_settings import get_settings
+        s = get_settings()
+        return jsonify({"success": True, "backups": backups.list_backups(), "folder": backups.backup_dir(),
+                        "auto_backup": s["auto_backup"], "backup_hour": s["backup_hour"],
+                        "backup_keep": s["backup_keep"], "last_backup_date": s["last_backup_date"]})
+
+    @app.route("/files/backups", methods=["POST"])
+    def files_backup_now():
+        with lock:
+            info = backups.run_backup("manual")
+        return jsonify({"success": True, "message": f"Backed up to {info['name']}", "backup": info})
+
+    @app.route("/files/backups/<name>", methods=["GET"])
+    def files_backup_download(name):
+        path = backups.path_for(name)
+        if path is None:
+            return _fail("No such backup", 404)
+        return send_file(path, mimetype="application/octet-stream", as_attachment=True, download_name=name)
+
+    @app.route("/files/backups/<name>", methods=["DELETE"])
+    def files_backup_delete(name):
+        try:
+            if not backups.delete(name):
+                return _fail("No such backup", 404)
+        except OSError as e:  # e.g. being downloaded right now (Windows)
+            return _fail(f"Couldn't delete {name}: {e.strerror or e}", 409)
+        return jsonify({"success": True, "message": f"Deleted {name}"})
+
+    @app.route("/files/backups/<name>/restore", methods=["POST"])
+    def files_backup_restore(name):
+        path = backups.path_for(name)
+        if path is None:
+            return _fail("No such backup", 404)
+        # Copy first: restoring writes a new before-restore backup into the same folder
+        tmpdir = tempfile.mkdtemp()
+        try:
+            tmp = os.path.join(tmpdir, "restore.db")
+            backups.sqlite_copy(path, tmp)
+            return _restore_from(tmp)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     @app.route("/files/transactions.csv", methods=["GET"])
     def files_transactions_csv():
@@ -452,13 +499,3 @@ def register(app, state: dict, lock) -> None:
             if path.startswith(("graphql", "files/", "auth/", "health")):
                 return jsonify({"error": "not found"}), 404
             return send_from_directory(DIST_DIR, "index.html")
-
-
-def _sqlite_copy(src_path: str, dst_path: str) -> None:
-    src = sqlite3.connect(src_path)
-    dst = sqlite3.connect(dst_path)
-    try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()

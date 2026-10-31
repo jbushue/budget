@@ -8,6 +8,7 @@
     <PlanningSettings />
     <AlertSettings />
     <DataFiles />
+    <BackgroundJobs v-if="authState.user?.is_admin" />
     <SecuritySettings />
 
     <!-- SimpleFIN Bridge -->
@@ -61,6 +62,7 @@
           </button>
           <button class="btn btn-danger btn-sm" @click="disconnectSimplefin">Disconnect</button>
         </div>
+        <SimplefinAutoSync />
 
         <!-- Sync result -->
         <div v-if="sfinSyncMsg" style="margin-bottom:1rem;font-size:0.85rem;padding:0.5rem 0.75rem;border-radius:4px"
@@ -220,6 +222,9 @@ import AlertSettings from '../components/AlertSettings.vue'
 import DataFiles from '../components/DataFiles.vue'
 import SecuritySettings from '../components/SecuritySettings.vue'
 import AppearanceSettings from '../components/AppearanceSettings.vue'
+import { authState } from '../utils/auth'
+import SimplefinAutoSync from '../components/SimplefinAutoSync.vue'
+import BackgroundJobs from '../components/BackgroundJobs.vue'
 import { currency, fmtDate } from '../utils/format'
 import type { Bank, SimplefinStatus, SimplefinAccount, MutationPayload } from '../types'
 

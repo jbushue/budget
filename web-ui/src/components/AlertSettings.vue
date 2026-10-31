@@ -41,9 +41,38 @@
         <div class="form-group checks"><label><input v-model="form.smtp_use_tls" type="checkbox" /> Use STARTTLS</label></div>
       </div>
 
+      <h4 class="sub-h">Phone notifications (optional)</h4>
+      <p class="help">
+        Get urgent alerts on your phone with the free <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>
+        app: install it, subscribe to a topic with a hard-to-guess name (anyone who knows it can read it), and paste
+        the topic's URL here — e.g. <code>https://ntfy.sh/budget-k3j9x2</code>. A self-hosted ntfy server works too.
+        The app must be running to send them.
+      </p>
+      <label class="inline"><input v-model="form.push_enabled" type="checkbox" /> Send alerts to my phone</label>
+      <div class="grid grid-3">
+        <div class="form-group"><label>ntfy topic URL</label><input v-model.trim="form.ntfy_url" type="url" placeholder="https://ntfy.sh/your-topic" /></div>
+        <div class="form-group">
+          <label>Access token (protected topics)</label>
+          <input v-model="ntfyToken" type="password" autocomplete="off" :placeholder="tokenSet ? '•••••• (saved — leave blank to keep)' : 'optional'" />
+        </div>
+        <div class="form-group">
+          <label>Send</label>
+          <select v-model="form.push_min_severity">
+            <option value="warning">Warnings and urgent alerts</option>
+            <option value="danger">Only urgent alerts</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>App address (for tapping a notification)</label>
+          <input v-model.trim="form.public_url" type="url" placeholder="https://budget.example.com" />
+        </div>
+        <div class="form-group checks"><label><input v-model="form.push_daily_summary" type="checkbox" /> Also a short summary every morning</label></div>
+      </div>
+
       <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? 'Saving...' : 'Save' }}</button>
         <button class="btn btn-outline" :disabled="sending" @click="sendTest">{{ sending ? 'Sending...' : 'Send a test digest now' }}</button>
+        <button class="btn btn-outline" :disabled="pushing || !form.ntfy_url" @click="testPush">{{ pushing ? 'Sending...' : 'Send a test notification' }}</button>
         <button class="btn btn-outline" @click="togglePreview">{{ preview ? 'Hide preview' : 'Preview digest' }}</button>
         <span v-if="message" :class="ok ? 'positive' : 'negative'" style="font-size:0.85rem">{{ message }}</span>
       </div>
@@ -55,21 +84,26 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useMutation, useQuery, useApolloClient } from '@vue/apollo-composable'
-import { GET_SETTINGS, UPDATE_SETTINGS, SEND_DIGEST_EMAIL, GET_DIGEST_PREVIEW } from '../graphql/queries'
+import { GET_SETTINGS, UPDATE_SETTINGS, SEND_DIGEST_EMAIL, GET_DIGEST_PREVIEW, SEND_TEST_PUSH } from '../graphql/queries'
 import type { AppSettings, MutationPayload } from '../types'
 
 const FIELDS = ['alert_days_before_due', 'alert_low_balance', 'auto_match_bills', 'browser_notifications',
-  'email_enabled', 'email_to', 'smtp_host', 'smtp_port', 'smtp_user', 'smtp_use_tls'] as const
+  'email_enabled', 'email_to', 'smtp_host', 'smtp_port', 'smtp_user', 'smtp_use_tls',
+  'push_enabled', 'ntfy_url', 'push_min_severity', 'push_daily_summary', 'public_url'] as const
 type Form = Pick<AppSettings, typeof FIELDS[number]>
 
 const { result, refetch } = useQuery<{ settings: string | AppSettings }>(GET_SETTINGS, { fetchPolicy: 'network-only' })
 const { mutate: update } = useMutation<{ updateSettings: MutationPayload }>(UPDATE_SETTINGS)
 const { mutate: sendDigest } = useMutation<{ sendDigestEmail: MutationPayload }>(SEND_DIGEST_EMAIL)
+const { mutate: sendPush } = useMutation<{ sendTestPush: MutationPayload }>(SEND_TEST_PUSH)
 const { resolveClient } = useApolloClient()
 
 const form = ref<Form | null>(null)
 const smtpPassword = ref('')
 const passwordSet = ref(false)
+const ntfyToken = ref('')
+const tokenSet = ref(false)
+const pushing = ref(false)
 const saving = ref(false)
 const sending = ref(false)
 const message = ref('')
@@ -82,6 +116,7 @@ watch(result, r => {
   const s = (typeof r.settings === 'string' ? JSON.parse(r.settings) : r.settings) as AppSettings
   form.value = Object.fromEntries(FIELDS.map(k => [k, s[k]])) as Form
   passwordSet.value = !!s.smtp_password_set
+  tokenSet.value = !!s.ntfy_token_set
 }, { immediate: true })
 
 async function askPermission() {
@@ -100,12 +135,13 @@ async function save(): Promise<boolean> {
   saving.value = true
   const changes: Record<string, unknown> = { ...form.value }
   if (smtpPassword.value) changes.smtp_password = smtpPassword.value
+  if (ntfyToken.value) changes.ntfy_token = ntfyToken.value
   try {
     const res = await update({ variables: { changes: JSON.stringify(changes) } })
     const p = res?.data?.updateSettings
     show(p?.success ? 'Saved' : (p?.message || 'Could not save'), !!p?.success)
     if (p?.success) {
-      smtpPassword.value = ''
+      smtpPassword.value = ntfyToken.value = ''
       refetch()
     }
     return !!p?.success
@@ -128,6 +164,20 @@ async function sendTest() {
     show(e instanceof Error ? e.message : String(e), false)
   } finally {
     sending.value = false
+  }
+}
+
+async function testPush() {
+  if (!(await save())) return
+  pushing.value = true
+  try {
+    const res = await sendPush()
+    const p = res?.data?.sendTestPush
+    show(p?.message || 'Done', !!p?.success)
+  } catch (e) {
+    show(e instanceof Error ? e.message : String(e), false)
+  } finally {
+    pushing.value = false
   }
 }
 
