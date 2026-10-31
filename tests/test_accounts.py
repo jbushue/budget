@@ -320,3 +320,48 @@ class TestDefaultAdmin:
         browser = device(client)
         login(browser, "admin", password)
         assert browser.get("/auth/status").get_json()["user"]["must_change_password"] is True
+
+
+class TestClientAddress:
+
+    def test_spoofed_forwarded_for_is_not_local(self, client):
+        # Through the Vite proxy (loopback), a client prepends its own "127.0.0.1"
+        spoof = {"X-Forwarded-For": "127.0.0.1, 192.168.1.50"}
+        assert gql(client, "{ allBanks { name } }", headers=spoof).status_code == 403
+        assert client.post("/auth/setup", json={"username": "evil", "password": PW},
+                           headers=spoof).status_code == 403
+        assert client.get("/auth/status", headers=spoof).get_json()["local"] is False
+        # A request straight from a remote device can't claim to be local either
+        assert gql(client, "{ allBanks { name } }", environ_base=REMOTE,
+                   headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 403
+        # The real thing still works: this computer through the proxy
+        assert gql(client, "{ allBanks { name } }", headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 200
+
+    def test_rotating_forwarded_for_does_not_dodge_the_lockout(self, client):
+        setup_admin(client)
+        other = device(client)
+        for i in range(auth.MAX_FAILURES):
+            login(other, "jordan", "wrong", headers={"X-Forwarded-For": f"10.0.0.{i}"})
+        assert login(other, "jordan", headers={"X-Forwarded-For": "10.0.0.99"}).status_code == 429
+        # Through the local proxy the proxy-added (last) address counts, not the client's
+        proxied = device(client)
+        for i in range(auth.MAX_FAILURES):
+            proxied.post("/auth/login", json={"username": "jordan", "password": "wrong"},
+                         headers={"X-Forwarded-For": f"10.1.0.{i}, 192.168.1.77"})
+        r = proxied.post("/auth/login", json={"username": "jordan", "password": PW},
+                         headers={"X-Forwarded-For": "1.2.3.4, 192.168.1.77"})
+        assert r.status_code == 429
+
+    def test_trusted_reverse_proxy(self, temp_db, monkeypatch):  # noqa: F811
+        monkeypatch.setenv("BUDGET_TRUSTED_PROXIES", "1")
+        from api_server import create_app
+        c = create_app().test_client()
+        # Caddy on another host: its address is the peer, the client is the last forwarded entry
+        via_proxy = {"REMOTE_ADDR": "172.18.0.2"}
+        r = c.get("/auth/status", environ_base=via_proxy,
+                  headers={"X-Forwarded-For": "127.0.0.1, 192.168.1.50", "X-Forwarded-Proto": "https"})
+        assert r.get_json()["local"] is False
+        r = c.post("/auth/setup", json={"username": "jordan", "password": PW}, environ_base=via_proxy,
+                   headers={"X-Forwarded-For": "127.0.0.1", "X-Forwarded-Proto": "https"})
+        assert r.status_code == 200
+        assert "Secure" in r.headers["Set-Cookie"]  # HTTPS seen through the proxy

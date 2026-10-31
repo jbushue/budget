@@ -5,6 +5,15 @@ Provides a GraphQL API endpoint for React Native and web clients.
 
 Run with: python api_server.py
 Then access GraphQL playground at: http://localhost:4000/graphql
+
+Environment:
+  BUDGET_HOST             address to listen on (default 127.0.0.1; 0.0.0.0 for other devices)
+  BUDGET_PORT             port (default 4000)
+  BUDGET_DATA_DIR         where the database and backups live (default ~/.budget_app)
+  BUDGET_TRUSTED_PROXIES  number of reverse proxies in front (e.g. 1 behind Caddy/nginx), so
+                          client addresses and HTTPS are read from their X-Forwarded-* headers
+  BUDGET_THREADS          worker threads (default 8)
+  BUDGET_DEBUG            1 = Flask's development server with auto-reload (never on a network)
 """
 
 import os
@@ -21,6 +30,12 @@ def create_app():
     """Create and configure the Flask application."""
     app = Flask(__name__)
     CORS(app)  # Enable CORS
+
+    # Behind a reverse proxy: believe its X-Forwarded-For / -Proto / -Host (only that many hops)
+    proxies = int(os.environ.get('BUDGET_TRUSTED_PROXIES') or 0)
+    if proxies > 0:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxies, x_proto=proxies, x_host=proxies)
 
     # Initialize the finance manager. One manager is shared by all requests,
     # so GraphQL operations are serialized with a lock. It lives in `state` so
@@ -177,10 +192,11 @@ if __name__ == '__main__':
     print("\n" + "=" * 80)
     print("🏦 PERSONAL FINANCE GRAPHQL API SERVER")
     print("=" * 80)
+    port = int(os.environ.get('BUDGET_PORT') or 4000)
     print("\n📍 Starting GraphQL server...")
-    print("\n✓ GraphQL Playground: http://localhost:4000/graphql")
-    print("✓ Health Check: http://localhost:4000/health")
-    print("✓ API Info: http://localhost:4000/")
+    print(f"\n✓ GraphQL Playground: http://localhost:{port}/graphql")
+    print(f"✓ Health Check: http://localhost:{port}/health")
+    print(f"✓ API Info: http://localhost:{port}/")
     print("\n" + "=" * 80 + "\n")
 
     # Debug mode (auto-reload + interactive debugger) is opt-in: the Werkzeug
@@ -197,12 +213,23 @@ if __name__ == '__main__':
         print(f"   {auth.initial_password_file()} until you change it.")
         print(f"\n   username: {auth.DEFAULT_ADMIN}\n   password: {initial_password}\n")
         print("   Change it in the web UI (Settings → Your account), or from a shell:")
-        print("   curl -X POST http://localhost:4000/auth/password -H 'Content-Type: application/json' \\")
+        print(f"   curl -X POST http://localhost:{port}/auth/password -H 'Content-Type: application/json' \\")
         print(f"        -d '{{\"username\": \"admin\", \"current_password\": \"{initial_password}\", "
               "\"new_password\": \"<your password>\"}'")
         print("=" * 80 + "\n")
 
     if not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         start_digest_thread(app)
-    app.run(debug=debug, host=host, port=4000)
+    if debug:
+        app.run(debug=True, host=host, port=port)
+    else:
+        try:
+            from waitress import serve
+        except ImportError:
+            print("⚠️  waitress isn't installed (pip install waitress) — using Flask's development server")
+            app.run(host=host, port=port)
+        else:
+            threads = int(os.environ.get('BUDGET_THREADS') or 8)
+            print(f"✓ Serving on http://{host}:{port} with waitress ({threads} threads)")
+            serve(app, host=host, port=port, threads=threads, ident='budget')
 

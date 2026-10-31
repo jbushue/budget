@@ -50,20 +50,31 @@ for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("t
     mimetypes.add_type(_type, _ext)
 
 
+def client_addr() -> str:
+    """The address of the device making the request.
+
+    X-Forwarded-For is only believed when the request comes from a proxy on this
+    computer (the Vite dev server), and then only its last entry — the address
+    that proxy saw. Earlier entries are whatever the client chose to send.
+    Proxies elsewhere are handled by BUDGET_TRUSTED_PROXIES (see api_server.py),
+    which sets remote_addr before this runs.
+    """
+    addr = request.remote_addr or "?"
+    if addr in LOCAL_ADDRS:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[-1].strip() or addr
+    return addr
+
+
 def client_is_local() -> bool:
     """True for requests from this computer (including through the local Vite proxy)."""
-    if request.remote_addr not in LOCAL_ADDRS:
-        return False
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip() in LOCAL_ADDRS
-    return True
+    return client_addr() in LOCAL_ADDRS
 
 
 def client_key() -> str:
     """Who to count failed sign-in attempts against."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    return forwarded.split(",")[0].strip() if forwarded else (request.remote_addr or "?")
+    return client_addr()
 
 
 def request_token() -> str | None:

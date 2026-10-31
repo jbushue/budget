@@ -12,8 +12,8 @@ import os
 from models.income_source import IncomeFrequency
 from models.types import *
 
-# Create database directory if it doesn't exist
-DB_DIR = os.path.join(os.path.expanduser("~"), ".budget_app")
+# Create database directory if it doesn't exist (BUDGET_DATA_DIR moves it, e.g. to a Docker volume)
+DB_DIR = os.environ.get("BUDGET_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".budget_app")
 os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "finance.db")
 DATABASE_URL = f"sqlite:///{DB_PATH}"
