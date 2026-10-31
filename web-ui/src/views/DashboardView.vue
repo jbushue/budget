@@ -111,14 +111,16 @@
           <div class="stat-value negative">{{ currency(snap.totalLiabilities) }}</div>
           <div class="stat-label">Total Liabilities</div>
         </div>
-        <div class="card stat-card">
+        <RouterLink to="/net-worth" class="card stat-card kpi-link" title="Assets, debts and net worth over time">
           <div class="stat-value" :class="snap.netWorth >= 0 ? 'positive' : 'negative'">{{ currency(snap.netWorth) }}</div>
-          <div class="stat-label">Net Worth</div>
-        </div>
-        <div class="card stat-card">
-          <div class="stat-value neutral">{{ snap.banks.length }}</div>
-          <div class="stat-label">Banks</div>
-        </div>
+          <div class="stat-label">Net Worth →</div>
+        </RouterLink>
+        <RouterLink to="/checkup" class="card stat-card kpi-link" title="Savings rate, emergency fund, debt and more">
+          <div class="stat-value neutral">
+            {{ health?.score ?? '—' }}<span v-if="health?.grade" class="grade">{{ health.grade }}</span>
+          </div>
+          <div class="stat-label">Health Score →</div>
+        </RouterLink>
       </div>
 
       <!-- Banks overview + upcoming -->
@@ -272,10 +274,12 @@ import {
   GET_BILL_PAYMENT_HISTORY,
   GET_DASHBOARD_SUMMARY,
 } from '../graphql/queries'
+import { GET_HEALTH_CHECK } from '../graphql/planning'
 import InsightList from '../components/InsightList.vue'
 import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
 import MarkPaidDialog, { type PayableBill } from '../components/MarkPaidDialog.vue'
 import { currency, fmtDate, fmtDateShort, frequencyLabel, daysFromNow } from '../utils/format'
+import type { HealthCheck } from '../types'
 import type { FinancialSnapshot, Projection, SimplefinSyncedAccount, NetWorthSnapshot, BillPaymentHistory, DashboardSummary, PeriodBillStatus } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler, Legend)
@@ -289,6 +293,9 @@ const { result: syncedResult } = useQuery<{ simplefinSyncedAccounts: SimplefinSy
 const { result: nwResult, loading: nwLoading, error: nwError } = useQuery<{ netWorthHistory: NetWorthSnapshot[] }>(GET_NET_WORTH_HISTORY, { variables: { limit: 90 } })
 const { result: bphResult, loading: bphLoading, error: bphError, refetch: refetchBph } = useQuery<{ billPaymentHistory: BillPaymentHistory[] }>(GET_BILL_PAYMENT_HISTORY, { variables: { limit: 20 } })
 
+const { result: healthResult, refetch: refetchHealth } = useQuery<{ healthCheck: HealthCheck }>(GET_HEALTH_CHECK)
+const health = computed(() => healthResult.value?.healthCheck)
+
 const snap = computed(() => result.value?.snapshot)
 const dash = computed(() => dashResult.value?.dashboardSummary)
 const projData = computed(() => projResult.value?.projection)
@@ -298,6 +305,7 @@ const payBill = ref<PayableBill | null>(null)
 function refreshAll() {
   refetch()
   refetchDash()
+  refetchHealth()
   refetchProj()
   refetchBph()
 }
@@ -445,4 +453,7 @@ const chartOptions = {
   opacity: 0.75;
   vertical-align: middle;
 }
+.kpi-link { color: inherit; text-decoration: none; }
+.kpi-link:hover { box-shadow: 0 0 0 2px var(--primary); }
+.grade { font-size: 0.9rem; margin-left: 0.35rem; color: var(--text-muted); font-weight: 600; }
 </style>

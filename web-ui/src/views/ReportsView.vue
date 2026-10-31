@@ -99,6 +99,8 @@
           <div style="height:260px"><Line :data="netWorthChart" :options="lineOptions" /></div>
         </template>
       </div>
+
+      <YearReview v-if="hasTransactions" style="margin-top:1.5rem" />
     </template>
   </div>
 </template>
@@ -113,6 +115,7 @@ import {
   Tooltip, Legend, Filler, type ChartOptions, type TooltipItem,
 } from 'chart.js'
 import { GET_SPENDING_REPORT } from '../graphql/ledger'
+import YearReview from '../components/YearReview.vue'
 import { GET_NET_WORTH_HISTORY } from '../graphql/queries'
 import { currency, fmtDate } from '../utils/format'
 import type { NetWorthSnapshot, SpendingMonth, SpendingReport } from '../types'

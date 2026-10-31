@@ -713,12 +713,14 @@ class FinanceManager:
         else:
             raise ValueError(f"Account '{account_name}' not found in {bank_name}.")
 
+    def get_total_cash(self) -> float:
+        """Total cash across all bank accounts."""
+        return sum(bank.total_balance() for bank in self.banks)
+
     def get_total_assets(self) -> float:
-        """Get total cash across all bank accounts."""
-        total = 0
-        for bank in self.banks:
-            total += bank.total_balance()
-        return total
+        """Cash plus other assets (cars, investments, ...) and home values — see models/assets.py."""
+        from models.assets import other_assets_total
+        return self.get_total_cash() + other_assets_total(self)
 
     def get_total_liabilities(self) -> float:
         """Get total liabilities (credit + mortgage + HELOC)."""

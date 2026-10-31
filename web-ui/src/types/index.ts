@@ -589,6 +589,27 @@ export interface LedgerTransaction {
   source: 'simplefin' | 'csv' | 'manual'
   matchedBill: string | null
   notes: string
+  tags: string[]
+  splits: TransactionSplit[]   // set when split across categories (category is then null)
+}
+
+export interface TransactionSplit {
+  category: string
+  amount: number
+  note: string
+}
+
+export interface TagCount {
+  tag: string
+  count: number
+}
+
+export interface SuggestedBudget {
+  category: string
+  average: number
+  suggested: number
+  current: number | null
+  months: number
 }
 
 export interface TransactionPage {
@@ -604,6 +625,7 @@ export interface Category {
   isEveryday: boolean
   monthlyBudget: number | null
   color: string | null
+  rollover: boolean
 }
 
 export interface CategoryRule {
@@ -623,6 +645,9 @@ export interface BudgetLine {
   percent: number | null
   projected: number
   status: 'ok' | 'warning' | 'over' | 'no_budget'
+  rollover: boolean | null
+  carried: number | null     // rollover: left from earlier months (negative = overspent)
+  available: number | null   // budget + carried
 }
 
 export interface BudgetStatus {
@@ -729,4 +754,104 @@ export interface AlertItem {
   detail: string
   link: string
   date: string
+}
+
+// ── Assets, net worth, planning ──
+
+export interface Asset {
+  id: number
+  name: string
+  kind: string
+  kindLabel: string
+  value: number
+  notes: string
+  linkedBank: string
+  linkedAccount: string
+  loanBalance: number | null
+  loanKind: string | null
+  equity: number
+  updated: string | null
+}
+
+export interface KindValue {
+  kind: string
+  value: number
+}
+
+export interface NetWorthBreakdown {
+  cash: number
+  assetsByKind: KindValue[]
+  debts: KindValue[]
+  totalAssets: number
+  totalDebt: number
+  netWorth: number
+  assets: Asset[]
+  homes: { name: string; bank: string; value: number; owed: number }[]
+}
+
+export interface MonthlyPlan {
+  income: number
+  bills: number
+  debtPayments: number
+  budgets: number
+  goalSaving: number
+  leftToBudget: number
+  status: 'unassigned' | 'balanced' | 'over'
+}
+
+export interface HealthFactor {
+  key: string
+  label: string
+  score: number
+  value: string
+  detail: string
+  tip: string
+  status: 'good' | 'fair' | 'poor'
+  weight: number
+}
+
+export interface HealthCheck {
+  score: number | null
+  grade: string | null
+  factors: HealthFactor[]
+  topTips: string[]
+}
+
+export interface Subscription {
+  name: string
+  source: 'bill' | 'payee' | 'scheduled'
+  frequency: string
+  amount: number
+  usualAmount: number
+  monthlyCost: number
+  yearlyCost: number
+  lastDate: string | null
+  nextExpected: string | null
+  category: string | null
+  count: number
+  priceIncrease: number
+}
+
+export interface Subscriptions {
+  items: Subscription[]
+  monthlyTotal: number
+  yearlyTotal: number
+  priceIncreases: string[]
+}
+
+export interface YearReview {
+  year: number
+  hasData: boolean
+  income: number
+  spending: number
+  saved: number
+  savingsRate: number | null
+  months: { month: string; income: number; spending: number; net: number }[]
+  averageMonthlySpending: number
+  biggestMonth: string | null
+  topCategories: { name: string; amount: number; color: string; share: number }[]
+  topPayees: { name: string; amount: number }[]
+  largestPurchases: { date: string; description: string; amount: number; category: string | null }[]
+  byTag: { tag: string; amount: number }[]
+  transactionCount: number
 }

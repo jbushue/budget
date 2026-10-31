@@ -14,6 +14,7 @@ from models import app_settings
 from models.gql_accounts import AccountsMutation
 from models.gql_goals import GoalsMutation, GoalsQuery
 from models.gql_ledger import LedgerMutation, LedgerQuery
+from models.gql_planning import PlanningMutation, PlanningQuery
 
 
 def _manager(info):
@@ -168,7 +169,7 @@ class SendTestPush(graphene.Mutation):
 #  Roots
 # ─────────────────────────────────────────────────────────────────────────
 
-class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
+class ExtQuery(LedgerQuery, GoalsQuery, PlanningQuery, graphene.ObjectType):
     settings = graphene.JSONString(description="App settings (secrets omitted)")
     dashboard_summary = graphene.Field(DashboardSummaryType)
     alerts = graphene.List(AlertType, include_dismissed=graphene.Boolean())
@@ -211,7 +212,7 @@ class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
         return f"Subject: {subject}\n\n{body}"
 
 
-class ExtMutation(LedgerMutation, GoalsMutation, AccountsMutation, graphene.ObjectType):
+class ExtMutation(LedgerMutation, GoalsMutation, AccountsMutation, PlanningMutation, graphene.ObjectType):
     update_settings = UpdateSettings.Field()
     dismiss_alert = DismissAlert.Field()
     send_digest_email = SendDigestEmail.Field()

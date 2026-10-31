@@ -33,7 +33,8 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 **Transactions, budgets, and goals**
 - Transactions from SimpleFIN (automatic), your bank's CSV export (columns detected for you), or manual entry
 - Categories with "everyday" flags and monthly budgets; auto-categorizing keyword rules that learn from your choices
-- **Budgets** page with progress and month-end pace
+- **Split transactions** across categories, **tags** (e.g. `vacation`, `reimbursable`), filters by tag / amount / direction, and **CSV export** of whatever matches
+- **Budgets** page with progress and month-end pace, **rollover** (envelope-style carry-forward), **suggested budgets** from your recent spending, and **left to budget** — expected income minus bills, budgets and goal saving
 - **Savings goals and sinking funds** — money set aside in checking is kept out of Safe to spend; non-monthly bills get "save up for this" suggestions
 - Bill payments are **recognized in your transactions** and marked paid automatically (no money moved twice); repeating charges that aren't bills yet are suggested
 
@@ -47,7 +48,10 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 - **Debt Payoff** — minimum-only vs. avalanche vs. snowball
 - **What-If Scenarios** — job loss, a raise, new or cut bills, paid-off debts — with a plain-language verdict
 - **Late and overdraft fees** are modeled (app-wide defaults plus a per-bill late fee)
-- **Reports** — income vs. spending, where the money went, category trends, net worth over time
+- **Reports** — income vs. spending, where the money went, category trends, net worth over time, and a **year in review** (totals, savings rate, top categories and payees, biggest purchases, spending by tag)
+- **Net worth with assets** — vehicles, investments, retirement, property and valuables with value history and equity against their loans, counted in net worth everywhere
+- **Financial health check** — a 0–100 score from savings rate, emergency fund, debt-to-income, card utilization, high-interest debt, budgets kept and net worth trend, with what to do about each
+- **Subscriptions** — every recurring charge with its monthly and yearly cost, and price increases flagged
 
 **Alerts**
 - A bell with everything that needs attention: overdue or short bills, bills due soon, a low balance ahead, budgets running over, payments to review
@@ -162,6 +166,8 @@ models/
   app_settings.py        App settings (cushion, everyday spending, fees, alerts, email)
   ledger.py              Transactions, CSV/SimpleFIN import, categories, rules, budgets, reports
   goals.py               Savings goals and sinking funds
+  assets.py              Assets (cars, investments, property...) with value history; net worth breakdown
+  planning.py            Left to budget, financial health check, subscriptions, year in review
   bill_matching.py       Recognize bill payments in transactions; detect recurring charges
   alerts.py              Alerts and the daily email digest
   notify.py              Phone push notifications (ntfy)
@@ -176,7 +182,7 @@ models/
   income_source.py       Income schedules and distribution
   database.py, db_repository.py   SQLite schema, migrations, persistence
   graphql_schema.py      GraphQL types, queries, and mutations (core)
-  gql_ext.py, gql_ledger.py, gql_goals.py   GraphQL for the features above
+  gql_ext.py, gql_ledger.py, gql_goals.py, gql_planning.py, gql_accounts.py   GraphQL for the features above
   data_import_export.py  Excel import/export
   simplefin.py           SimpleFIN Bridge client
 web-ui/                  Vue 3 + Vite + Apollo + Chart.js web interface

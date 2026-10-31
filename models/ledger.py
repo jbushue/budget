@@ -12,6 +12,15 @@ allowance in projections.
 
 Rules map text in the description to a category. Your own rules win over
 the built-in keyword list.
+
+A transaction can be split across several categories (a store run that's
+part groceries, part household). Its splits must add up to the amount; the
+transaction itself then has no category of its own, and budgets and reports
+count each split in its category. Transactions can also carry tags
+("vacation", "tax-deductible", ...) for filtering and export.
+
+Categories with rollover work like envelopes: what's left of the budget at
+the end of a month carries into the next, and overspending is taken from it.
 """
 
 from __future__ import annotations
@@ -91,7 +100,36 @@ def _session():
     return db.get_session()
 
 
-def _to_dict(t: db.LedgerTransactionModel) -> dict:
+def _tags(text: str | None) -> list[str]:
+    return [x for x in (text or "").split(",") if x]
+
+
+def clean_tags(tags) -> str | None:
+    """['Vacation', ' tax deductible '] -> 'vacation,tax-deductible' (None when empty)."""
+    if isinstance(tags, str):
+        tags = tags.split(",")
+    out = []
+    for tag in tags or []:
+        tag = re.sub(r"\s+", "-", str(tag).strip().lower().lstrip("#"))
+        tag = re.sub(r"[^a-z0-9_-]", "", tag)[:30]
+        if tag and tag not in out:
+            out.append(tag)
+    return ",".join(out[:10]) or None
+
+
+def _splits_for(session, ids) -> dict:
+    """{transaction id: [split dicts]} for the given transaction ids."""
+    out: dict = {}
+    ids = list(ids)
+    for i in range(0, len(ids), 500):
+        for sp in session.query(db.TransactionSplitModel).filter(
+                db.TransactionSplitModel.transaction_id.in_(ids[i:i + 500])).order_by(db.TransactionSplitModel.id):
+            out.setdefault(sp.transaction_id, []).append(
+                {"category": sp.category, "amount": round(sp.amount, 2), "note": sp.note or ""})
+    return out
+
+
+def _to_dict(t: db.LedgerTransactionModel, splits: list | None = None) -> dict:
     return {
         "id": t.id,
         "date": t.txn_date.isoformat(),
@@ -106,7 +144,19 @@ def _to_dict(t: db.LedgerTransactionModel) -> dict:
         "matched_bill": t.matched_bill if t.matched_bill != "__none__" else None,
         "not_a_bill": t.matched_bill == "__none__",
         "notes": t.notes or "",
+        "tags": _tags(t.tags),
+        "splits": splits or [],
     }
+
+
+def category_lines(txns: list[dict]):
+    """(transaction, category, amount) for each transaction — or for each of its splits."""
+    for t in txns:
+        if t.get("splits"):
+            for sp in t["splits"]:
+                yield t, sp["category"], sp["amount"]
+        else:
+            yield t, t["category"], t["amount"]
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -131,7 +181,8 @@ def list_categories() -> list[dict]:
     try:
         rows = session.query(db.CategoryModel).order_by(db.CategoryModel.kind, db.CategoryModel.name).all()
         return [{"name": c.name, "kind": c.kind, "is_everyday": bool(c.is_everyday),
-                 "monthly_budget": c.monthly_budget, "color": c.color} for c in rows]
+                 "monthly_budget": c.monthly_budget, "color": c.color, "rollover": bool(c.rollover)}
+                for c in rows]
     finally:
         session.close()
 
@@ -142,7 +193,7 @@ def _category_map() -> dict:
 
 def upsert_category(name: str, kind: str = "expense", is_everyday: bool = False,
                     monthly_budget: float | None = None, color: str | None = None,
-                    rename_from: str | None = None) -> dict:
+                    rename_from: str | None = None, rollover: bool | None = None) -> dict:
     name = (name or "").strip()
     if not name:
         raise ValueError("Category name is required")
@@ -164,15 +215,18 @@ def upsert_category(name: str, kind: str = "expense", is_everyday: bool = False,
         if rename_from and rename_from != name:
             session.query(db.LedgerTransactionModel).filter_by(category=rename_from).update({"category": name})
             session.query(db.CategoryRuleModel).filter_by(category=rename_from).update({"category": name})
+            session.query(db.TransactionSplitModel).filter_by(category=rename_from).update({"category": name})
         row.name = name
         row.kind = kind
         row.is_everyday = bool(is_everyday) and kind == "expense"
         row.monthly_budget = monthly_budget if monthly_budget else None
         if color:
             row.color = color
+        if rollover is not None:
+            row.rollover = bool(rollover) and kind == "expense"
         session.commit()
         return {"name": row.name, "kind": row.kind, "is_everyday": row.is_everyday,
-                "monthly_budget": row.monthly_budget, "color": row.color}
+                "monthly_budget": row.monthly_budget, "color": row.color, "rollover": bool(row.rollover)}
     finally:
         session.close()
 
@@ -191,6 +245,7 @@ def delete_category(name: str) -> None:
         if row is None:
             raise ValueError(f"Category '{name}' not found")
         session.query(db.LedgerTransactionModel).filter_by(category=name).update({"category": None})
+        session.query(db.TransactionSplitModel).filter_by(category=name).update({"category": None})
         session.query(db.CategoryRuleModel).filter_by(category=name).delete()
         session.delete(row)
         session.commit()
@@ -281,7 +336,10 @@ def recategorize(only_uncategorized: bool = True, pattern: str | None = None) ->
         q = session.query(db.LedgerTransactionModel)
         if only_uncategorized:
             q = q.filter(db.LedgerTransactionModel.category.is_(None))
+        split_ids = {sid for (sid,) in session.query(db.TransactionSplitModel.transaction_id).distinct()}
         for t in q.all():
+            if t.id in split_ids:
+                continue
             if pattern and pattern.lower() not in (t.description or "").lower():
                 continue
             new = categorize(t.description, t.amount, rules, cats)
@@ -301,7 +359,7 @@ def recategorize(only_uncategorized: bool = True, pattern: str | None = None) ->
 def add_transaction(txn_date: date, description: str, amount: float, bank_name: str = "",
                     account_name: str = "", category: str | None = None, notes: str = "",
                     source: str = "manual", external_id: str | None = None, payee: str = "",
-                    session=None) -> dict | None:
+                    session=None, tags=None) -> dict | None:
     """Add one transaction. Returns None if it's a duplicate."""
     description = (description or "").strip()
     if not description:
@@ -324,7 +382,7 @@ def add_transaction(txn_date: date, description: str, amount: float, bank_name: 
         row = db.LedgerTransactionModel(
             txn_date=txn_date, description=description, payee=payee or None, amount=round(amount, 2),
             bank_name=bank_name or None, account_name=account_name or None, category=category,
-            source=source, external_id=external_id, notes=notes or None)
+            source=source, external_id=external_id, notes=notes or None, tags=clean_tags(tags))
         session.add(row)
         if own:
             session.commit()
@@ -346,6 +404,8 @@ def update_transaction(txn_id: int, **fields) -> dict:
             cat = fields["category"] or None
             if cat is not None and cat not in _category_map():
                 raise ValueError(f"Category '{cat}' not found")
+            if cat is not None:  # one category replaces a split
+                session.query(db.TransactionSplitModel).filter_by(transaction_id=t.id).delete()
             t.category = cat
         if fields.get("notes") is not None:
             t.notes = fields["notes"] or None
@@ -357,8 +417,13 @@ def update_transaction(txn_id: int, **fields) -> dict:
             t.txn_date = fields["txn_date"]
         if "matched_bill" in fields:
             t.matched_bill = fields["matched_bill"] or None
+        if fields.get("tags") is not None:
+            t.tags = clean_tags(fields["tags"])
+        splits = _splits_for(session, [t.id]).get(t.id)
+        if splits and fields.get("amount") is not None and abs(sum(x["amount"] for x in splits) - t.amount) > 0.005:
+            raise ValueError("This transaction is split — change the splits to match the new amount first")
         session.commit()
-        return _to_dict(t)
+        return _to_dict(t, splits)
     finally:
         session.close()
 
@@ -366,6 +431,7 @@ def update_transaction(txn_id: int, **fields) -> dict:
 def delete_transaction(txn_id: int) -> None:
     session = _session()
     try:
+        session.query(db.TransactionSplitModel).filter_by(transaction_id=txn_id).delete()
         n = session.query(db.LedgerTransactionModel).filter_by(id=txn_id).delete()
         session.commit()
         if not n:
@@ -374,33 +440,120 @@ def delete_transaction(txn_id: int) -> None:
         session.close()
 
 
+def set_splits(txn_id: int, splits: list[dict]) -> dict:
+    """
+    Split a transaction across categories. ``splits`` is a list of
+    {category, amount, note}; amounts use the transaction's sign (or are all
+    given as positive numbers) and must add up to its amount. An empty list
+    removes the split and puts the transaction in the biggest split's category.
+    """
+    session = _session()
+    try:
+        t = session.get(db.LedgerTransactionModel, txn_id)
+        if t is None:
+            raise ValueError("Transaction not found")
+        old = _splits_for(session, [txn_id]).get(txn_id, [])
+        session.query(db.TransactionSplitModel).filter_by(transaction_id=txn_id).delete()
+        if not splits:
+            if old:
+                t.category = max(old, key=lambda x: abs(x["amount"]))["category"]
+            session.commit()
+            return _to_dict(t)
+        if len(splits) < 2:
+            raise ValueError("A split needs at least two parts")
+        cats = _category_map()
+        sign = -1 if t.amount < 0 else 1
+        rows = []
+        for sp in splits:
+            cat = sp.get("category") or None
+            if cat is not None and cat not in cats:
+                raise ValueError(f"Category '{cat}' not found")
+            amount = round(float(sp.get("amount") or 0), 2)
+            if amount == 0:
+                raise ValueError("Each part needs an amount")
+            if all(float(x.get("amount") or 0) > 0 for x in splits):
+                amount = abs(amount) * sign  # all given as positive numbers
+            rows.append(db.TransactionSplitModel(transaction_id=txn_id, category=cat, amount=amount,
+                                                 note=(sp.get("note") or "")[:200] or None))
+        total = round(sum(r.amount for r in rows), 2)
+        if abs(total - t.amount) > 0.005:
+            raise ValueError(f"The parts add up to {abs(total):,.2f}, not {abs(t.amount):,.2f}")
+        session.add_all(rows)
+        t.category = None
+        session.commit()
+        return _to_dict(t, _splits_for(session, [txn_id]).get(txn_id))
+    finally:
+        session.close()
+
+
+def list_tags() -> list[dict]:
+    """Every tag in use, with how many transactions have it."""
+    session = _session()
+    try:
+        counts: dict = {}
+        for (text,) in session.query(db.LedgerTransactionModel.tags).filter(db.LedgerTransactionModel.tags.isnot(None)):
+            for tag in _tags(text):
+                counts[tag] = counts.get(tag, 0) + 1
+        return [{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    finally:
+        session.close()
+
+
+def _filtered(session, text="", category=None, account="", date_from=None, date_to=None,
+              uncategorized=False, tag="", min_amount=None, max_amount=None, direction=""):
+    M = db.LedgerTransactionModel
+    S = db.TransactionSplitModel
+    q = session.query(M)
+    if text:
+        like = f"%{text}%"
+        q = q.filter((M.description.ilike(like)) | (M.notes.ilike(like)) | (M.payee.ilike(like)))
+    split_ids = session.query(S.transaction_id)
+    if uncategorized:
+        q = q.filter(M.category.is_(None), ~M.id.in_(split_ids))
+    elif category:
+        q = q.filter((M.category == category) | M.id.in_(split_ids.filter(S.category == category)))
+    if tag:
+        t = clean_tags([tag]) or ""
+        q = q.filter((M.tags == t) | M.tags.like(f"{t},%") | M.tags.like(f"%,{t}") | M.tags.like(f"%,{t},%"))
+    if min_amount is not None:
+        q = q.filter(((M.amount >= min_amount) & (M.amount >= 0)) | ((M.amount <= -min_amount) & (M.amount < 0)))
+    if max_amount is not None:
+        q = q.filter((M.amount <= max_amount) & (M.amount >= -max_amount))
+    if account and ":" in account:
+        bank, acct = account.split(":", 1)
+        q = q.filter(M.bank_name == bank, M.account_name == acct)
+    if date_from:
+        q = q.filter(M.txn_date >= date_from)
+    if date_to:
+        q = q.filter(M.txn_date <= date_to)
+    if direction == "in":
+        q = q.filter(M.amount > 0)
+    elif direction == "out":
+        q = q.filter(M.amount < 0)
+    return q
+
+
 def search_transactions(text: str = "", category: str | None = None, account: str = "",
                         date_from: date | None = None, date_to: date | None = None,
-                        uncategorized: bool = False, limit: int = 100, offset: int = 0) -> dict:
-    """Filtered, newest-first page of transactions plus totals for the whole filter."""
+                        uncategorized: bool = False, limit: int = 100, offset: int = 0,
+                        tag: str = "", min_amount: float | None = None, max_amount: float | None = None,
+                        direction: str = "") -> dict:
+    """
+    Filtered, newest-first page of transactions plus totals for the whole filter.
+    ``min_amount``/``max_amount`` compare the size of the amount (either sign);
+    ``direction`` is "in", "out" or "" for both.
+    """
     M = db.LedgerTransactionModel
     session = _session()
     try:
-        q = session.query(M)
-        if text:
-            like = f"%{text}%"
-            q = q.filter((M.description.ilike(like)) | (M.notes.ilike(like)) | (M.payee.ilike(like)))
-        if uncategorized:
-            q = q.filter(M.category.is_(None))
-        elif category:
-            q = q.filter(M.category == category)
-        if account and ":" in account:
-            bank, acct = account.split(":", 1)
-            q = q.filter(M.bank_name == bank, M.account_name == acct)
-        if date_from:
-            q = q.filter(M.txn_date >= date_from)
-        if date_to:
-            q = q.filter(M.txn_date <= date_to)
+        q = _filtered(session, text, category, account, date_from, date_to, uncategorized, tag,
+                      min_amount, max_amount, direction)
         rows = q.order_by(M.txn_date.desc(), M.id.desc()).all()
         total_in = sum(t.amount for t in rows if t.amount > 0)
         total_out = sum(-t.amount for t in rows if t.amount < 0)
         page = rows[offset: offset + max(1, min(limit, 500))]
-        return {"items": [_to_dict(t) for t in page], "total": len(rows),
+        splits = _splits_for(session, [t.id for t in page])
+        return {"items": [_to_dict(t, splits.get(t.id)) for t in page], "total": len(rows),
                 "total_in": round(total_in, 2), "total_out": round(total_out, 2)}
     finally:
         session.close()
@@ -413,9 +566,30 @@ def all_transactions(date_from: date | None = None) -> list[dict]:
         q = session.query(M)
         if date_from:
             q = q.filter(M.txn_date >= date_from)
-        return [_to_dict(t) for t in q.order_by(M.txn_date).all()]
+        rows = q.order_by(M.txn_date).all()
+        splits = _splits_for(session, [t.id for t in rows])
+        return [_to_dict(t, splits.get(t.id)) for t in rows]
     finally:
         session.close()
+
+
+def export_csv(**filters) -> str:
+    """The filtered transactions (same filters as search_transactions) as CSV, one row per split."""
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["Date", "Description", "Amount", "Category", "Bank", "Account", "Tags", "Notes", "Matched bill"])
+    result = search_transactions(limit=500, **filters)
+    items, offset = list(result["items"]), 500
+    while offset < result["total"]:
+        items += search_transactions(limit=500, offset=offset, **filters)["items"]
+        offset += 500
+    for t in reversed(items):  # oldest first
+        parts = t["splits"] or [{"category": t["category"], "amount": t["amount"], "note": ""}]
+        for sp in parts:
+            note = " — ".join(x for x in (t["notes"], sp.get("note", "")) if x)
+            w.writerow([t["date"], t["description"], f"{sp['amount']:.2f}", sp["category"] or "",
+                        t["bank_name"], t["account_name"], " ".join(t["tags"]), note, t["matched_bill"] or ""])
+    return out.getvalue()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -607,16 +781,17 @@ def budget_status(month: str | None = None, today: date | None = None) -> dict:
     spent: dict = {}
     uncategorized = 0.0
     income = 0.0
-    for t in txns:
-        c = cats.get(t["category"]) if t["category"] else None
+    for t, cat, amount in category_lines(txns):
+        c = cats.get(cat) if cat else None
         if c is None:
-            if t["amount"] < 0:
-                uncategorized += -t["amount"]
+            if amount < 0:
+                uncategorized += -amount
             continue
         if c["kind"] == "expense":
-            spent[c["name"]] = spent.get(c["name"], 0.0) - t["amount"]  # refunds reduce spending
+            spent[c["name"]] = spent.get(c["name"], 0.0) - amount  # refunds reduce spending
         elif c["kind"] == "income":
-            income += t["amount"]
+            income += amount
+    carry = _rollover_carry(cats, start)
 
     is_current = start <= today <= end
     elapsed = (today - start).days + 1 if is_current else (end - start).days + 1
@@ -630,18 +805,22 @@ def budget_status(month: str | None = None, today: date | None = None) -> dict:
         if not budget and not s:
             continue
         projected = round(s / elapsed * days, 2) if is_current and elapsed else s
+        carried = round(carry.get(name, 0.0), 2) if c["rollover"] and budget else 0.0
+        available = round(budget + carried, 2) if budget else None
         lines.append({
             "category": name, "color": c["color"], "is_everyday": c["is_everyday"],
             "budget": budget, "spent": s,
-            "remaining": round(budget - s, 2) if budget else None,
-            "percent": round(s / budget * 100, 1) if budget else None,
+            "rollover": c["rollover"], "carried": carried, "available": available,
+            "remaining": round(available - s, 2) if budget else None,
+            "percent": round(s / available * 100, 1) if available and available > 0 else (
+                100.0 if budget and s > 0 else 0.0 if budget else None),
             "projected": projected,
-            "status": ("over" if budget and s > budget else
-                       "warning" if budget and projected > budget else
+            "status": ("over" if budget and s > available else
+                       "warning" if budget and projected > available else
                        "ok" if budget else "no_budget"),
         })
     lines.sort(key=lambda line: (line["budget"] is None, -(line["percent"] or 0), -line["spent"]))
-    total_budget = sum(line["budget"] or 0 for line in lines)
+    total_budget = sum(line["available"] or 0 for line in lines)
     total_spent = sum(line["spent"] for line in lines)
     return {
         "month": start.strftime("%Y-%m"),
@@ -653,6 +832,68 @@ def budget_status(month: str | None = None, today: date | None = None) -> dict:
         "uncategorized_spent": round(uncategorized, 2),
         "income": round(income, 2),
     }
+
+
+def _month_keys_before(start: date, count: int) -> list[str]:
+    y, m = start.year, start.month
+    keys = []
+    for _ in range(count):
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+        keys.append(f"{y:04d}-{m:02d}")
+    return list(reversed(keys))
+
+
+def _rollover_carry(cats: dict, start: date, max_months: int = 12) -> dict:
+    """
+    What rolls into the month starting ``start`` for each rollover category:
+    the sum of (budget − spent) over earlier months, from the first month
+    with any transactions (at most ``max_months`` back).
+    """
+    roll = {n: c for n, c in cats.items() if c["rollover"] and c["monthly_budget"] and c["kind"] == "expense"}
+    if not roll:
+        return {}
+    keys = _month_keys_before(start, max_months)
+    txns = [t for t in all_transactions(date.fromisoformat(keys[0] + "-01")) if t["date"] < start.isoformat()]
+    if not txns:
+        return {}
+    first = min(t["date"][:7] for t in txns)
+    keys = [k for k in keys if k >= first]
+    spent = {(k, n): 0.0 for k in keys for n in roll}
+    for t, cat, amount in category_lines(txns):
+        k = t["date"][:7]
+        if cat in roll and (k, cat) in spent:
+            spent[(k, cat)] -= amount
+    return {n: sum(c["monthly_budget"] - spent[(k, n)] for k in keys) for n, c in roll.items()}
+
+
+def suggest_budgets(months: int = 3, today: date | None = None) -> list[dict]:
+    """
+    A starting budget for each expense category: its average monthly spending
+    over the last ``months`` complete months, rounded up to $10.
+    """
+    today = today or date.today()
+    keys = _month_keys_before(date(today.year, today.month, 1), months)
+    first = date.fromisoformat(keys[0] + "-01")
+    end = date(today.year, today.month, 1)
+    cats = _category_map()
+    totals: dict = {}
+    seen_months: set = set()
+    for t, cat, amount in category_lines([t for t in all_transactions(first) if t["date"] < end.isoformat()]):
+        seen_months.add(t["date"][:7])
+        c = cats.get(cat) if cat else None
+        if c and c["kind"] == "expense":
+            totals[cat] = totals.get(cat, 0.0) - amount
+    n = max(1, len(seen_months))
+    out = []
+    for name, total in sorted(totals.items(), key=lambda kv: -kv[1]):
+        avg = total / n
+        if avg <= 0:
+            continue
+        out.append({"category": name, "average": round(avg, 2), "suggested": float(-(-avg // 10) * 10),
+                    "current": cats[name]["monthly_budget"], "months": n})
+    return out
 
 
 def spending_report(months: int = 6, today: date | None = None) -> dict:
@@ -669,20 +910,20 @@ def spending_report(months: int = 6, today: date | None = None) -> dict:
     cats = _category_map()
     first = date.fromisoformat(keys[0] + "-01")
     rows = {k: {"month": k, "income": 0.0, "spending": 0.0, "by_category": {}} for k in keys}
-    for t in all_transactions(first):
+    for t, cat, amount in category_lines(all_transactions(first)):
         k = t["date"][:7]
         if k not in rows:
             continue
-        c = cats.get(t["category"]) if t["category"] else None
-        kind = c["kind"] if c else ("income" if t["amount"] > 0 else "expense")
+        c = cats.get(cat) if cat else None
+        kind = c["kind"] if c else ("income" if amount > 0 else "expense")
         if kind == "transfer":
             continue
         if kind == "income":
-            rows[k]["income"] += t["amount"]
+            rows[k]["income"] += amount
         else:
             name = c["name"] if c else "Uncategorized"
-            rows[k]["spending"] -= t["amount"]
-            rows[k]["by_category"][name] = rows[k]["by_category"].get(name, 0.0) - t["amount"]
+            rows[k]["spending"] -= amount
+            rows[k]["by_category"][name] = rows[k]["by_category"].get(name, 0.0) - amount
     out = []
     for k in keys:
         r = rows[k]
@@ -711,8 +952,8 @@ def learned_everyday_weekly(weeks: int = 8, today: date | None = None) -> float 
         return None
     cats = _category_map()
     total = 0.0
-    for t in txns:
-        c = cats.get(t["category"]) if t["category"] else None
+    for t, cat, amount in category_lines(txns):
+        c = cats.get(cat) if cat else None
         if c and c["is_everyday"] and not t["matched_bill"]:
-            total -= t["amount"]
+            total -= amount
     return round(max(0.0, total) / (span_days / 7.0), 2)

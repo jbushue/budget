@@ -1,21 +1,51 @@
 import gql from 'graphql-tag'
 
-const TXN_FIELDS = `id date description payee amount bankName accountName category source matchedBill notes`
+const TXN_FIELDS = `id date description payee amount bankName accountName category source matchedBill notes tags splits { category amount note }`
 
 export const GET_LEDGER_TRANSACTIONS = gql`
   query LedgerTransactions(
     $text: String, $category: String, $account: String, $dateFrom: String, $dateTo: String,
-    $uncategorized: Boolean, $limit: Int, $offset: Int
+    $uncategorized: Boolean, $limit: Int, $offset: Int, $tag: String, $minAmount: Float, $maxAmount: Float,
+    $direction: String
   ) {
     ledgerTransactions(
       text: $text, category: $category, account: $account, dateFrom: $dateFrom, dateTo: $dateTo,
-      uncategorized: $uncategorized, limit: $limit, offset: $offset
+      uncategorized: $uncategorized, limit: $limit, offset: $offset, tag: $tag, minAmount: $minAmount,
+      maxAmount: $maxAmount, direction: $direction
     ) { total totalIn totalOut items { ${TXN_FIELDS} } }
   }
 `
 
+export const GET_TRANSACTIONS_CSV = gql`
+  query TransactionsCsv(
+    $text: String, $category: String, $account: String, $dateFrom: String, $dateTo: String,
+    $uncategorized: Boolean, $tag: String, $minAmount: Float, $maxAmount: Float, $direction: String
+  ) {
+    transactionsCsv(
+      text: $text, category: $category, account: $account, dateFrom: $dateFrom, dateTo: $dateTo,
+      uncategorized: $uncategorized, tag: $tag, minAmount: $minAmount, maxAmount: $maxAmount, direction: $direction
+    )
+  }
+`
+
+export const GET_TRANSACTION_TAGS = gql`
+  query TransactionTags { transactionTags { tag count } }
+`
+
+export const GET_SUGGESTED_BUDGETS = gql`
+  query SuggestedBudgets($months: Int) {
+    suggestedBudgets(months: $months) { category average suggested current months }
+  }
+`
+
+export const SET_TRANSACTION_SPLITS = gql`
+  mutation SetTransactionSplits($id: Int!, $splits: [SplitInput]!) {
+    setTransactionSplits(id: $id, splits: $splits) { success message transaction { ${TXN_FIELDS} } }
+  }
+`
+
 export const GET_CATEGORIES = gql`
-  query Categories { categories { name kind isEveryday monthlyBudget color } }
+  query Categories { categories { name kind isEveryday monthlyBudget color rollover } }
 `
 
 export const GET_CATEGORY_RULES = gql`
@@ -26,7 +56,7 @@ export const GET_BUDGET_STATUS = gql`
   query BudgetStatus($month: String) {
     budgetStatus(month: $month) {
       month daysElapsed daysInMonth totalBudget totalSpent totalBudgetedSpent uncategorizedSpent income
-      lines { category color isEveryday budget spent remaining percent projected status }
+      lines { category color isEveryday budget spent remaining percent projected status rollover carried available }
     }
     learnedEverydayWeekly
   }
@@ -41,11 +71,11 @@ export const GET_SPENDING_REPORT = gql`
 export const ADD_LEDGER_TRANSACTION = gql`
   mutation AddLedgerTransaction(
     $date: String!, $description: String!, $amount: Float!, $bankName: String, $accountName: String,
-    $category: String, $notes: String
+    $category: String, $notes: String, $tags: [String]
   ) {
     addLedgerTransaction(
       date: $date, description: $description, amount: $amount, bankName: $bankName,
-      accountName: $accountName, category: $category, notes: $notes
+      accountName: $accountName, category: $category, notes: $notes, tags: $tags
     ) { success message transaction { ${TXN_FIELDS} } }
   }
 `
@@ -53,11 +83,11 @@ export const ADD_LEDGER_TRANSACTION = gql`
 export const UPDATE_LEDGER_TRANSACTION = gql`
   mutation UpdateLedgerTransaction(
     $id: Int!, $category: String, $notes: String, $description: String, $amount: Float, $date: String,
-    $createRule: Boolean
+    $createRule: Boolean, $tags: [String]
   ) {
     updateLedgerTransaction(
       id: $id, category: $category, notes: $notes, description: $description, amount: $amount, date: $date,
-      createRule: $createRule
+      createRule: $createRule, tags: $tags
     ) { success message transaction { ${TXN_FIELDS} } }
   }
 `
@@ -91,11 +121,12 @@ export const IMPORT_SIMPLEFIN_TRANSACTIONS = gql`
 
 export const SAVE_CATEGORY = gql`
   mutation SaveCategory(
-    $name: String!, $kind: String, $isEveryday: Boolean, $monthlyBudget: Float, $color: String, $renameFrom: String
+    $name: String!, $kind: String, $isEveryday: Boolean, $monthlyBudget: Float, $color: String, $renameFrom: String,
+    $rollover: Boolean
   ) {
     saveCategory(
       name: $name, kind: $kind, isEveryday: $isEveryday, monthlyBudget: $monthlyBudget, color: $color,
-      renameFrom: $renameFrom
+      renameFrom: $renameFrom, rollover: $rollover
     ) { success message }
   }
 `

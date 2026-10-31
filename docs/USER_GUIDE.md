@@ -18,17 +18,20 @@ This guide covers every page of the web interface, what each number means, and h
 8. [Transactions](#8-transactions)
 9. [Budgets](#9-budgets)
 10. [Goals & Sinking Funds](#10-goals--sinking-funds)
-11. [Timeline & Projection](#11-timeline--projection)
-12. [Payment Optimizer](#12-payment-optimizer)
-13. [Debt Payoff Estimator](#13-debt-payoff-estimator)
-14. [What-If Scenarios](#14-what-if-scenarios)
-15. [Reports](#15-reports)
-16. [Alerts](#16-alerts)
-17. [Settings](#17-settings)
-18. [Activity](#18-activity)
-19. [Using it on your phone, and installing it](#19-using-it-on-your-phone-and-installing-it)
-20. [Recommended routine](#20-recommended-routine)
-21. [Troubleshooting & FAQ](#21-troubleshooting--faq)
+11. [Subscriptions & Recurring](#11-subscriptions--recurring)
+12. [Net Worth & Assets](#12-net-worth--assets)
+13. [Financial Health Check](#13-financial-health-check)
+14. [Timeline & Projection](#14-timeline--projection)
+15. [Payment Optimizer](#15-payment-optimizer)
+16. [Debt Payoff Estimator](#16-debt-payoff-estimator)
+17. [What-If Scenarios](#17-what-if-scenarios)
+18. [Reports](#18-reports)
+19. [Alerts](#19-alerts)
+20. [Settings](#20-settings)
+21. [Activity](#21-activity)
+22. [Using it on your phone, and installing it](#22-using-it-on-your-phone-and-installing-it)
+23. [Recommended routine](#23-recommended-routine)
+24. [Troubleshooting & FAQ](#24-troubleshooting--faq)
 
 ---
 
@@ -68,7 +71,7 @@ The web UI forwards all data requests (`/graphql`, `/files`, `/auth`, `/health`)
 
 ### Where your data lives
 
-Everything is stored in a single SQLite file: **`~/.budget_app/finance.db`** (on Windows, `C:\Users\<you>\.budget_app\finance.db`). Every change you make in the UI is saved immediately — there is no "Save" step. **Settings → Data & backup → Download backup** saves a copy of it (§17).
+Everything is stored in a single SQLite file: **`~/.budget_app/finance.db`** (on Windows, `C:\Users\<you>\.budget_app\finance.db`). Every change you make in the UI is saved immediately — there is no "Save" step. **Settings → Data & backup → Download backup** saves a copy of it (§20).
 
 ### First-time setup checklist
 
@@ -86,7 +89,7 @@ Work through the pages in this order — each step builds on the previous one:
 
 | Environment variable | Default | Effect |
 |---|---|---|
-| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. Leave as-is: the web interface reaches the API through its proxy, including from your phone (§19). |
+| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. Leave as-is: the web interface reaches the API through its proxy, including from your phone (§22). |
 | `BUDGET_DEBUG` | off | Set to `1` for auto-reload and detailed errors while developing. **Never** enable this on a shared network — the debugger allows running code on your machine. |
 
 ---
@@ -235,7 +238,7 @@ When imported transactions look like bill payments but aren't certain enough to 
 
 ### 🧭 What to do next
 
-The three most important recommendations for the next 30 days, from the same analysis as the Payment Optimizer (§12). They're ranked: 🚨 urgent (a bill that can't be paid), ⚠️ warnings, then 💡 money-saving moves, then 📈 tips. **See the full payment plan →** opens the Optimizer.
+The three most important recommendations for the next 30 days, from the same analysis as the Payment Optimizer (§15). They're ranked: 🚨 urgent (a bill that can't be paid), ⚠️ warnings, then 💡 money-saving moves, then 📈 tips. **See the full payment plan →** opens the Optimizer.
 
 ### Details
 
@@ -245,10 +248,10 @@ Below the summary:
 - **Banks & Accounts** – every account grouped by bank. Debts are shown as negative. 🔄 marks accounts kept in sync by SimpleFIN.
 - **Upcoming Bills (30 days)** and **Upcoming Income (30 days)**.
 - **📈 Net Worth Over Time** – from daily snapshots (recorded at server start and the first Dashboard visit each day); appears after two days of history.
-- **90-Day Balance Projection** – checking + savings over the next 90 days (the optimized projection, §12).
+- **90-Day Balance Projection** – checking + savings over the next 90 days (the optimized projection, §15).
 - **💳 Recent Bill Payments** – the latest payments recorded.
 
-The 🔔 bell at the top right of every page lists alerts (§16). **Refresh** reloads everything.
+The 🔔 bell at the top right of every page lists alerts (§19). **Refresh** reloads everything.
 
 ---
 
@@ -506,7 +509,15 @@ Example: $500 → Savings, blank → Checking. With no distribution set, the who
 
 Every transaction gets a category automatically: your own rules first, then a built-in list of common merchants (Kroger → Groceries, Shell → Gas & Transport, Netflix → Entertainment, …). Change one with the category dropdown in its row. With **Remember category choices for similar transactions** ticked, a rule is added at the same time, so future transactions from that payee (and existing uncategorized ones) get the same category. ⚠ **Uncategorized** in the filter shows what still needs a category.
 
-Filter by text, category, account, and date range; the totals above the table (in / out) cover everything that matches, not just the rows shown.
+Filter by text, category, account, date range, **tag**, **money in / out**, and **amount** (min / max, either direction); the totals above the table (in / out) cover everything that matches, not just the rows shown. **⬇ Export CSV** downloads everything that matches the filters (one row per split part, oldest first) — handy for taxes or a spreadsheet.
+
+### Tags, notes and splits
+
+The **✎** button on a row opens its details:
+
+- **Tags** – free-form labels that cut across categories, e.g. `vacation`, `reimbursable`, `kids`. Type them comma-separated; they're saved lowercase with spaces turned into dashes (up to 10 per transaction). Tags show as chips under the description — click one to filter by it. Reports' Year in review totals spending by tag.
+- **Notes** – anything you want to remember about it.
+- **Split across categories** – put parts of one purchase in different categories, e.g. $80 of groceries and $40 of household items from one store trip. **+ Add part** starts with the whole amount in the current category; adjust the amounts until it says **✓ Adds up**. Each part counts toward its own category's budget and reports. A split transaction shows **⑂ Split** instead of a category dropdown; **Remove split** puts it back in one category (its largest part), and picking a single category for it also replaces the split. To change the amount of a split transaction, change the parts first.
 
 ### Bill payments in your transactions
 
@@ -525,8 +536,11 @@ The **🔁 Repeating charges** list (also on the Bills page, §5) appears at the
 
 **Route:** `/budgets` · Spending by category for a month, against the budgets you set. Use ‹ › or the month picker to look at other months.
 
+- **Plan for a typical month** – your expected monthly income and where it's planned to go: bills, category budgets, and what your goals need each month. What's left is **left to budget** — give it a job (raise a budget, start a goal); if budgets and goals add up to more than you earn, it says you're over-planned. Income and bills are converted to monthly amounts (a biweekly paycheck counts as 26 ÷ 12 a month; a yearly bill as 1/12).
 - **Summary cards** – spending in budgeted categories vs. the total budgeted, all spending and income, your **learned everyday spending** (weekly, from the last 8 weeks), and how much is still uncategorized (with a link to fix it).
-- **Category lines** – spent vs. budget with a progress bar. **On pace** compares how fast you're spending with how far through the month you are: "$X left — on pace for $Y" (amber) means you'll go over at this rate; red means you're already over. Refunds reduce spending. **Set budget / Change** edits a budget (blank or 0 removes it).
+- **Category lines** – spent vs. budget with a progress bar. **On pace** compares how fast you're spending with how far through the month you are: "$X left — on pace for $Y" (amber) means you'll go over at this rate; red means you're already over. Refunds reduce spending. **Set budget / Change** edits a budget (blank or 0 removes it). Split transactions count each part in its own category.
+- **Rollover** (envelope budgeting) – tick *Roll over* on an expense category with a budget and whatever you don't spend carries into next month; overspending comes out of next month instead. The line then shows *budget ± carried* and measures spending against what's **available**. The carry-over counts from your first month with transactions (up to 12 months back).
+- **Suggested budgets** – your average spending per category over the last 3 full months, rounded up to $10. Listed only where it differs noticeably from the current budget; **Use** sets one, **Use all** sets them all.
 - **Categories** – add, rename (transactions and rules follow), recolor, or delete. Each has a type: **Expense**, **Income**, or **Transfer** (moving money between your own accounts — ignored in spending). **Everyday** marks expense categories that aren't covered by bills; these make up the learned everyday spending.
 - **Auto-categorize rules** – "description contains *text* → category". Your rules win over the built-in list. **Re-run on uncategorized** applies all rules to transactions that don't have a category yet.
 
@@ -549,11 +563,54 @@ Bills that aren't paid monthly (quarterly, semi-annual, yearly) are listed under
 
 ---
 
-## 11. Timeline & Projection
+## 11. Subscriptions & Recurring
+
+**Route:** `/subscriptions` · Everything that charges you on a schedule, and what it costs per month and per year.
+
+- **From transactions** – a payee that charged about the same amount (within 15%) at a regular interval (weekly, every 2 weeks, monthly, quarterly, or yearly), at least 3 times, and recently enough that it's still active. Charges matched to a bill are grouped under that bill.
+- **Bills** – your bills (not card or loan payments) that don't have matching transactions yet.
+- **Price increases** – when the latest charge is more than 5% above the usual amount, it's flagged (▲) with what it costs extra per year.
+
+The cards show the monthly and yearly total. **🔁 Repeating charges that aren't bills yet** (also on Bills and Transactions) is at the bottom so you can add them to your projections.
+
+---
+
+## 12. Net Worth & Assets
+
+**Route:** `/net-worth` · Everything you own minus everything you owe.
+
+- **What you own** – checking and savings, plus your **assets**: vehicles, investments, retirement accounts, property, cash and other savings, valuables. A mortgage's market value (Accounts page) counts as property unless you've added a property asset linked to that mortgage.
+- **What you owe** – cards and loans, mortgages, and HELOCs.
+- **+ Asset** – a name, type, and current value. Update the value now and then (**Edit**); every change is kept, and **History** shows how it has moved. Optionally link the loan against it (the car loan, the mortgage) to see your **equity** — the loan is still counted once, in debts.
+- **Net worth over time** – from the snapshot taken every day (and whenever you change an asset).
+
+Assets are included everywhere net worth appears (Dashboard, Reports).
+
+---
+
+## 13. Financial Health Check
+
+**Route:** `/checkup` · A 0–100 score (with a letter grade) from up to seven checks, each with what it means and what to do about it. Checks without enough data are left out. It's a guide, not a credit score. The Dashboard's **Health Score** card links here.
+
+| Check | Measures | Good |
+|---|---|---|
+| Savings rate | income left after spending (last 3 full months of transactions; otherwise your planned income, bills, and everyday spending) | 20% or more |
+| Emergency fund | checking + savings ÷ a month of bills and everyday spending | 6 months |
+| Debt-to-income | monthly debt payments ÷ monthly income | under 15% |
+| Credit card utilization | card balances ÷ limits (loan-group members excluded) | under 10% |
+| High-interest debt | card balances at 15% APR or more, compared with a month's income | none |
+| Budgets kept | budget categories that stayed within budget last month | all of them |
+| Net worth trend | change over about 3 months, from the snapshots | rising |
+
+The three weakest areas are listed at the top as tips.
+
+---
+
+## 14. Timeline & Projection
 
 **Route:** `/timeline` · A day-by-day forecast of every account.
 
-Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecast is the **optimized** projection — it includes the money moves recommended by the Optimizer (see §12).
+Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecast is the **optimized** projection — it includes the money moves recommended by the Optimizer (see §15).
 
 ### Stat cards
 
@@ -561,7 +618,7 @@ Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecas
 |---|---|
 | Total Income | All paychecks in the period. |
 | Total Expenses | All bill, card, mortgage, HELOC, group, extra, and promo payments. |
-| Net Change | Change in your total cash (checking + savings) from today to the end of the period. This can be negative even when income exceeds expenses: when the optimizer parks spare cash in a HELOC (see §12), cash goes down but your HELOC debt goes down by the same amount. |
+| Net Change | Change in your total cash (checking + savings) from today to the end of the period. This can be negative even when income exceeds expenses: when the optimizer parks spare cash in a HELOC (see §15), cash goes down but your HELOC debt goes down by the same amount. |
 | Projected Net Worth | Final cash − card, mortgage, and HELOC balances (with assets/debt shown underneath). |
 
 ### Balance Over Time chart
@@ -581,7 +638,7 @@ A month grid with ← / → navigation. Each day shows colored dots — **green*
 
 ---
 
-## 12. Payment Optimizer
+## 15. Payment Optimizer
 
 **Route:** `/optimizer` · Answers *"what's the best way to get every bill paid?"* for the chosen period (30 days – 1 year, pick it top-right and click **Analyze**). It compares two versions of the same period and explains the difference in plain language:
 
@@ -673,7 +730,7 @@ If the group payment doesn't even cover the monthly interest, the card says the 
 
 ---
 
-## 13. Debt Payoff Estimator
+## 16. Debt Payoff Estimator
 
 **Route:** `/debt-payoff` · Compares three ways to pay off your debts.
 
@@ -695,7 +752,7 @@ The **Remaining Debt Over Time** chart plots all three strategies by month.
 
 ---
 
-## 14. What-If Scenarios
+## 17. What-If Scenarios
 
 **Route:** `/scenarios` · Test a change before you make it. Nothing you do here is saved.
 
@@ -729,7 +786,7 @@ The **Modifications** list shows every change; click × to undo one. **Run Scena
 
 ---
 
-## 15. Reports
+## 18. Reports
 
 **Route:** `/reports` · Built from your transactions. Choose 3, 6, or 12 months.
 
@@ -738,10 +795,11 @@ The **Modifications** list shows every change; click × to undo one. **Run Scena
 - **Where the money went** – a chart and table of spending by category for the month you pick, compared with your average for each category (▲ / ▼).
 - **Category trends** – each category month by month.
 - **Net worth** – from the daily snapshots, once there are at least two.
+- **🗓 Year in review** – pick a year (‹ ›): income, spending, what you saved and your savings rate, the average month and the biggest one, a month-by-month chart, top categories (with their share), the payees you spent the most with, your biggest purchases, and spending by tag.
 
 ---
 
-## 16. Alerts
+## 19. Alerts
 
 The **🔔** at the top right of every page counts what needs attention (red when something is urgent). Click it for the list; click an alert to go to the page that deals with it.
 
@@ -764,7 +822,7 @@ The **🔔** at the top right of every page counts what needs attention (red whe
 
 ---
 
-## 17. Settings
+## 20. Settings
 
 **Route:** `/settings`
 
@@ -857,7 +915,7 @@ The API endpoint and a link to the **GraphQL Playground**, an interactive consol
 
 ---
 
-## 18. Activity
+## 21. Activity
 
 **Route:** `/activity`
 
@@ -865,7 +923,7 @@ Every change anyone makes to the budget, newest first, grouped by day: who did i
 
 ---
 
-## 19. Using it on your phone, and installing it
+## 22. Using it on your phone, and installing it
 
 **From your phone or another computer on your network:**
 
@@ -877,7 +935,7 @@ Every change anyone makes to the budget, newest first, grouped by day: who did i
    ```
 2. Find that computer's network address (on Windows: `ipconfig`, look for *IPv4 Address*, e.g. `192.168.1.20`).
 3. On your phone, open `http://192.168.1.20:3000` and sign in.
-4. To add someone else, create an invite link in *Settings → Users* (§17). Invite links use the address you're on, so create them from the network address (not `localhost`) if the link is for another device.
+4. To add someone else, create an invite link in *Settings → Users* (§20). Invite links use the address you're on, so create them from the network address (not `localhost`) if the link is for another device.
 
 **Installing it as an app:** in Chrome or Edge, use *Install app* (in the address bar or menu); on iPhone, *Share → Add to Home Screen*. It opens in its own window with its own icon. Full install with offline start needs the app to be served from `localhost` or over HTTPS; from a plain `http://` network address, adding it to the home screen still works as a shortcut.
 
@@ -885,7 +943,7 @@ Every change anyone makes to the budget, newest first, grouped by day: who did i
 
 ---
 
-## 20. Recommended routine
+## 23. Recommended routine
 
 **A quick look, any day:** open the Dashboard. The banner tells you whether every bill is covered; **Safe to spend** is what you can spend beyond your usual everyday spending. Check the 🔔 if it shows a number.
 
@@ -906,7 +964,7 @@ Every change anyone makes to the budget, newest first, grouped by day: who did i
 
 ---
 
-## 21. Troubleshooting & FAQ
+## 24. Troubleshooting & FAQ
 
 **The web page loads but shows errors / no data.**
 The API server isn't running or isn't reachable. Check Settings → API Connection, and make sure the "Budget API Server" window is open (or run `python api_server.py`).
@@ -936,7 +994,7 @@ Click **undo** on the transaction's ✓ badge (Transactions page). That removes 
 Mark it paid (Dashboard checklist or Bills → Pay) with the date you paid, and leave *Take the money out* off if your balance already reflects it.
 
 **What's the admin password?**
-The one printed when the API server first started, also in `~/.budget_app/initial-admin-password.txt` until you change it (§19). If it's gone, run `python -m models.auth reset-password admin` on the server.
+The one printed when the API server first started, also in `~/.budget_app/initial-admin-password.txt` until you change it (§22). If it's gone, run `python -m models.auth reset-password admin` on the server.
 
 **My phone says the app isn't set up yet.**
 No account exists yet — this happens only if the API was started some other way than `python api_server.py`. Open the app on the computer that runs it and create the first account there, or restart the server with `python api_server.py`.

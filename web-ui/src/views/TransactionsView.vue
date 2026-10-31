@@ -7,6 +7,9 @@
           {{ syncing ? 'Downloading...' : '⟳ Download from SimpleFIN' }}
         </button>
         <button class="btn btn-outline btn-sm" @click="openImport">⬆ Import CSV</button>
+        <button class="btn btn-outline btn-sm" :disabled="exporting" title="Download the transactions matching the filters" @click="exportCsv">
+          {{ exporting ? 'Exporting...' : '⬇ Export CSV' }}
+        </button>
         <button class="btn btn-primary btn-sm" @click="openAdd">+ Add</button>
       </div>
     </div>
@@ -26,6 +29,17 @@
       </select>
       <input v-model="filters.dateFrom" type="date" title="From" />
       <input v-model="filters.dateTo" type="date" title="To" />
+      <select v-if="tags.length" v-model="filters.tag" style="flex:0 1 150px">
+        <option value="">All tags</option>
+        <option v-for="t in tags" :key="t.tag" :value="t.tag">#{{ t.tag }} ({{ t.count }})</option>
+      </select>
+      <select v-model="filters.direction" style="flex:0 1 130px">
+        <option value="">In &amp; out</option>
+        <option value="out">Money out</option>
+        <option value="in">Money in</option>
+      </select>
+      <input v-model.number="filters.minAmount" type="number" min="0" step="0.01" placeholder="Min $" class="amt" title="Smallest amount" />
+      <input v-model.number="filters.maxAmount" type="number" min="0" step="0.01" placeholder="Max $" class="amt" title="Largest amount" />
       <button v-if="hasFilters" class="btn btn-outline btn-sm" @click="clearFilters">Clear</button>
     </div>
 
@@ -72,15 +86,22 @@
                     ✓ {{ t.matchedBill }} <button class="undo" title="Not this bill — undo" @click="unmatch(t)">undo</button>
                   </span>
                   <span v-if="t.notes">{{ t.notes }}</span>
+                  <button v-for="tag in t.tags" :key="tag" class="tag" title="Show only this tag" @click="filters.tag = tag">#{{ tag }}</button>
                   <span v-if="t.source !== 'manual'" class="src">{{ t.source === 'simplefin' ? 'SimpleFIN' : 'CSV' }}</span>
                 </div>
               </td>
               <td><span class="sub">{{ t.bankName ? `${t.bankName} / ${t.accountName}` : '—' }}</span></td>
               <td>
-                <select :value="t.category ?? ''" :class="{ uncat: !t.category }" @change="setCategory(t, ($event.target as HTMLSelectElement).value)">
-                  <option value="">Uncategorized</option>
-                  <option v-for="c in categories" :key="c.name" :value="c.name">{{ c.name }}</option>
-                </select>
+                <div class="cat-cell">
+                  <button v-if="t.splits?.length" class="split-btn" :title="splitSummary(t)" @click="openDetails(t)">
+                    ⑂ Split · {{ t.splits.length }} categories
+                  </button>
+                  <select v-else :value="t.category ?? ''" :class="{ uncat: !t.category }" @change="setCategory(t, ($event.target as HTMLSelectElement).value)">
+                    <option value="">Uncategorized</option>
+                    <option v-for="c in categories" :key="c.name" :value="c.name">{{ c.name }}</option>
+                  </select>
+                  <button class="icon-btn edit" title="Tags, notes, split" @click="openDetails(t)">✎</button>
+                </div>
               </td>
               <td style="text-align:right;font-weight:600;white-space:nowrap" :class="t.amount < 0 ? '' : 'positive'">
                 {{ t.amount < 0 ? '−' : '+' }}{{ currency(Math.abs(t.amount)) }}
@@ -133,11 +154,59 @@
             <option v-for="a in accountOptions" :key="a" :value="a">{{ a.replace(':', ' / ') }}</option>
           </select>
         </div>
-        <div class="form-group"><label>Notes</label><input v-model="addForm.notes" /></div>
+        <div class="grid grid-2">
+          <div class="form-group"><label>Notes</label><input v-model="addForm.notes" /></div>
+          <div class="form-group"><label>Tags</label><input v-model="addForm.tags" placeholder="e.g. vacation, work" list="tag-list" /></div>
+        </div>
         <p class="hint">This only records the transaction — it doesn't change account balances.</p>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showAdd = false">Cancel</button>
           <button class="btn btn-primary" :disabled="!addForm.description || !addForm.amount" @click="saveAdd">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <datalist id="tag-list"><option v-for="t in tags" :key="t.tag" :value="t.tag" /></datalist>
+
+    <!-- Details: tags, notes, split -->
+    <div v-if="details" class="modal-overlay" @click.self="details = null">
+      <div class="modal" style="max-width:620px">
+        <h3>{{ details.txn.description }}</h3>
+        <p class="hint">
+          {{ fmtDateShort(details.txn.date) }} ·
+          <strong :class="details.txn.amount < 0 ? '' : 'positive'">{{ details.txn.amount < 0 ? '−' : '+' }}{{ currency(Math.abs(details.txn.amount)) }}</strong>
+          <span v-if="details.txn.bankName"> · {{ details.txn.bankName }} / {{ details.txn.accountName }}</span>
+        </p>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label>Tags</label>
+            <input v-model="details.tags" placeholder="Comma separated, e.g. vacation, reimbursable" list="tag-list" />
+          </div>
+          <div class="form-group"><label>Notes</label><input v-model="details.notes" /></div>
+        </div>
+
+        <h4 style="margin:0.75rem 0 0.25rem">Split across categories</h4>
+        <p class="hint">Put parts of one purchase in different budgets, e.g. groceries and household items from one store trip.</p>
+        <div v-for="(part, i) in details.parts" :key="i" class="split-row">
+          <select v-model="part.category">
+            <option value="" disabled>Category</option>
+            <option v-for="c in categories" :key="c.name" :value="c.name">{{ c.name }}</option>
+          </select>
+          <input v-model.number="part.amount" type="number" min="0" step="0.01" placeholder="Amount" />
+          <input v-model="part.note" placeholder="Note (optional)" />
+          <button class="icon-btn" title="Remove part" @click="details.parts.splice(i, 1)">✕</button>
+        </div>
+        <div class="split-foot">
+          <button class="btn btn-outline btn-sm" @click="addPart">+ Add part</button>
+          <span v-if="details.parts.length" :class="Math.abs(splitLeft) < 0.005 ? 'positive' : 'negative'">
+            {{ Math.abs(splitLeft) < 0.005 ? '✓ Adds up' : splitLeft > 0 ? `${currency(splitLeft)} left to assign` : `${currency(-splitLeft)} too much` }}
+          </span>
+        </div>
+
+        <div class="modal-actions">
+          <button v-if="details.txn.splits?.length" class="btn btn-outline" style="margin-right:auto" @click="removeSplit">Remove split</button>
+          <button class="btn btn-outline" @click="details = null">Cancel</button>
+          <button class="btn btn-primary" :disabled="savingDetails || !detailsValid" @click="saveDetails">Save</button>
         </div>
       </div>
     </div>
@@ -218,18 +287,26 @@ import { useQuery, useMutation } from '@vue/apollo-composable'
 import { GET_ALL_BANKS, GET_SIMPLEFIN_STATUS } from '../graphql/queries'
 import {
   GET_LEDGER_TRANSACTIONS, GET_CATEGORIES, ADD_LEDGER_TRANSACTION, UPDATE_LEDGER_TRANSACTION,
-  DELETE_LEDGER_TRANSACTION, IMPORT_CSV_TRANSACTIONS, IMPORT_SIMPLEFIN_TRANSACTIONS,
+  DELETE_LEDGER_TRANSACTION, IMPORT_CSV_TRANSACTIONS, IMPORT_SIMPLEFIN_TRANSACTIONS, GET_TRANSACTION_TAGS,
+  GET_TRANSACTIONS_CSV, SET_TRANSACTION_SPLITS,
 } from '../graphql/ledger'
+import { apolloClient } from '../graphql/client'
 import { UNMATCH_TRANSACTION } from '../graphql/goals'
 import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
 import RecurringSuggestions from '../components/RecurringSuggestions.vue'
 import { runMutation } from '../utils/mutation'
 import { currency, fmtDateShort } from '../utils/format'
-import type { Bank, Category, CsvPreview, ImportResult, LedgerTransaction, MutationPayload, TransactionPage } from '../types'
+import type {
+  Bank, Category, CsvPreview, ImportResult, LedgerTransaction, MutationPayload, TagCount, TransactionPage,
+} from '../types'
 
 const PAGE = 100
 
-const filters = reactive({ text: '', category: '', account: '', dateFrom: '', dateTo: '' })
+const EMPTY_FILTERS = {
+  text: '', category: '', account: '', dateFrom: '', dateTo: '', tag: '', direction: '',
+  minAmount: '' as number | '', maxAmount: '' as number | '',
+}
+const filters = reactive({ ...EMPTY_FILTERS })
 const limit = ref(PAGE)
 const rememberChoice = ref(true)
 
@@ -242,36 +319,146 @@ watch(() => filters.text, v => {
 })
 watch(() => ({ ...filters }), () => { limit.value = PAGE })
 
-const variables = computed(() => ({
+const filterVars = computed(() => ({
   text: debouncedText.value || null,
   category: filters.category && filters.category !== '__none__' ? filters.category : null,
   uncategorized: filters.category === '__none__',
   account: filters.account || null,
   dateFrom: filters.dateFrom || null,
   dateTo: filters.dateTo || null,
-  limit: limit.value,
-  offset: 0,
+  tag: filters.tag || null,
+  direction: filters.direction || null,
+  minAmount: typeof filters.minAmount === 'number' ? filters.minAmount : null,
+  maxAmount: typeof filters.maxAmount === 'number' ? filters.maxAmount : null,
 }))
+const variables = computed(() => ({ ...filterVars.value, limit: limit.value, offset: 0 }))
 
 const { result, loading, error, refetch } = useQuery<{ ledgerTransactions: TransactionPage }>(
   GET_LEDGER_TRANSACTIONS, () => ({ variables: variables.value, fetchPolicy: 'cache-and-network' }))
 const { result: catResult } = useQuery<{ categories: Category[] }>(GET_CATEGORIES)
 const { result: banksResult } = useQuery<{ allBanks: Bank[] }>(GET_ALL_BANKS)
+const { result: tagResult, refetch: refetchTags } = useQuery<{ transactionTags: TagCount[] }>(GET_TRANSACTION_TAGS)
 const { result: sfinResult } = useQuery<{ simplefinStatus: { isConnected: boolean; mappedAccountCount: number } | null }>(GET_SIMPLEFIN_STATUS)
 
 const page = computed(() => result.value?.ledgerTransactions)
 const items = computed(() => page.value?.items ?? [])
 const categories = computed(() => catResult.value?.categories ?? [])
+const tags = computed(() => tagResult.value?.transactionTags ?? [])
 const sfinConnected = computed(() => !!sfinResult.value?.simplefinStatus?.isConnected)
 const accountOptions = computed(() =>
   (banksResult.value?.allBanks ?? []).flatMap(b => [
     ...b.bankAccounts.map(a => `${b.name}:${a.accountName}`),
     ...b.creditAccounts.map(a => `${b.name}:${a.accountName}`),
   ]))
-const hasFilters = computed(() => Object.values(filters).some(Boolean))
+const hasFilters = computed(() => Object.values(filters).some(v => v !== '' && v != null))
 
 function clearFilters() {
-  Object.assign(filters, { text: '', category: '', account: '', dateFrom: '', dateTo: '' })
+  Object.assign(filters, EMPTY_FILTERS)
+}
+
+function splitTags(text: string): string[] {
+  return text.split(',').map(t => t.trim()).filter(Boolean)
+}
+
+// ── Export ──
+const exporting = ref(false)
+
+async function exportCsv() {
+  exporting.value = true
+  try {
+    const res = await apolloClient.query<{ transactionsCsv: string }>({
+      query: GET_TRANSACTIONS_CSV, variables: filterVars.value, fetchPolicy: 'network-only',
+    })
+    const blob = new Blob([res.data?.transactionsCsv ?? ''], { type: 'text/csv' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  } catch (e) {
+    alert('Error: ' + (e instanceof Error ? e.message : String(e)))
+  } finally {
+    exporting.value = false
+  }
+}
+
+// ── Details: tags, notes, split ──
+interface Part { category: string; amount: number | ''; note: string }
+const details = ref<{ txn: LedgerTransaction; tags: string; notes: string; parts: Part[] } | null>(null)
+const savingDetails = ref(false)
+const { mutate: setSplitsM } = useMutation<{ setTransactionSplits: MutationPayload }>(SET_TRANSACTION_SPLITS)
+
+function splitSummary(t: LedgerTransaction) {
+  return t.splits.map(s => `${s.category}: ${currency(Math.abs(s.amount))}`).join('\n')
+}
+
+function openDetails(t: LedgerTransaction) {
+  details.value = {
+    txn: t, tags: (t.tags ?? []).join(', '), notes: t.notes ?? '',
+    parts: (t.splits ?? []).map(s => ({ category: s.category, amount: Math.abs(s.amount), note: s.note ?? '' })),
+  }
+}
+
+function addPart() {
+  const d = details.value
+  if (!d) return
+  if (!d.parts.length) {
+    d.parts.push({ category: d.txn.category ?? '', amount: Math.abs(d.txn.amount), note: '' })
+    d.parts.push({ category: '', amount: 0, note: '' })
+    return
+  }
+  d.parts.push({ category: '', amount: Math.max(0, Math.round(splitLeft.value * 100) / 100), note: '' })
+}
+
+const splitLeft = computed(() => {
+  const d = details.value
+  if (!d) return 0
+  return Math.abs(d.txn.amount) - d.parts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+})
+
+const detailsValid = computed(() => {
+  const d = details.value
+  if (!d || !d.parts.length) return true
+  return d.parts.length >= 2 && d.parts.every(p => p.category && Number(p.amount) > 0) && Math.abs(splitLeft.value) < 0.005
+})
+
+function sameSplit(t: LedgerTransaction, parts: Part[]) {
+  const a = (t.splits ?? []).map(s => `${s.category}|${Math.abs(s.amount).toFixed(2)}|${s.note ?? ''}`)
+  const b = parts.map(p => `${p.category}|${Number(p.amount).toFixed(2)}|${p.note}`)
+  return a.join() === b.join()
+}
+
+async function saveDetails() {
+  const d = details.value
+  if (!d) return
+  savingDetails.value = true
+  try {
+    const ok = await runMutation(() => updateTxn({
+      variables: { id: d.txn.id, notes: d.notes, tags: splitTags(d.tags) },
+    }), 'updateLedgerTransaction', { failMessage: 'Could not save' })
+    if (!ok) return
+    if (d.parts.length && !sameSplit(d.txn, d.parts)) {
+      const res = await runMutation(() => setSplitsM({ variables: {
+        id: d.txn.id, splits: d.parts.map(p => ({ category: p.category, amount: Number(p.amount), note: p.note })),
+      } }), 'setTransactionSplits', { failMessage: 'Could not save the split' })
+      if (!res) return
+    }
+    details.value = null
+    refetch()
+    refetchTags()
+  } finally {
+    savingDetails.value = false
+  }
+}
+
+async function removeSplit() {
+  const d = details.value
+  if (!d || !confirm('Remove the split? The transaction goes back to one category (its largest part).')) return
+  const res = await runMutation(() => setSplitsM({ variables: { id: d.txn.id, splits: [] } }), 'setTransactionSplits')
+  if (res) {
+    details.value = null
+    refetch()
+  }
 }
 
 function loadMore() {
@@ -317,11 +504,11 @@ async function remove(t: LedgerTransaction) {
 
 // ── Add ──
 const showAdd = ref(false)
-const addForm = reactive({ date: '', direction: 'out', description: '', amount: 0, category: '', account: '', notes: '' })
+const addForm = reactive({ date: '', direction: 'out', description: '', amount: 0, category: '', account: '', notes: '', tags: '' })
 
 function openAdd() {
   Object.assign(addForm, { date: new Date().toISOString().slice(0, 10), direction: 'out', description: '',
-    amount: 0, category: '', account: '', notes: '' })
+    amount: 0, category: '', account: '', notes: '', tags: '' })
   showAdd.value = true
 }
 
@@ -330,11 +517,12 @@ async function saveAdd() {
   const res = await runMutation(() => addTxn({ variables: {
     date: addForm.date, description: addForm.description,
     amount: addForm.direction === 'out' ? -Math.abs(addForm.amount) : Math.abs(addForm.amount),
-    bankName, accountName, category: addForm.category || null, notes: addForm.notes,
+    bankName, accountName, category: addForm.category || null, notes: addForm.notes, tags: splitTags(addForm.tags),
   } }), 'addLedgerTransaction')
   if (res) {
     showAdd.value = false
     refetch()
+    refetchTags()
   }
 }
 
@@ -456,6 +644,7 @@ async function importResult(run: () => Promise<ImportResult | null | undefined>)
 .filters { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; padding: 0.75rem 1rem; }
 .filters input, .filters select { margin: 0; }
 .filters input[type="date"] { width: auto; flex: 0 1 165px; }
+.filters .amt { width: auto; flex: 0 1 95px; }
 .summary { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; font-size: 0.9rem; margin-bottom: 0.75rem; }
 .remember { margin-left: auto; font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 0.35rem; align-items: center; }
 .remember input { width: auto; }
@@ -470,5 +659,14 @@ select.uncat { border-color: var(--warning); }
 .icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; }
 .icon-btn:hover { color: var(--danger); }
 .undo { background: none; border: none; color: inherit; text-decoration: underline; cursor: pointer; font-size: 0.7rem; padding: 0 0 0 0.25rem; }
+.cat-cell { display: flex; gap: 0.25rem; align-items: center; }
+.cat-cell select { flex: 1; }
+.icon-btn.edit:hover { color: var(--primary); }
+.split-btn { flex: 1; text-align: left; font-size: 0.8rem; padding: 0.3rem 0.45rem; border: 1px dashed var(--border); border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; }
+.tag { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); border: none; border-radius: 999px; padding: 0 0.45rem; font-size: 0.7rem; cursor: pointer; }
+.split-row { display: grid; grid-template-columns: 1.3fr 0.8fr 1.3fr auto; gap: 0.4rem; margin-bottom: 0.4rem; align-items: center; }
+.split-row input, .split-row select { margin: 0; }
+.split-foot { display: flex; gap: 1rem; align-items: center; font-size: 0.85rem; margin-top: 0.25rem; }
+@media (max-width: 560px) { .split-row { grid-template-columns: 1fr 1fr auto; } .split-row input:nth-of-type(2) { grid-column: 1 / 3; } }
 .hint { font-size: 0.8rem; color: var(--text-muted); margin: 0.25rem 0 0.75rem; }
 </style>

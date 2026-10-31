@@ -35,6 +35,31 @@ def _json(value):
 #  Types
 # ─────────────────────────────────────────────────────────────────────────
 
+class SplitType(graphene.ObjectType):
+    category = graphene.String()
+    amount = graphene.Float()
+    note = graphene.String()
+
+
+class SplitInput(graphene.InputObjectType):
+    category = graphene.String(required=True)
+    amount = graphene.Float(required=True)
+    note = graphene.String()
+
+
+class TagCountType(graphene.ObjectType):
+    tag = graphene.String()
+    count = graphene.Int()
+
+
+class SuggestedBudgetType(graphene.ObjectType):
+    category = graphene.String()
+    average = graphene.Float(description="Average monthly spending over the months looked at")
+    suggested = graphene.Float(description="Average rounded up to $10")
+    current = graphene.Float(description="Current budget, if any")
+    months = graphene.Int()
+
+
 class LedgerTransactionType(graphene.ObjectType):
     id = graphene.Int()
     date = graphene.String()
@@ -47,6 +72,8 @@ class LedgerTransactionType(graphene.ObjectType):
     source = graphene.String(description="simplefin | csv | manual")
     matched_bill = graphene.String()
     notes = graphene.String()
+    tags = graphene.List(graphene.String)
+    splits = graphene.List(SplitType, description="Set when split across categories (category is then null)")
 
 
 class TransactionPageType(graphene.ObjectType):
@@ -62,6 +89,7 @@ class CategoryType(graphene.ObjectType):
     is_everyday = graphene.Boolean()
     monthly_budget = graphene.Float()
     color = graphene.String()
+    rollover = graphene.Boolean(description="Unspent budget carries into next month")
 
 
 class CategoryRuleType(graphene.ObjectType):
@@ -80,6 +108,9 @@ class BudgetLineType(graphene.ObjectType):
     remaining = graphene.Float()
     percent = graphene.Float()
     projected = graphene.Float(description="Spending at this pace by month end")
+    rollover = graphene.Boolean()
+    carried = graphene.Float(description="Rollover: left over from earlier months (negative = overspent)")
+    available = graphene.Float(description="Budget + carried")
     status = graphene.String(description="ok | warning | over | no_budget")
 
 
@@ -151,13 +182,15 @@ class AddLedgerTransaction(graphene.Mutation):
         account_name = graphene.String()
         category = graphene.String()
         notes = graphene.String()
+        tags = graphene.List(graphene.String)
 
     Output = TxnResult
 
-    def mutate(self, info, date, description, amount, bank_name="", account_name="", category=None, notes=""):
+    def mutate(self, info, date, description, amount, bank_name="", account_name="", category=None, notes="",
+               tags=None):
         try:
             t = ledger.add_transaction(_date(date), description, amount, bank_name or "", account_name or "",
-                                       category or None, notes or "")
+                                       category or None, notes or "", tags=tags)
         except ValueError as e:
             return TxnResult(success=False, message=str(e))
         _refresh_spending(info)
@@ -172,13 +205,15 @@ class UpdateLedgerTransaction(graphene.Mutation):
         description = graphene.String()
         amount = graphene.Float()
         date = graphene.String()
+        tags = graphene.List(graphene.String, description="Replaces the tags ([] clears them)")
         create_rule = graphene.Boolean(description="Also categorize future/similar transactions the same way")
 
     Output = TxnResult
 
     def mutate(self, info, id, category=None, notes=None, description=None, amount=None, date=None,
-               create_rule=False):
-        fields = {"notes": notes, "description": description, "amount": amount, "txn_date": _date(date)}
+               tags=None, create_rule=False):
+        fields = {"notes": notes, "description": description, "amount": amount, "txn_date": _date(date),
+                  "tags": tags}
         if category is not None:
             fields["category"] = category
         try:
@@ -193,6 +228,24 @@ class UpdateLedgerTransaction(graphene.Mutation):
             return TxnResult(success=False, message=str(e))
         _refresh_spending(info)
         return TxnResult(success=True, message=msg, transaction=t)
+
+
+class SetTransactionSplits(graphene.Mutation):
+    """Split a transaction across categories (parts must add up to its amount); [] un-splits it."""
+    class Arguments:
+        id = graphene.Int(required=True)
+        splits = graphene.List(SplitInput, required=True)
+
+    Output = TxnResult
+
+    def mutate(self, info, id, splits):
+        try:
+            t = ledger.set_splits(id, [dict(category=s.category, amount=s.amount, note=s.note or "")
+                                       for s in splits])
+        except ValueError as e:
+            return TxnResult(success=False, message=str(e))
+        _refresh_spending(info)
+        return TxnResult(success=True, message="Split saved" if splits else "Split removed", transaction=t)
 
 
 class DeleteLedgerTransaction(graphene.Mutation):
@@ -294,14 +347,15 @@ class SaveCategory(graphene.Mutation):
         monthly_budget = graphene.Float()
         color = graphene.String()
         rename_from = graphene.String()
+        rollover = graphene.Boolean(description="Carry unspent budget into next month (expense categories)")
 
     Output = CategoryResult
 
     def mutate(self, info, name, kind="expense", is_everyday=False, monthly_budget=None, color=None,
-               rename_from=None):
+               rename_from=None, rollover=None):
         try:
             c = ledger.upsert_category(name, kind or "expense", bool(is_everyday), monthly_budget, color,
-                                       rename_from or None)
+                                       rename_from or None, rollover)
         except ValueError as e:
             return CategoryResult(success=False, message=str(e))
         _refresh_spending(info)
@@ -393,22 +447,43 @@ class RecategorizeTransactions(graphene.Mutation):
 #  Roots
 # ─────────────────────────────────────────────────────────────────────────
 
+def _filters(text="", category=None, account="", date_from=None, date_to=None, uncategorized=False,
+             tag="", min_amount=None, max_amount=None, direction=""):
+    return dict(text=text or "", category=category or None, account=account or "", date_from=_date(date_from),
+                date_to=_date(date_to), uncategorized=bool(uncategorized), tag=tag or "",
+                min_amount=min_amount, max_amount=max_amount, direction=direction or "")
+
+
+_FILTER_ARGS = dict(
+    text=graphene.String(), category=graphene.String(), account=graphene.String(description="bank:account"),
+    date_from=graphene.String(), date_to=graphene.String(), uncategorized=graphene.Boolean(),
+    tag=graphene.String(), min_amount=graphene.Float(description="Size, either direction"),
+    max_amount=graphene.Float(), direction=graphene.String(description="in | out"))
+
+
 class LedgerQuery(graphene.ObjectType):
-    ledger_transactions = graphene.Field(
-        TransactionPageType,
-        text=graphene.String(), category=graphene.String(), account=graphene.String(description="bank:account"),
-        date_from=graphene.String(), date_to=graphene.String(), uncategorized=graphene.Boolean(),
-        limit=graphene.Int(), offset=graphene.Int())
+    ledger_transactions = graphene.Field(TransactionPageType, limit=graphene.Int(), offset=graphene.Int(),
+                                         **_FILTER_ARGS)
+    transactions_csv = graphene.String(description="The filtered transactions as CSV", **_FILTER_ARGS)
+    transaction_tags = graphene.List(TagCountType)
+    suggested_budgets = graphene.List(SuggestedBudgetType, months=graphene.Int())
     categories = graphene.List(CategoryType)
     category_rules = graphene.List(CategoryRuleType)
     budget_status = graphene.Field(BudgetStatusType, month=graphene.String(description="YYYY-MM"))
     spending_report = graphene.Field(SpendingReportType, months=graphene.Int())
     learned_everyday_weekly = graphene.Float(description="Average weekly everyday spending (null = not enough history)")
 
-    def resolve_ledger_transactions(self, info, text="", category=None, account="", date_from=None, date_to=None,
-                                    uncategorized=False, limit=100, offset=0):
-        return ledger.search_transactions(text or "", category or None, account or "", _date(date_from),
-                                          _date(date_to), bool(uncategorized), limit or 100, offset or 0)
+    def resolve_ledger_transactions(self, info, limit=100, offset=0, **filters):
+        return ledger.search_transactions(limit=limit or 100, offset=offset or 0, **_filters(**filters))
+
+    def resolve_transactions_csv(self, info, **filters):
+        return ledger.export_csv(**_filters(**filters))
+
+    def resolve_transaction_tags(self, info):
+        return ledger.list_tags()
+
+    def resolve_suggested_budgets(self, info, months=3):
+        return ledger.suggest_budgets(months or 3)
 
     def resolve_categories(self, info):
         return ledger.list_categories()
@@ -430,6 +505,7 @@ class LedgerMutation(graphene.ObjectType):
     add_ledger_transaction = AddLedgerTransaction.Field()
     update_ledger_transaction = UpdateLedgerTransaction.Field()
     delete_ledger_transaction = DeleteLedgerTransaction.Field()
+    set_transaction_splits = SetTransactionSplits.Field()
     import_csv_transactions = ImportCsvTransactions.Field()
     import_simplefin_transactions = ImportSimplefinTransactions.Field()
     save_category = SaveCategory.Field()

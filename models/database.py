@@ -454,6 +454,8 @@ class CategoryModel(Base):
     is_everyday = Column(Boolean, nullable=False, default=False)  # counts toward everyday spending
     monthly_budget = Column(Float, nullable=True)
     color = Column(String(20), nullable=True)
+    # Envelope-style: unspent budget carries into next month (and overspending is taken from it)
+    rollover = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=utc_now)
 
 
@@ -484,6 +486,7 @@ class LedgerTransactionModel(Base):
     external_id = Column(String(200), nullable=True, unique=True)
     matched_bill = Column(String(100), nullable=True)
     notes = Column(String(500), nullable=True)
+    tags = Column(String(300), nullable=True)  # comma-separated, lowercase
     created_at = Column(DateTime, default=utc_now)
 
 
@@ -563,6 +566,43 @@ class ActivityModel(Base):
     username = Column(String(32), nullable=False, default="")
     action = Column(String(80), nullable=False)
     detail = Column(String(400), nullable=False, default="")
+
+
+class TransactionSplitModel(Base):
+    """Part of a ledger transaction assigned to its own category (split transactions)."""
+    __tablename__ = "transaction_splits"
+
+    id = Column(Integer, primary_key=True)
+    transaction_id = Column(Integer, ForeignKey("ledger_transactions.id", ondelete="CASCADE"), nullable=False)
+    category = Column(String(100), nullable=True)
+    amount = Column(Float, nullable=False)  # signed, same sign as the transaction
+    note = Column(String(200), nullable=True)
+
+
+class AssetModel(Base):
+    """Something you own that isn't a bank account: a car, investments, retirement, property..."""
+    __tablename__ = "assets"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False, unique=True)
+    kind = Column(String(30), nullable=False, default="other")  # see models/assets.py KINDS
+    value = Column(Float, nullable=False, default=0.0)
+    notes = Column(String(300), nullable=True)
+    # Optional loan against it (e.g. a car loan tracked as a credit account), for equity
+    linked_bank = Column(String(100), nullable=True)
+    linked_account = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+    created_at = Column(DateTime, default=utc_now)
+
+
+class AssetValueModel(Base):
+    """Value history for an asset."""
+    __tablename__ = "asset_values"
+
+    id = Column(Integer, primary_key=True)
+    asset_id = Column(Integer, ForeignKey("assets.id", ondelete="CASCADE"), nullable=False)
+    value = Column(Float, nullable=False)
+    recorded_on = Column(Date, nullable=False)
 
 
 def init_db():
@@ -729,6 +769,14 @@ def _run_migrations():
             for name, kind in (("last_seen", "DATETIME"), ("user_agent", "VARCHAR(300)"), ("ip", "VARCHAR(64)")):
                 if name not in columns:
                     conn.execute(text(f"ALTER TABLE auth_sessions ADD COLUMN {name} {kind}"))
+
+    # Migration: budget rollover, transaction tags
+    for table, name, kind in (("categories", "rollover", "BOOLEAN NOT NULL DEFAULT 0"),
+                              ("ledger_transactions", "tags", "VARCHAR(300)")):
+        if table in inspector.get_table_names():
+            if name not in [col["name"] for col in inspector.get_columns(table)]:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {kind}"))
 
     # Migration: flag accounts still using a generated password
     if "users" in inspector.get_table_names():
