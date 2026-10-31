@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+.idea
+.pytest_cache
+**/__pycache__
+**/*.pyc
+*.db
+*.xlsx
+web-ui/node_modules
+web-ui/dist
+tests
+docs

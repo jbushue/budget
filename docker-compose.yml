@@ -1,0 +1,22 @@
+# docker compose up -d
+# First start creates the admin account; get its password with:
+#   docker compose logs budget          (or)
+#   docker compose exec budget cat /data/initial-admin-password.txt
+services:
+  budget:
+    build: .
+    image: budget:latest
+    container_name: budget
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - budget-data:/data
+    environment:
+      # Your time zone — bill dates, backups and the morning digest use local time
+      TZ: ${TZ:-UTC}
+      # Behind a reverse proxy (Caddy, nginx, Traefik) that adds HTTPS, set this to 1
+      BUDGET_TRUSTED_PROXIES: ${BUDGET_TRUSTED_PROXIES:-0}
+
+volumes:
+  budget-data:

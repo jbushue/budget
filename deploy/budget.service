@@ -1,0 +1,50 @@
+# systemd unit for running Budget on a Linux server without Docker.
+#
+#   sudo useradd --system --home /opt/budget budget
+#   sudo git clone <repo> /opt/budget && cd /opt/budget
+#   sudo uv sync --no-dev                      # or: python3 -m venv .venv && .venv/bin/pip install .
+#   (cd web-ui && sudo npm ci && sudo npm run build)
+#   sudo chown -R budget:budget /opt/budget
+#   sudo cp deploy/budget.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now budget
+#   sudo journalctl -u budget                  # shows the generated admin password on first start
+#   sudo cat /var/lib/budget/initial-admin-password.txt
+
+[Unit]
+Description=Budget (personal finance web app)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=budget
+Group=budget
+WorkingDirectory=/opt/budget
+Environment=BUDGET_HOST=0.0.0.0
+Environment=BUDGET_PORT=4000
+Environment=BUDGET_DATA_DIR=/var/lib/budget
+# Behind Caddy/nginx on this machine: listen locally and trust the one proxy
+#Environment=BUDGET_HOST=127.0.0.1
+#Environment=BUDGET_TRUSTED_PROXIES=1
+ExecStart=/opt/budget/.venv/bin/python api_server.py
+Restart=on-failure
+RestartSec=5
+
+# /var/lib/budget, owned by the service user
+StateDirectory=budget
+StateDirectoryMode=0700
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/budget
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

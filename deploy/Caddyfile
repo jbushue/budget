@@ -1,0 +1,28 @@
+# Caddy in front of Budget: automatic HTTPS certificates, HTTP → HTTPS redirect.
+#
+# 1. Point a DNS name at this server (or use a name only your network resolves
+#    together with "tls internal" below).
+# 2. Run Budget with BUDGET_TRUSTED_PROXIES=1 so it sees the real client address
+#    and knows requests arrived over HTTPS (secure cookies). If Caddy and Budget
+#    share the machine, also set BUDGET_HOST=127.0.0.1 so Budget isn't reachable
+#    around the proxy.
+# 3. Set "App address" in Settings → Alerts to https://budget.example.com so
+#    phone notifications link back here.
+
+budget.example.com {
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:4000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+}
+
+# Home network only, no public DNS: Caddy's own certificate authority
+# (install its root certificate on your devices once — see `caddy trust`).
+#budget.home.arpa {
+#	tls internal
+#	reverse_proxy 127.0.0.1:4000
+#}

@@ -50,13 +50,18 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 
 **Alerts**
 - A bell with everything that needs attention: overdue or short bills, bills due soon, a low balance ahead, budgets running over, payments to review
-- Optional browser notifications and a daily email digest
+- Optional browser notifications, **phone push notifications** (ntfy) and a daily email digest
 
 **Data and access**
 - Everything is saved automatically to a local SQLite database
 - Excel import/export and a fill-in template, a transactions CSV, and one-click database **backup / restore** — all from Settings
 - **User accounts**: everyone signs in with their own username and password and shares the same budget; new people join with an invite link from an admin. Works from your phone or other devices on your network; installable as an app (PWA)
+- **Activity history** — who changed what, and when; see and sign out your signed-in devices
 - **Light and dark themes** (or follow the device's setting), and a layout that adapts to phones, tablets and desktops
+
+**Running it as a server**
+- Production web server (waitress), Docker image and compose file, systemd unit, Caddy example for HTTPS
+- Background jobs while it runs: daily **automatic backups** (kept on the server, restorable from Settings), **SimpleFIN auto-sync**, bill-period roll-over and net worth history, the email digest and push notifications
 
 ---
 
@@ -100,7 +105,24 @@ curl -X POST http://localhost:4000/auth/password -H 'Content-Type: application/j
 Until you change it, the web UI shows a reminder. Lost it? `python -m models.auth reset-password admin` sets a new one from the server's shell.
 
 ### Running it on a headless server
-Build the web interface once (`cd web-ui && npm install && npm run build`), then start the API with `BUDGET_HOST=0.0.0.0 python api_server.py`. It serves the web interface itself on port 4000; open `http://<server address>:4000` from any device and sign in as **admin**. There's no HTTPS of its own — keep it on your home network, or put it behind a reverse proxy that adds HTTPS.
+The API server also serves the built web interface, so one process on port 4000 is all you need. Pick one:
+
+**Docker** (simplest):
+```bash
+TZ=America/Chicago docker compose up -d      # your time zone: bills and backups use local time
+docker compose logs budget                     # the generated admin password
+```
+Data lives in the `budget-data` volume (`/data` in the container).
+
+**systemd** (Linux, no Docker): see the steps at the top of [`deploy/budget.service`](deploy/budget.service). Data goes to `/var/lib/budget`; `journalctl -u budget` shows the admin password.
+
+**By hand:** `cd web-ui && npm ci && npm run build`, then `BUDGET_HOST=0.0.0.0 python api_server.py`.
+
+Then open `http://<server address>:4000`, sign in as **admin**, and change the password (or use the `curl` above).
+
+**HTTPS:** there's none built in. Put a reverse proxy in front — [`deploy/Caddyfile`](deploy/Caddyfile) gets certificates automatically — and set `BUDGET_TRUSTED_PROXIES=1` so the app sees real client addresses and secure cookies work. Without HTTPS, keep it on your home network.
+
+**While it runs** it does the upkeep a long-running server needs (Settings → Background jobs shows the last results): rolls bill periods over and records net worth daily, makes a daily backup (Settings → Data & backup; the newest 14 are kept by default), syncs SimpleFIN every few hours if you turn that on, and sends the email digest and phone notifications if set up.
 
 ### Using it from your phone
 Open `http://<this computer's address>:3000` on your phone and sign in (sign-ins last 30 days). To add people, create an invite link in *Settings → Users* and send it to them. Adding it to the home screen works there too; the offline app shell needs HTTPS or localhost.
@@ -112,7 +134,11 @@ Open `http://<this computer's address>:3000` on your phone and sign in (sign-ins
 | Environment variable | Default | Purpose |
 |---|---|---|
 | `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. The default is right when you use the web interface (it reaches the API through its proxy). Use `0.0.0.0` to reach the built-in web interface (port 4000) from other devices, e.g. on a headless server. |
-| `BUDGET_DEBUG` | off | Set to `1` for Flask debug mode. |
+| `BUDGET_PORT` | `4000` | Port to listen on. |
+| `BUDGET_DATA_DIR` | `~/.budget_app` | Where the database, backups and the generated admin password are kept. |
+| `BUDGET_TRUSTED_PROXIES` | `0` | Number of reverse proxies in front (e.g. `1` behind Caddy or nginx). Only then are their `X-Forwarded-*` headers believed. |
+| `BUDGET_THREADS` | `8` | Web server worker threads. |
+| `BUDGET_DEBUG` | off | Set to `1` for Flask's development server with auto-reload. Never on a network: its debugger can run code. |
 
 ### Command-line menu
 `python cli.py` opens an interactive text menu with the same features, plus Excel import/export and report exports.
@@ -136,7 +162,11 @@ models/
   goals.py               Savings goals and sinking funds
   bill_matching.py       Recognize bill payments in transactions; detect recurring charges
   alerts.py              Alerts and the daily email digest
-  auth.py, web_routes.py User accounts and invites, access rules, file routes, serving the built UI
+  notify.py              Phone push notifications (ntfy)
+  jobs.py                Background jobs: daily upkeep, backups, SimpleFIN sync, digest, push
+  backups.py             Database backups kept on the server
+  activity.py            Activity history (who changed what)
+  auth.py, web_routes.py User accounts, invites, sessions, access rules, file routes, serving the built UI
   debt_estimator.py      Debt payoff strategies
   bank.py, bank_account.py, credit_card_account.py, mortgage_account.py, heloc_account.py
   fixed_bill.py          Bills, variable bills, and auto-created linked bills
@@ -152,6 +182,7 @@ web-ui/                  Vue 3 + Vite + Apollo + Chart.js web interface
   src/components/        Shared pieces (alert bell, mark-paid dialog, settings sections, ...)
   src/graphql/           GraphQL documents used by the UI
   public/                PWA manifest, service worker, icons
+deploy/                  systemd unit and Caddy (HTTPS) example; Dockerfile and docker-compose.yml at the top
 docs/USER_GUIDE.md       Web interface user guide
 tests/                   pytest suite
 ```
@@ -203,13 +234,13 @@ pytest                         # backend test suite
 cd web-ui && npm run build     # type-check (vue-tsc) and production build
 ```
 
-Tests use a temporary database, so they never touch your real data.
+Tests use a temporary database, so they never touch your real data. GitHub Actions runs both, plus a Docker build, on every push (`.github/workflows/ci.yml`).
 
 ---
 
 ## Current status
 
-Working end to end: accounts (including mortgages, HELOCs, promos), bills and loan groups, income, payments and history, projections, the dashboard and safe-to-spend, transactions, budgets, goals and sinking funds, bill matching, recurring-charge detection, alerts and the email digest, the optimizer and its recommendations, fees, debt payoff, what-if scenarios, reports, persistence, Excel import/export, backup/restore, SimpleFIN sync, user accounts with invites, and the installable app.
+Working end to end: accounts (including mortgages, HELOCs, promos), bills and loan groups, income, payments and history, projections, the dashboard and safe-to-spend, transactions, budgets, goals and sinking funds, bill matching, recurring-charge detection, alerts and the email digest, the optimizer and its recommendations, fees, debt payoff, what-if scenarios, reports, persistence, Excel import/export, backup/restore, SimpleFIN sync (manual or automatic), user accounts with invites, signed-in devices, the activity history, background jobs (backups, upkeep, push notifications), and the installable app.
 
 Known limitations:
 - Weekly/bi-weekly items without a start date guess their schedule; set a start date for accuracy.
@@ -217,7 +248,7 @@ Known limitations:
 - Excel export covers accounts, bills, and income — not payment status, transactions, budgets, goals, or settings. Use **Download backup** for a complete copy.
 - The optimizer's "pay off a specific card" goal is available from Python only, not the web interface.
 - Bill matching looks at the last 45 days of transactions; older payments can be marked paid by hand.
-- The email digest is sent by the running API server, so it only goes out while the app is running.
+- The email digest, push notifications, automatic backups and SimpleFIN auto-sync run inside the API server, so they only happen while it's running.
 - No HTTPS of its own: on your home network sign-in protects access, but traffic isn't encrypted. Don't expose it to the internet without a reverse proxy that adds HTTPS.
 
 No license has been chosen yet.

@@ -25,9 +25,10 @@ This guide covers every page of the web interface, what each number means, and h
 15. [Reports](#15-reports)
 16. [Alerts](#16-alerts)
 17. [Settings](#17-settings)
-18. [Using it on your phone, and installing it](#18-using-it-on-your-phone-and-installing-it)
-19. [Recommended routine](#19-recommended-routine)
-20. [Troubleshooting & FAQ](#20-troubleshooting--faq)
+18. [Activity](#18-activity)
+19. [Using it on your phone, and installing it](#19-using-it-on-your-phone-and-installing-it)
+20. [Recommended routine](#20-recommended-routine)
+21. [Troubleshooting & FAQ](#21-troubleshooting--faq)
 
 ---
 
@@ -85,7 +86,7 @@ Work through the pages in this order — each step builds on the previous one:
 
 | Environment variable | Default | Effect |
 |---|---|---|
-| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. Leave as-is: the web interface reaches the API through its proxy, including from your phone (§18). |
+| `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. Leave as-is: the web interface reaches the API through its proxy, including from your phone (§19). |
 | `BUDGET_DEBUG` | off | Set to `1` for auto-reload and detailed errors while developing. **Never** enable this on a shared network — the debugger allows running code on your machine. |
 
 ---
@@ -745,6 +746,8 @@ The **🔔** at the top right of every page counts what needs attention (red whe
 
 **Daily email digest** (Settings → Alerts) – a morning email with the status, Safe to spend, alerts, and this pay period's bills. It needs an email account's SMTP settings; it's sent after 7am by the running API server, so the app has to be running.
 
+**Phone notifications** (Settings → Alerts) – urgent alerts (and, if you like, warnings and a short morning summary) pushed to your phone through the free [ntfy](https://ntfy.sh) app, once each. They're sent by the running server, so they arrive even when no browser has the app open.
+
 ---
 
 ## 17. Settings
@@ -772,6 +775,7 @@ Pick **Light**, **Dark**, or **Match device** (follows your phone or computer's 
 - **Mark bills paid automatically when a transaction clearly matches** (§8). Off = every match waits for you to confirm.
 - **Browser notifications for urgent alerts.**
 - **Daily email digest** – *Send to*, the SMTP server, port, username, and password (for Gmail: `smtp.gmail.com`, port 587, your address, and an *app password*). The password is stored but never shown again. **Send a test digest now** saves and sends one immediately; **Preview digest** shows today's text.
+- **Phone notifications** – install the ntfy app, subscribe to a topic with a hard-to-guess name (anyone who knows the name can read it), and paste its URL, e.g. `https://ntfy.sh/budget-k3j9x2`. A self-hosted ntfy server works too; for a protected topic add its *access token* (stored, never shown again). Choose *warnings and urgent alerts* or *only urgent*, and optionally *a short summary every morning*. *App address* (e.g. `https://budget.example.com`) makes tapping a notification open the right page. **Send a test notification** saves and sends one.
 
 ### 💾 Data & backup
 
@@ -779,7 +783,8 @@ Pick **Light**, **Dark**, or **Match device** (follows your phone or computer's 
 - **⬇ Blank template** / **⬆ Import from Excel** – fill in the template (example rows marked `EXAMPLE` are skipped) and import it. Importing only adds new items; anything with the same name is skipped.
 - **⬇ Transactions (CSV)** – every transaction with its category and matched bill.
 - **⬇ Download backup** – a complete copy of the database (everything, including transactions, budgets, goals, and settings). Keep one somewhere safe.
-- **⬆ Restore from backup** – replaces **all** current data with a backup file. A copy of the current data is saved to `~/.budget_app/backups/` first.
+- **⬆ Restore from backup** – replaces **all** current data with a backup file. A copy of the current data is saved to the server's backups folder first.
+- **Automatic backups on the server** (admins) – a copy of the database is made every day after the hour you choose, and the newest ones are kept (14 by default). **Back up now** makes one immediately. The list shows automatic, manual and *before a restore* copies, each with **Download**, **Restore** and **Delete**.
 
 ### 🔒 Your account
 
@@ -787,6 +792,7 @@ Everyone signs in with their own username and password, on every device (this co
 
 - **Change password** needs your current password and signs you out on your other devices.
 - **Sign out** (here, or at the bottom of the menu) signs out this browser.
+- **Signed-in devices** lists every browser or phone signed in to your account — what it is, its network address, when it was last active. **Sign out** ends one; **Sign out all other devices** ends all but this one (handy after losing a phone).
 
 ### 👥 Users (admins only)
 
@@ -805,7 +811,22 @@ Admins can also back up and restore the database (*Data & backup*). A backup inc
 3. In **Account Mapping**, pick the local bank and account for each SimpleFIN account and click **Map**. The type (bank / credit / mortgage / heloc) is filled in automatically.
 4. Click **🔄 Sync Balances Now** whenever you want fresh balances. The result lists each account's change.
 
+**Sync automatically** (every 1–24 hours, or off) has the server fetch balances on its own — and, with *also download new transactions*, new transactions too, matching bill payments as they arrive. The last automatic sync's result is shown underneath.
+
 Mapped accounts show 🔄 across the app and get a **Txns** button on the Accounts page. **✕** unmaps an account; **Disconnect** removes the connection and all mappings. Only mapped accounts are updated. To store transactions (for budgets, reports, and bill matching), use **Download from SimpleFIN** on the Transactions page (§8).
+
+### ⏱ Background jobs (admins)
+
+While the server runs it checks every couple of minutes for work, and this card shows each job's last result:
+
+| Job | What it does |
+|---|---|
+| Daily upkeep | Rolls bill periods over (paid flags reset for the new period) and records today's net worth for Reports |
+| Automatic backup | The daily backup above |
+| SimpleFIN sync | If *Sync automatically* is on |
+| Email digest, Phone notifications, Morning summary | If set up under Alerts |
+
+A job that fails shows ⚠ with the reason; it's tried again later and never stops the others.
 
 ### Database
 
@@ -822,7 +843,15 @@ The API endpoint and a link to the **GraphQL Playground**, an interactive consol
 
 ---
 
-## 18. Using it on your phone, and installing it
+## 18. Activity
+
+**Route:** `/activity`
+
+Every change anyone makes to the budget, newest first, grouped by day: who did it, when, and what (e.g. *casey · Create bill — Internet · $70.00*). Sign-ins, invites, password changes, backups and restores are listed too. Pick a person at the top to see only their changes; **Show older** loads more. Passwords, tokens and other secrets are never recorded. Entries are kept for a year.
+
+---
+
+## 19. Using it on your phone, and installing it
 
 **From your phone or another computer on your network:**
 
@@ -842,7 +871,7 @@ The API endpoint and a link to the **GraphQL Playground**, an interactive consol
 
 ---
 
-## 19. Recommended routine
+## 20. Recommended routine
 
 **A quick look, any day:** open the Dashboard. The banner tells you whether every bill is covered; **Safe to spend** is what you can spend beyond your usual everyday spending. Check the 🔔 if it shows a number.
 
@@ -863,7 +892,7 @@ The API endpoint and a link to the **GraphQL Playground**, an interactive consol
 
 ---
 
-## 20. Troubleshooting & FAQ
+## 21. Troubleshooting & FAQ
 
 **The web page loads but shows errors / no data.**
 The API server isn't running or isn't reachable. Check Settings → API Connection, and make sure the "Budget API Server" window is open (or run `python api_server.py`).
@@ -893,7 +922,7 @@ Click **undo** on the transaction's ✓ badge (Transactions page). That removes 
 Mark it paid (Dashboard checklist or Bills → Pay) with the date you paid, and leave *Take the money out* off if your balance already reflects it.
 
 **What's the admin password?**
-The one printed when the API server first started, also in `~/.budget_app/initial-admin-password.txt` until you change it (§18). If it's gone, run `python -m models.auth reset-password admin` on the server.
+The one printed when the API server first started, also in `~/.budget_app/initial-admin-password.txt` until you change it (§19). If it's gone, run `python -m models.auth reset-password admin` on the server.
 
 **My phone says the app isn't set up yet.**
 No account exists yet — this happens only if the API was started some other way than `python api_server.py`. Open the app on the computer that runs it and create the first account there, or restart the server with `python api_server.py`.
