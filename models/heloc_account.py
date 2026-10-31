@@ -271,16 +271,20 @@ class HELOCAccount:
             "balance_after": self.balance,
         })
 
-    def accrue_interest(self, current_date: date = None) -> float:
+    def accrue_interest(self, current_date: date = None, average_balance: float = None) -> float:
         """
         Accrue monthly interest on the outstanding balance.
+
+        ``average_balance``: the average daily balance over the month, when
+        known (the timeline simulation tracks it); otherwise today's balance.
         Returns the interest amount added.
         """
         current_date = current_date or date.today()
-        if self.interest_rate <= 0 or self.balance <= 0:
+        base = self.balance if average_balance is None else average_balance
+        if self.interest_rate <= 0 or base <= 0:
             return 0.0
 
-        interest = self.current_monthly_interest
+        interest = round(base * self.monthly_interest_rate, 2)
         self.balance += interest
         self.unpaid_interest = getattr(self, 'unpaid_interest', 0.0) + interest
         self._record_transaction("INTEREST", interest, "Interest accrual", current_date)

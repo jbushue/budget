@@ -5,6 +5,7 @@ from typing import Optional
 from collections import defaultdict
 
 from models.bank import Bank
+from models.date_utils import is_clamped_day
 from models.fixed_bill import Bill
 from models.income_source import IncomeSource
 from models.timeline_simulator import TimelineSimulator, TimelineEvent
@@ -73,6 +74,42 @@ class PaymentPlan:
             f"mortgage_payments={len(self.mortgage_payments)}, "
             f"transfers={len(self.transfer_recommendations)})"
         )
+
+
+# Missed payments whose money is still owed after the window. Missed card,
+# HELOC and loan-group payments aren't listed: what they owe stays in the
+# account balance, which is already counted as debt.
+UNPAID_TYPES = ("BILL_DEFERRED", "MORTGAGE_DEFERRED")
+
+
+def unpaid_bills(result: dict) -> float:
+    """Total of the bills a simulation couldn't pay (they're still owed)."""
+    return sum(-cf['amount'] for cf in result['cash_flow'] if cf.get('type') in UNPAID_TYPES)
+
+
+def imminent_promo_interest(result: dict) -> float:
+    """
+    Deferred interest on 0% promos that expire, with money still owed,
+    before the card's next payment after the window: no payment is left to
+    clear them, so the interest is as good as charged. (Promos with a
+    payment still to come can be cleared by it — the card's minimum includes
+    what's needed.)
+    """
+    return sum(p['deferred_interest'] for p in result.get('promo_final', {}).values()
+               if p.get('next_payment') is None or p['end_date'] < p['next_payment'])
+
+
+def score_simulation(result: dict) -> float:
+    """
+    The bottom line used to compare plans: cash minus debt at the end of the
+    window, minus bills that went unpaid (skipping a bill isn't saving money)
+    and deferred promo interest no payment is left to prevent.
+    """
+    cash = sum(result['final_balances'].values())
+    debt = (sum(result['credit_final_balances'].values())
+            + sum(result['mortgage_final_balances'].values())
+            + sum(result['heloc_final_balances'].values()))
+    return cash - debt - unpaid_bills(result) - imminent_promo_interest(result)
 
 
 @dataclass
@@ -201,11 +238,30 @@ class PaymentOptimizer:
             discretionary_buffer, min_hold_days, baseline=baseline
         )
 
-        # ── Pass 2: Optimized simulation with injected events ────────────
-        optimized_result = self._run_simulation(
-            start_date, end_date, strategy,
-            injected_events=dict(injected_events)
+        # ── Pass 2: verified search ──────────────────────────────────────
+        # The planners above work from a rough cash model, so their moves
+        # can backfire (overdrafts, interest lost on savings, late bills).
+        # Every candidate is run through the real simulation and only kept
+        # if it ends up better off than paying everything on its due date.
+        protected = {id(e) for evts in injected_events.values() for e in evts
+                     if e.event_type == "EXTRA_CREDIT_PAYMENT"}
+        strategy, kept, optimized_result = self._search(
+            start_date, end_date, baseline, strategy, injected_events,
+            discretionary_buffer, target_credit_account, protected,
         )
+        kept_ids = {id(e) for evts in kept.values() for e in evts}
+        promo_payoff_schedule = [p for p in promo_payoff_schedule if p.get('_event_id') in kept_ids]
+        extra_credit_payments = [p for p in extra_credit_payments if p.get('_event_id') in kept_ids]
+        for evts in kept.values():
+            for e in evts:
+                if e.event_type == "EXTRA_CREDIT_PAYMENT" and id(e) not in protected:
+                    extra_credit_payments.append({
+                        'date': e.event_date, 'amount': e.amount, 'bank': e.to_bank,
+                        'credit_account': e.to_account, 'description': e.description,
+                    })
+        extra_credit_payments.sort(key=lambda p: p['date'])
+        # Report the routing the chosen plan actually uses
+        strategy = self._strategy_from_result(optimized_result)
 
         # ── Build summary PaymentPlan from the optimized result ──────────
         # Interest CHARGED on debt (credit cards / HELOCs) vs. interest
@@ -314,6 +370,264 @@ class PaymentOptimizer:
                 return True
         return False
 
+    # ─────────────────────────────────────────────────────────────────────
+    #  VERIFIED SEARCH: every move is checked against the real simulation
+    # ─────────────────────────────────────────────────────────────────────
+
+    MAX_ROUNDS = 40        # greedy improvement rounds
+    MOVES_PER_ROUND = 5    # candidate moves simulated per round (the best one is kept)
+    MIN_GAIN = 0.01        # a move must improve the bottom line by at least this
+
+    def _evaluate(self, result: dict) -> dict:
+        """Score plus the safety numbers a plan is checked against."""
+        checking = {f"{b.name}:{n}" for b in self.banks for n, a in b.accounts.items()
+                    if a.account_type.value == "checking"}
+        lowest = min((bal for s in result['snapshots'] for k, bal in s['balances'].items() if k in checking),
+                     default=0.0)
+        late = sum(1 for cf in result['cash_flow'] if cf.get('type', '').endswith('_DEFERRED'))
+        fees = sum(-cf['amount'] for cf in result['cash_flow'] if cf.get('type') == 'FEE')
+        return {"score": score_simulation(result), "late": late, "lowest": lowest, "fees": fees, "result": result}
+
+    def _acceptable(self, ev: dict, base: dict, floor: float) -> bool:
+        """
+        A plan may never be riskier than paying on due dates: no more missed
+        payments or fees, and checking never lower than the baseline's own
+        low point or the cushion, whichever is lower.
+        """
+        return (ev["late"] <= base["late"] and ev["fees"] <= base["fees"] + 0.005
+                and ev["lowest"] >= min(base["lowest"], floor) - 0.01)
+
+    def _search(self, start_date, end_date, baseline, strategy, heuristic_events,
+                buffer, target_credit_account, protected) -> tuple[dict | None, dict, dict]:
+        """
+        Find the best plan: start from the best of a few candidate plans
+        (nothing at all, i.e. paying on due dates, is always one of them),
+        drop moves that don't pay for themselves, then greedily add moves
+        that do, each one verified by a full simulation.
+
+        Returns (strategy, injected events, simulation result).
+        """
+        base = self._evaluate(baseline)
+        floor = max(0.0, buffer)
+        cache: dict = {}
+
+        def run(strat, injected):
+            key = (id(strat), tuple(sorted((d, id(e)) for d, evts in injected.items() for e in evts)))
+            if key not in cache:
+                result = self._run_simulation(start_date, end_date, strat, injected_events=injected)
+                cache[key] = self._evaluate(result)
+            return cache[key]
+
+        def by_type(*types):
+            out = defaultdict(list)
+            for d, evts in heuristic_events.items():
+                for e in evts:
+                    if e.event_type in types:
+                        out[d].append(e)
+            return dict(out)
+
+        everything = {d: list(evts) for d, evts in heuristic_events.items()}
+        promos = by_type("PROMO_PAYOFF", "EXTRA_CREDIT_PAYMENT")
+        sweeps = by_type("SAVINGS_SWEEP", "SAVINGS_RECALL", "HELOC_PARK", "HELOC_RECALL", "EXTRA_CREDIT_PAYMENT")
+        candidates = [(None, {}, base)]
+        for strat in (None, strategy):
+            for injected in ({}, everything, promos, sweeps):
+                if strat is None and not injected:
+                    continue
+                candidates.append((strat, injected, run(strat, injected)))
+
+        def better(ev, than):
+            return self._acceptable(ev, base, floor) and ev["score"] > than["score"] + self.MIN_GAIN
+
+        best_strat, best_events, best = candidates[0]
+        for strat, injected, ev in candidates[1:]:
+            if better(ev, best):
+                best_strat, best_events, best = strat, injected, ev
+
+        # Drop moves that don't earn their keep (simpler plan when it's a tie)
+        for d in sorted(best_events):
+            for e in list(best_events.get(d, [])):
+                if id(e) in protected:
+                    continue
+                trial = {k: [x for x in v if x is not e] for k, v in best_events.items()}
+                trial = {k: v for k, v in trial.items() if v}
+                ev = run(best_strat, trial)
+                if self._acceptable(ev, base, floor) and ev["score"] >= best["score"] - 0.005:
+                    best_events, best = trial, ev
+
+        # Greedily add the move that helps most, found from the current best
+        # plan's balances, until nothing helps
+        for _ in range(self.MAX_ROUNDS):
+            moves = self._candidate_moves(best["result"], start_date, end_date, buffer, target_credit_account)
+            round_best = None
+            for move in moves[:self.MOVES_PER_ROUND]:
+                trial = {k: list(v) for k, v in best_events.items()}
+                trial.setdefault(move.event_date, []).append(move)
+                ev = run(best_strat, trial)
+                if better(ev, round_best[1] if round_best else best):
+                    round_best = (trial, ev)
+            if not round_best:
+                break
+            best_events, best = round_best
+
+        return best_strat, best_events, best["result"]
+
+    @staticmethod
+    def _strategy_from_result(result: dict) -> dict:
+        """Which account paid each bill occurrence, keyed like _create_payment_strategy."""
+        strategy = {}
+        for cf in result['cash_flow']:
+            if cf.get('type') in ('BILL_PAYMENT', 'CREDIT_PAYMENT', 'MORTGAGE_PAYMENT', 'HELOC_PAYMENT'):
+                name = cf['description']
+                strategy[f"{name}_{cf['date'].isoformat()}"] = {
+                    "bank": cf.get('bank'), "account": cf.get('account'), "date": cf['date'],
+                    "amount": -cf['amount'], "bill_name": name,
+                }
+        return strategy
+
+    def _candidate_moves(self, result, start_date, end_date, buffer, target_credit_account) -> list[TimelineEvent]:
+        """
+        Moves worth trying on top of a simulated plan, most promising first:
+
+        - cover a missed payment from savings or by drawing on a HELOC
+        - pay off a 0% promo that would otherwise charge deferred interest
+        - pay spare cash onto the costliest debt just before it's charged
+          interest (card statement day, HELOC interest day)
+        - move spare cash to savings just before savings interest is paid
+
+        "Spare" cash is what a checking account never needs again in the
+        window: its lowest later balance, less the cushion.
+        """
+        from models.types import HELOCPhase
+
+        snapshots = result['snapshots']
+        if not snapshots:
+            return []
+        dates = [s['date'] for s in snapshots]
+        index = {d: i for i, d in enumerate(dates)}
+        checking = [(b.name, n) for b in self.banks for n, a in b.accounts.items()
+                    if a.account_type.value == "checking"]
+        if not checking:
+            return []
+
+        # Lowest balance from each day to the end, per checking account
+        future_low = {}
+        for bank_name, name in checking:
+            key = f"{bank_name}:{name}"
+            lows, low = [0.0] * len(snapshots), float('inf')
+            for i in range(len(snapshots) - 1, -1, -1):
+                low = min(low, snapshots[i]['balances'].get(key, 0.0))
+                lows[i] = low
+            future_low[(bank_name, name)] = lows
+
+        def spare_on(day):
+            """(bank, account, amount) of the checking account with the most spare cash on `day`."""
+            i = index.get(day)
+            if i is None:
+                return None, None, 0.0
+            bank_name, name = max(checking, key=lambda c: future_low[c][i])
+            return bank_name, name, max(0.0, future_low[(bank_name, name)][i] - buffer)
+
+        def days_in_window(day_of_month):
+            """Each date in the window falling on a (month-clamped) day of month."""
+            return [d for d in dates if is_clamped_day(d, day_of_month)]
+
+        savings = [(b.name, n, a) for b in self.banks for n, a in b.accounts.items()
+                   if a.account_type.value == "savings" and a.interest_rate > 0]
+        best_savings_rate = max((a.interest_rate for _, _, a in savings), default=0.0)
+
+        moves: list[tuple[float, TimelineEvent]] = []
+
+        # 1. Missed payments: cover them from savings, else a HELOC draw
+        for cf in result['cash_flow']:
+            if not (cf.get('type', '').endswith('_DEFERRED')):
+                continue
+            day, need = cf['date'], abs(cf['amount'])
+            to_bank, to_account = checking[0]
+            name = cf['description'].replace(" (insufficient funds)", "")
+            balances = snapshots[index[day]]['balances'] if day in index else {}
+            any_savings = [(b.name, n) for b in self.banks for n, a in b.accounts.items()
+                           if a.account_type.value == "savings" and balances.get(f"{b.name}:{n}", 0.0) > 0]
+            if any_savings:
+                b, n = max(any_savings, key=lambda s: balances[f"{s[0]}:{s[1]}"])
+                moves.append((1e6 + need, TimelineEvent(
+                    event_date=day, event_type="SAVINGS_RECALL",
+                    amount=round(min(need + 1, balances[f"{b}:{n}"]), 2),
+                    description=f"Move from {n} to cover {name}",
+                    from_bank=b, from_account=n, to_bank=to_bank, to_account=to_account)))
+            for bank in self.banks:
+                for hname, heloc in bank.heloc_accounts.items():
+                    if heloc.get_phase_on_date(day) == HELOCPhase.DRAW and heloc.credit_limit > heloc.balance:
+                        moves.append((1e6, TimelineEvent(
+                            event_date=day, event_type="HELOC_RECALL", amount=round(need + 1, 2),
+                            description=f"Draw from HELOC {hname} to cover {name}",
+                            from_bank=bank.name, from_account=hname, to_bank=to_bank, to_account=to_account)))
+
+        # 2. Promos that will charge deferred interest before another payment
+        #    is due: pay them off with spare cash (on the last day, when the
+        #    most is spare — the balance is 0% until then)
+        last = dates[-1]
+        for key, promo in result.get('promo_final', {}).items():
+            if not (promo.get('next_payment') is None or promo['end_date'] < promo['next_payment']):
+                continue
+            bank_name, card_name, promo_name = key.split(":", 2)
+            fb, fa, spare = spare_on(last)
+            amount = round(min(spare, promo['remaining']), 2)
+            if amount >= 1:
+                moves.append((promo['deferred_interest'] * amount / promo['remaining'], TimelineEvent(
+                    event_date=last, event_type="PROMO_PAYOFF", amount=amount,
+                    description=f"Promo payoff: {promo_name} on {card_name}",
+                    from_bank=fb, from_account=fa, to_bank=bank_name, to_account=card_name,
+                    promo_name=promo_name)))
+
+        def add_paydown(rate, balance_key, balances_attr, day_of_month, make):
+            for interest_day in days_in_window(day_of_month):
+                day = max(start_date, interest_day - timedelta(days=1))
+                bank_name, name, spare = spare_on(day)
+                owed = snapshots[index[day]][balances_attr].get(balance_key, 0.0)
+                amount = float(int(min(spare, owed) // 10 * 10))
+                if amount >= 50:
+                    gain = amount * rate / 100 * (end_date - day).days / 365
+                    moves.append((gain, make(day, amount, bank_name, name)))
+
+        # 3. Pay down the costliest debt with spare cash
+        for bank in self.banks:
+            for cname, card in bank.credit_accounts.items():
+                if card.interest_rate <= best_savings_rate or not card.statement_date:
+                    continue
+                rate = card.interest_rate + (100 if cname == target_credit_account else 0)
+                add_paydown(rate, f"{bank.name}:{cname}", 'credit_balances', card.statement_date,
+                            lambda day, amount, fb, fa, cname=cname, bank=bank, card=card: TimelineEvent(
+                                event_date=day, event_type="EXTRA_CREDIT_PAYMENT", amount=amount,
+                                description=f"Pay down {cname} before its statement ({card.interest_rate:g}% APR)",
+                                from_bank=fb, from_account=fa, to_bank=bank.name, to_account=cname))
+            for hname, heloc in bank.heloc_accounts.items():
+                if heloc.interest_rate <= best_savings_rate:
+                    continue
+                add_paydown(heloc.interest_rate, f"{bank.name}:{hname}", 'heloc_balances', heloc.payment_due_date,
+                            lambda day, amount, fb, fa, hname=hname, bank=bank, heloc=heloc: TimelineEvent(
+                                event_date=day, event_type="HELOC_PARK", amount=amount,
+                                description=f"Pay down HELOC {hname} with spare cash ({heloc.interest_rate:g}% APR)",
+                                from_bank=fb, from_account=fa, to_bank=bank.name, to_account=hname))
+
+        # 4. Spare cash to the best savings account before interest is paid
+        for sbank, sname, acct in savings:
+            if acct.interest_rate < best_savings_rate:
+                continue
+            for interest_day in days_in_window(acct.interest_accrual_date or 31):
+                day = max(start_date, interest_day - timedelta(days=1))
+                bank_name, name, spare = spare_on(day)
+                amount = float(int(spare // 10 * 10))
+                if amount >= 50:
+                    gain = amount * acct.interest_rate / 100 * (end_date - day).days / 365
+                    moves.append((gain, TimelineEvent(
+                        event_date=day, event_type="SAVINGS_SWEEP", amount=amount,
+                        description=f"Move spare cash to {sname} ({acct.interest_rate:g}% APY)",
+                        from_bank=bank_name, from_account=name, to_bank=sbank, to_account=sname)))
+
+        moves.sort(key=lambda m: -m[0])
+        return [m for _, m in moves]
+
     def _inject_promo_payoff_events(
         self,
         injected: dict,
@@ -326,7 +640,7 @@ class PaymentOptimizer:
             src_bank, src_account = self._find_best_checking_account()
             if not src_bank:
                 continue
-            injected[evt_date].append(TimelineEvent(
+            event = TimelineEvent(
                 event_date=evt_date,
                 event_type="PROMO_PAYOFF",
                 amount=p['amount'],
@@ -336,7 +650,9 @@ class PaymentOptimizer:
                 to_bank=p['bank'],
                 to_account=p['credit_account'],
                 promo_name=p.get('promo_name'),
-            ))
+            )
+            p['_event_id'] = id(event)
+            injected[evt_date].append(event)
 
     def _inject_extra_credit_events(
         self,
@@ -350,7 +666,7 @@ class PaymentOptimizer:
             src_bank, src_account = self._find_best_checking_account()
             if not src_bank:
                 continue
-            injected[evt_date].append(TimelineEvent(
+            event = TimelineEvent(
                 event_date=evt_date,
                 event_type="EXTRA_CREDIT_PAYMENT",
                 amount=ep['amount'],
@@ -359,7 +675,9 @@ class PaymentOptimizer:
                 from_account=src_account,
                 to_bank=ep['bank'],
                 to_account=target_credit_account,
-            ))
+            )
+            ep['_event_id'] = id(event)
+            injected[evt_date].append(event)
 
     def _inject_sweep_events(
         self,

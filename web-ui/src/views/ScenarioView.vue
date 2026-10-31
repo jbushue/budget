@@ -494,7 +494,7 @@ interface OutcomeRow {
   fmt: (v: number) => string
 }
 
-const overall = (s: OutcomeSummary) => s.netPosition
+const overall = (s: OutcomeSummary) => s.outcome ?? s.netPosition
 
 const outcomeRows = computed<OutcomeRow[]>(() => {
   const r = scenarioResult.value
@@ -507,7 +507,7 @@ const outcomeRows = computed<OutcomeRow[]>(() => {
     { label: 'Debt at the end', base: b.endingDebt, scen: s.endingDebt, better: -1, fmt: currency },
     { label: 'Interest charged', base: b.interestCharged, scen: s.interestCharged, better: -1, fmt: currency },
     { label: 'Late & overdraft fees', base: b.fees, scen: s.fees, better: -1, fmt: currency },
-    { label: 'Overall (cash − debt)', base: overall(b), scen: overall(s), better: 1, fmt: currency },
+    { label: 'Overall (cash − debt − unpaid bills)', base: overall(b), scen: overall(s), better: 1, fmt: currency },
   ]
 })
 

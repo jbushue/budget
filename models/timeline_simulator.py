@@ -5,7 +5,7 @@ from models.bank import Bank
 from models.fixed_bill import Bill, AccountLinkedBill, GroupLinkedBill
 from models.bill_group import BillGroup
 from models.income_source import IncomeSource
-from models.date_utils import is_clamped_day
+from models.date_utils import add_months, clamped_date, is_clamped_day
 
 
 @dataclass
@@ -161,8 +161,9 @@ class TimelineSimulator:
             if include_interest:
                 for bank in self.banks:
                     for account in bank.get_all_accounts():
-                        if (account.interest_accrual_date
-                                and is_clamped_day(current_date, account.interest_accrual_date)
+                        # No interest day set: paid at the end of each month
+                        accrual_day = account.interest_accrual_date or 31
+                        if (is_clamped_day(current_date, accrual_day)
                                 and account.interest_rate > 0):
                             # Balance-independent: the actual amount is computed when the
                             # event is processed (money may be swept in mid-simulation);
@@ -276,6 +277,12 @@ class TimelineSimulator:
             f"{b.name}:{a.account_name}" for b in self.banks for a in b.get_all_accounts()
             if a.balance < 0
         }
+
+        # Interest is charged on the average daily balance since the last
+        # interest day, like banks and card issuers do — so moving money a
+        # day before interest is charged doesn't earn (or save) a whole month.
+        self._balance_tracker = {}
+        self._start_balances = {key: bal for key, (bal, _) in self._interest_balances().items()}
 
         current_date = start_date
         while current_date <= end_date:
@@ -498,13 +505,19 @@ class TimelineSimulator:
                                                and event.account_name not in bank.accounts
                                                and event.account_name not in bank.credit_accounts):
                             kind = "heloc"
-                            interest = bank.heloc_accounts[event.account_name].accrue_interest(current_date)
+                            interest = bank.heloc_accounts[event.account_name].accrue_interest(
+                                current_date, self._average_balance(("heloc", bank.name, event.account_name),
+                                                                    current_date))
                         elif kind != "credit" and event.account_name in bank.accounts:
                             kind = "bank"
-                            interest = bank.accounts[event.account_name].accrue_interest(current_date)
+                            interest = bank.accounts[event.account_name].accrue_interest(
+                                current_date, self._average_balance(("bank", bank.name, event.account_name),
+                                                                    current_date))
                         elif event.account_name in bank.credit_accounts:
                             kind = "credit"
-                            interest = bank.credit_accounts[event.account_name].accrue_interest(current_date)
+                            interest = bank.credit_accounts[event.account_name].accrue_interest(
+                                current_date, self._average_balance(("credit", bank.name, event.account_name),
+                                                                    current_date))
 
                         if interest > 0:
                             cash_flow.append({
@@ -625,6 +638,11 @@ class TimelineSimulator:
             # Overdraft fee each time a checking account newly drops below $0
             self._charge_overdraft_fees(current_date, cash_flow, overdrawn)
 
+            # End-of-day balances for average-daily-balance interest
+            for key, (bal, _) in self._interest_balances().items():
+                total, days = self._balance_tracker.get(key, (0.0, 0))
+                self._balance_tracker[key] = (total + bal, days + 1)
+
             # Create snapshot for this date
             snapshot = {"date": current_date, "balances": {}, "credit_balances": {}, "mortgage_balances": {}, "heloc_balances": {}}
             for bank in self.banks:
@@ -670,12 +688,19 @@ class TimelineSimulator:
         for bank in self.banks:
             for credit in bank.get_all_credit_accounts():
                 monthly_rate = credit.interest_rate / 12 / 100
+                # The card's first payment after the window (None: no due day)
+                next_payment = None
+                if credit.payment_due_date:
+                    next_payment = end_date + timedelta(days=1)
+                    while not is_clamped_day(next_payment, credit.payment_due_date):
+                        next_payment += timedelta(days=1)
                 for promo in credit.active_promos:
                     remaining = credit.promo_balance.get(promo.promo_name, 0.0)
                     if remaining > 0.005 and not promo.interest_charged:
                         promo_final[f"{bank.name}:{credit.account_name}:{promo.promo_name}"] = {
                             "remaining": remaining,
                             "end_date": promo.end_date,
+                            "next_payment": next_payment,
                             "deferred_interest": remaining * ((1 + monthly_rate) ** promo.months_interest_free - 1),
                         }
 
@@ -746,6 +771,39 @@ class TimelineSimulator:
             "cash_flow": cash_flow,
             "events": processed_events
         }
+
+    # ── Average daily balance ─────────────────────────────────────────
+
+    def _interest_balances(self) -> dict:
+        """{(kind, bank, account): (balance interest is charged on, interest day)} for interest-bearing accounts."""
+        out = {}
+        for bank in self.banks:
+            for acc in bank.get_all_accounts():
+                if acc.interest_rate > 0:
+                    out[("bank", bank.name, acc.account_name)] = (acc.balance, acc.interest_accrual_date or 31)
+            for card in bank.get_all_credit_accounts():
+                if card.interest_rate > 0 and card.statement_date:
+                    out[("credit", bank.name, card.account_name)] = (card.regular_balance, card.statement_date)
+            for heloc in bank.get_all_heloc_accounts():
+                if heloc.interest_rate > 0:
+                    out[("heloc", bank.name, heloc.account_name)] = (heloc.balance, heloc.payment_due_date)
+        return out
+
+    def _average_balance(self, key: tuple, current_date: date) -> float | None:
+        """
+        Average end-of-day balance over the month before ``current_date``
+        (an interest day), then start a new month. Days before the
+        simulation started count at the starting balance. None (use today's
+        balance) if the account isn't tracked.
+        """
+        if key not in self._start_balances:
+            return None
+        total, days = self._balance_tracker.pop(key, (0.0, 0))
+        y, m = add_months(current_date.year, current_date.month, -1)
+        cycle = (current_date - clamped_date(y, m, current_date.day)).days or 30
+        if days >= cycle:
+            return total / days
+        return (total + self._start_balances[key] * (cycle - days)) / cycle
 
     # ── Everyday spending and fees ────────────────────────────────────
 

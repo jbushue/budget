@@ -21,7 +21,7 @@ class BankAccount:
             account_name: Human-readable name for the account
             balance: Starting balance (must be >= 0)
             interest_rate: Annual percentage rate (APR) for savings accounts
-            interest_accrual_date: Day of month (1-31) when interest accrues, or None for no accrual
+            interest_accrual_date: Day of month (1-31) when interest is paid, or None for the end of each month
         """
         if isinstance(account_type, str):
             try:
@@ -67,10 +67,13 @@ class BankAccount:
             "balance_after": self.balance
         })
 
-    def accrue_interest(self, current_date: date = None) -> float:
+    def accrue_interest(self, current_date: date = None, average_balance: float = None) -> float:
         """
         Accrue interest on the account balance.
         Only applies to savings accounts.
+
+        ``average_balance``: the average daily balance over the month, when
+        known (the timeline simulation tracks it); otherwise today's balance.
         Returns the interest amount accrued.
         """
         if self.account_type != AccountType.SAVINGS:
@@ -83,7 +86,8 @@ class BankAccount:
 
         # Monthly accrual by default
         monthly_rate = self.interest_rate / 12 / 100
-        interest = self.balance * monthly_rate
+        base = self.balance if average_balance is None else average_balance
+        interest = max(0.0, base) * monthly_rate
         self.balance += interest
 
         self._record_transaction("INTEREST", interest, "Interest accrual", current_date)

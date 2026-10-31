@@ -336,6 +336,9 @@ const OUTCOME_FIELDS = `
   pendingDeferredInterest
   fees
   everydaySpending
+  unpaidBills
+  imminentPromoInterest
+  outcome
   latePayments { date name amount }
 `
 

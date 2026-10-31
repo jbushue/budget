@@ -33,7 +33,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 from .fixed_bill import AccountLinkedBill, FloatingBill, GroupLinkedBill
-from .payment_optimizer import PaymentOptimizer
+from .payment_optimizer import PaymentOptimizer, imminent_promo_interest, unpaid_bills
 from .timeline_simulator import TimelineSimulator
 from .types import AccountType
 
@@ -149,11 +149,18 @@ def summarize_simulation(result: dict, banks) -> dict:
                          "amount": _r(abs(cf["amount"]))})
 
     pending = sum(p["deferred_interest"] for p in result.get("promo_final", {}).values())
+    unpaid = unpaid_bills(result)
+    imminent = imminent_promo_interest(result)
 
     return {
         "ending_cash": _r(cash),
         "ending_debt": _r(debt),
         "net_position": _r(cash - debt),
+        # Bills that couldn't be paid are still owed (net_position doesn't include them)
+        "unpaid_bills": _r(unpaid),
+        # Of pending_deferred_interest: promos that expire before the card's next payment
+        "imminent_promo_interest": _r(imminent),
+        "outcome": _r(cash - debt - unpaid - imminent),
         "net_change": _r((cash - debt) - net_position(banks)),
         "lowest_checking": _r(lowest) if lowest is not None else None,
         "lowest_checking_date": lowest_date.isoformat() if lowest_date else None,
@@ -170,11 +177,14 @@ def summarize_simulation(result: dict, banks) -> dict:
 
 def outcome_value(summary: dict) -> float:
     """
-    The bottom line used to compare plans: cash minus debt at the end of the
-    window. Deferred promo interest still pending is reported separately —
-    regular payments after the window may still clear the promo in time.
+    The bottom line used to compare plans (the same one the optimizer
+    maximizes): cash minus debt at the end of the window, minus bills that
+    couldn't be paid — skipping a bill doesn't save money, it's still owed —
+    and deferred promo interest no payment is left to prevent. Other pending deferred interest
+    is reported separately: regular payments after the window may still
+    clear those promos in time.
     """
-    return summary["net_position"]
+    return summary["net_position"] - summary.get("unpaid_bills", 0.0) - summary.get("imminent_promo_interest", 0.0)
 
 
 def describe_outcome_change(base: dict, other: dict, base_label: str, other_label: str) -> list[str]:
@@ -183,7 +193,7 @@ def describe_outcome_change(base: dict, other: dict, base_label: str, other_labe
     diff = outcome_value(other) - outcome_value(base)
     if abs(diff) >= 0.01:
         lines.append(f"{other_label} leaves you {_money(diff)} {'better' if diff > 0 else 'worse'} off "
-                     f"than {base_label} (cash minus debts).")
+                     f"than {base_label} (cash minus debts and unpaid bills).")
     else:
         lines.append(f"{other_label} ends in the same place as {base_label}.")
 
@@ -249,7 +259,9 @@ class PaymentInsightsAnalyzer:
 
         banks2, income2, bills2, groups2 = deepcopy((m.banks, m.income_sources, m.bills, m.bill_groups))
         optimizer = PaymentOptimizer(banks2, income2, bills2, groups2, **m.sim_options())
-        optimized, plan = optimizer.run_optimized_simulation(self.start, self.end)
+        optimized, plan = optimizer.run_optimized_simulation(
+            self.start, self.end, discretionary_buffer=max(300.0, getattr(m, "cushion", 0.0)),
+            min_hold_days=getattr(m, "min_hold_days", 7))
 
         base_sum = summarize_simulation(baseline, m.banks)
         opt_sum = summarize_simulation(optimized, m.banks)
@@ -633,13 +645,14 @@ class PaymentInsightsAnalyzer:
     def _optimizer_moves(optimized: dict) -> list[dict]:
         labels = {
             "SAVINGS_SWEEP": ("Move spare cash to savings", "Earns interest until it's needed for bills."),
-            "SAVINGS_RECALL": ("Bring money back from savings", "Returns swept cash ahead of upcoming bills."),
+            "SAVINGS_RECALL": ("Bring money back from savings", "Covers upcoming bills from savings."),
             "HELOC_PARK": ("Pay spare cash onto the HELOC", "Lowers the HELOC balance (and its interest) "
                                                            "while the money isn't needed."),
-            "HELOC_RECALL": ("Draw back from the HELOC", "Pulls parked cash back before bills are due."),
+            "HELOC_RECALL": ("Draw from the HELOC", "Pulls cash back before bills are due."),
             "PROMO_PAYOFF": ("Pay down a 0% promo", "Clears the promo before it expires so deferred "
                                                     "interest never hits."),
-            "EXTRA_CREDIT_PAYMENT": ("Extra card payment", "Pays the target card down faster."),
+            "EXTRA_CREDIT_PAYMENT": ("Extra card payment", "Spare cash paid onto the card before it's charged "
+                                                           "interest — it costs more than your cash earns."),
         }
         moves = []
         for cf in optimized["cash_flow"]:

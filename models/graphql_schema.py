@@ -607,6 +607,11 @@ class OutcomeSummaryType(graphene.ObjectType):
         description="Deferred interest unpaid 0% promos would trigger after the window")
     fees = graphene.Float(description="Late and overdraft fees in the window")
     everyday_spending = graphene.Float(description="Everyday spending allowance included in the window")
+    unpaid_bills = graphene.Float(description="Bills that couldn't be paid in the window (still owed)")
+    imminent_promo_interest = graphene.Float(
+        description="Part of pending_deferred_interest on promos that expire before the card's next payment")
+    outcome = graphene.Float(
+        description="The bottom line plans are compared on: net_position − unpaid_bills − imminent_promo_interest")
 
 
 class WhatIfResultType(graphene.ObjectType):

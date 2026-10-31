@@ -33,7 +33,10 @@
         </div>
         <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.75rem">
           <strong>On due date</strong>: every bill comes out of its usual account on the day it's due, nothing else moves.
-          <strong>Optimized</strong>: the same bills, plus the optimizer's routing and transfers (savings sweeps, HELOC parking, promo payoffs).
+          <strong>Optimized</strong>: the same bills, plus the optimizer's moves — spare cash paid onto your costliest debt
+          before it's charged interest, parked in a HELOC or moved to savings, promo payoffs, and money moved to cover a bill
+          that would otherwise be missed. Every move is tested against paying on due dates and only kept if it leaves you
+          better off, with no extra late payments or fees and checking never below your cushion.
         </p>
         <div class="table-wrap">
           <table>
@@ -353,8 +356,12 @@ const comparisonRows = computed<CompRow[]>(() => {
     rows.push({ label: 'Deferred promo interest at risk', hint: 'If promo money still owed at the end isn\'t paid before the promo expires',
       base: b.pendingDeferredInterest, opt: o.pendingDeferredInterest, better: -1, fmt: currency })
   }
-  rows.push({ label: 'Overall (cash − debt)', hint: 'The bottom line: how much better off you end up',
-    base: b.netPosition, opt: o.netPosition, better: 1, fmt: currency })
+  if (b.unpaidBills || o.unpaidBills) {
+    rows.push({ label: 'Unpaid bills', hint: 'Bills that can't be paid in the window — they're still owed',
+      base: b.unpaidBills, opt: o.unpaidBills, better: -1, fmt: currency })
+  }
+  rows.push({ label: 'Overall', hint: 'The bottom line: cash − debt − unpaid bills (and promo interest about to hit)',
+    base: b.outcome ?? b.netPosition, opt: o.outcome ?? o.netPosition, better: 1, fmt: currency })
   return rows
 })
 

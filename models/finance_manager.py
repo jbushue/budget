@@ -439,6 +439,7 @@ class FinanceManager:
                 optimization_goal=self.optimization_goal,
                 target_credit_account=self.target_credit_account,
                 min_hold_days=self.min_hold_days,
+                discretionary_buffer=max(300.0, self.cushion),
             )
             return result
         else:
@@ -606,7 +607,8 @@ class FinanceManager:
         )
 
         return optimizer.optimize_payment_schedule(
-            start_date, end_date, goal, target
+            start_date, end_date, goal, target,
+            discretionary_buffer=max(300.0, self.cushion), min_hold_days=self.min_hold_days,
         )
 
     def get_multiple_strategies(

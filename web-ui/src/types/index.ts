@@ -356,6 +356,12 @@ export interface OutcomeSummary {
   pendingDeferredInterest: number
   fees: number
   everydaySpending: number
+  /** Bills that couldn't be paid in the window — still owed */
+  unpaidBills: number
+  /** Deferred promo interest on promos that expire before the card's next payment */
+  imminentPromoInterest: number
+  /** The bottom line: cash − debt − unpaid bills − imminent promo interest */
+  outcome: number
   latePayments: LatePayment[]
 }
 

@@ -376,9 +376,13 @@ class CreditAccount:
 
         return total_interest_charged
 
-    def accrue_interest(self, current_date: date = None) -> float:
+    def accrue_interest(self, current_date: date = None, average_balance: float = None) -> float:
         """
         Accrue interest on the credit card balance.
+
+        ``average_balance``: the average daily regular balance over the
+        statement cycle, when known (the timeline simulation tracks it);
+        otherwise today's regular balance.
 
         Process:
         1. Check for expired promos and charge retroactive interest
@@ -397,12 +401,13 @@ class CreditAccount:
         total_interest += promo_interest
 
         # Then charge regular interest on non-promotional balance
-        if self.interest_rate <= 0 or self.regular_balance <= 0:
+        base = self.regular_balance if average_balance is None else average_balance
+        if self.interest_rate <= 0 or base <= 0:
             return total_interest
 
         # Monthly interest accrual (typical for credit cards) - only on regular balance
         monthly_rate = self.interest_rate / 12 / 100
-        interest = self.regular_balance * monthly_rate
+        interest = base * monthly_rate
         self.balance += interest
         self.regular_balance += interest
 

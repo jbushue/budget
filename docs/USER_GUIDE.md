@@ -168,7 +168,7 @@ Every bill, group, mortgage, and HELOC can have a **preferred source** (bank + a
 
 The **Timeline**, **Dashboard chart**, and **Optimizer** run a day-by-day simulation starting today. Each day, in order: income deposits, optimizer moves that bring money back to checking, bill/loan payments, then other optimizer moves and interest. Interest is applied monthly:
 
-- **Savings/checking:** on the account's *Interest Day* at APY/12 (accounts with no Interest Day don't earn interest).
+- **Savings/checking:** on the account's *Interest Day* at APY/12 (the end of each month if no Interest Day is set).
 - **Credit cards:** on the statement day at APR/12 on the regular (non-promo) balance; expired promos trigger deferred interest on their expiry date.
 - **HELOCs:** on the payment due day at APR/12, just before that day's payment — so an interest-only payment keeps the balance flat.
 - Mortgage payments are split into interest, escrow, then principal.
@@ -274,7 +274,7 @@ The 🔔 bell at the top right of every page lists alerts (§16). **Refresh** re
 | Account Type | all | Checking, Savings, Credit Card, HELOC, or Mortgage. |
 | Starting Balance / Current Balance (owed) | all | For cards, HELOCs, and mortgages this is the amount **owed**. For a mortgage it's the current principal; leave it blank (0) for a brand-new loan to use the original amount. |
 | APY % / APR % | all | Annual percentage. |
-| Interest Day (1-31, optional) | checking, savings | Day of month interest is credited. Leave blank if the account earns no interest. |
+| Interest Day (1-31, optional) | checking, savings | Day of month interest is credited. Leave blank for the end of each month; an account that earns nothing just has an APY of 0. |
 | Credit Limit | credit card, HELOC | Required and must be greater than 0. |
 | Payment Due Day (1-31) | credit card, HELOC | Sets the due day of the card's `[Auto]` payment bill. |
 | Statement Day (1-31, optional) | credit card | Day interest is charged each month. |
