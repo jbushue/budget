@@ -72,6 +72,7 @@ const navItems = [
   { path: '/debt-payoff', icon: '📉', label: 'Debt Payoff' },
   { path: '/scenarios', icon: '🔮', label: 'What-If' },
   { path: '/reports', icon: '📈', label: 'Reports' },
+  { path: '/activity', icon: '🕘', label: 'Activity' },
   { path: '/settings', icon: '⚙️', label: 'Settings' },
 ]
 

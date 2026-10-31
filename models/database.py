@@ -548,6 +548,21 @@ class AuthSessionModel(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=utc_now)
+    last_seen = Column(DateTime)            # local time, updated every few minutes of use
+    user_agent = Column(String(300))
+    ip = Column(String(64))
+
+
+class ActivityModel(Base):
+    """Who changed what — the shared budget's history."""
+    __tablename__ = "activity_log"
+
+    id = Column(Integer, primary_key=True)
+    at = Column(DateTime, nullable=False)   # local time
+    user_id = Column(Integer)               # no foreign key: history outlives deleted accounts
+    username = Column(String(32), nullable=False, default="")
+    action = Column(String(80), nullable=False)
+    detail = Column(String(400), nullable=False, default="")
 
 
 def init_db():
@@ -706,6 +721,14 @@ def _run_migrations():
         if "user_id" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE auth_sessions ADD COLUMN user_id INTEGER"))
+
+    # Migration: remember which device each session is
+    if "auth_sessions" in inspector.get_table_names():
+        columns = [col["name"] for col in inspector.get_columns("auth_sessions")]
+        with engine.begin() as conn:
+            for name, kind in (("last_seen", "DATETIME"), ("user_agent", "VARCHAR(300)"), ("ip", "VARCHAR(64)")):
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE auth_sessions ADD COLUMN {name} {kind}"))
 
     # Migration: flag accounts still using a generated password
     if "users" in inspector.get_table_names():

@@ -173,6 +173,12 @@ class ExtQuery(LedgerQuery, GoalsQuery, graphene.ObjectType):
     alerts = graphene.List(AlertType, include_dismissed=graphene.Boolean())
     digest_preview = graphene.String(description="Today's digest email text")
     job_status = graphene.JSONString(description="Last result of each background job")
+    activity = graphene.JSONString(limit=graphene.Int(), before_id=graphene.Int(), username=graphene.String(),
+                                   description="Who changed what, newest first")
+
+    def resolve_activity(self, info, limit=50, before_id=None, username=None):
+        from models import activity
+        return activity.recent(limit or 50, before_id, username or None)
 
     def resolve_job_status(self, info):
         from models import jobs

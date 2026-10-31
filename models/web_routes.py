@@ -31,7 +31,7 @@ from functools import wraps
 
 from flask import g, jsonify, request, send_file, send_from_directory
 
-from models import auth, backups
+from models import activity, auth, backups
 from models import database as db
 
 COOKIE = "budget_session"
@@ -97,9 +97,17 @@ def _fail(message: str, status: int, error: str | None = None):
     return jsonify(body), status
 
 
+def _log(action: str, detail: str = "", user: dict | None = None) -> None:
+    """Add to the activity history; never lets a logging problem break the request."""
+    try:
+        activity.log(action, detail, user or current_user())
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️  Couldn't record activity: {e}")
+
+
 def _signed_in(user: dict, message: str = "Signed in"):
     """Response that starts a session for ``user``."""
-    token = auth.create_session(user["id"])
+    token = auth.create_session(user["id"], request.headers.get("User-Agent"), client_addr())
     resp = jsonify({"success": True, "message": message, "token": token, "user": user})
     resp.set_cookie(COOKIE, token, max_age=auth.SESSION_DAYS * 86400, httponly=True, samesite="Lax",
                     secure=request.is_secure)
@@ -176,6 +184,7 @@ def register(app, state: dict, lock) -> None:
             user = auth.create_first_admin(data.get("username", ""), data.get("password", ""))
         except ValueError as e:
             return _fail(str(e), 400)
+        _log("Created the first account", "", user)
         return _signed_in(user, "Account created")
 
     @app.route("/auth/login", methods=["POST"])
@@ -187,6 +196,7 @@ def register(app, state: dict, lock) -> None:
             auth.record_failure(client_key())
             return _fail("Wrong username or password", 401)
         auth.clear_failures(client_key())
+        _log("Signed in", auth.describe_device(request.headers.get("User-Agent")), user)
         return _signed_in(user)
 
     @app.route("/auth/logout", methods=["POST"])
@@ -217,6 +227,7 @@ def register(app, state: dict, lock) -> None:
             user = auth.register(data.get("code", ""), data.get("username", ""), data.get("password", ""))
         except ValueError as e:
             return _fail(str(e), 400)
+        _log("Joined with an invite", "as admin" if user["is_admin"] else "", user)
         return _signed_in(user, "Welcome!")
 
     @app.route("/auth/reset", methods=["POST"])
@@ -230,6 +241,7 @@ def register(app, state: dict, lock) -> None:
             user = auth.reset_password(data.get("code", ""), data.get("password", ""))
         except ValueError as e:
             return _fail(str(e), 400)
+        _log("Reset their password with a link", "", user)
         return _signed_in(user, "Password changed")
 
     @app.route("/auth/password", methods=["POST"])
@@ -256,7 +268,30 @@ def register(app, state: dict, lock) -> None:
                 auth.record_failure(client_key())
             return _fail(str(e), 400)
         auth.logout_user(user["id"], keep_token=request_token())
+        _log("Changed their password", "", user)
         return jsonify({"success": True, "message": "Password changed — your other devices were signed out"})
+
+    # Your signed-in devices
+
+    @app.route("/auth/sessions", methods=["GET"])
+    @login_required
+    def auth_sessions():
+        return jsonify({"success": True, "sessions": auth.list_sessions(current_user()["id"], request_token())})
+
+    @app.route("/auth/sessions/<session_id>", methods=["DELETE"])
+    @login_required
+    def auth_revoke_session(session_id):
+        if not auth.revoke_session(current_user()["id"], session_id):
+            return _fail("No such session", 404)
+        _log("Signed out a device")
+        return jsonify({"success": True, "message": "Signed out that device"})
+
+    @app.route("/auth/sessions/others", methods=["DELETE"])
+    @login_required
+    def auth_revoke_other_sessions():
+        auth.logout_user(current_user()["id"], keep_token=request_token())
+        _log("Signed out all other devices")
+        return jsonify({"success": True, "message": "Signed out everywhere else"})
 
     # Admin: users and invites
 
@@ -271,12 +306,14 @@ def register(app, state: dict, lock) -> None:
         data = request.get_json(silent=True) or {}
         code = auth.create_invite(current_user()["id"], bool(data.get("make_admin")),
                                   data.get("days") or auth.INVITE_DAYS)
+        _log("Created an invite link", "for an admin" if data.get("make_admin") else "")
         return jsonify({"success": True, "code": code})
 
     @app.route("/auth/invites/<int:invite_id>", methods=["DELETE"])
     @admin_required
     def auth_revoke_invite(invite_id):
         auth.revoke_invite(invite_id)
+        _log("Revoked a link")
         return jsonify({"success": True})
 
     @app.route("/auth/users/<int:user_id>", methods=["PATCH"])
@@ -288,6 +325,9 @@ def register(app, state: dict, lock) -> None:
                 auth.set_admin(user_id, bool(data["is_admin"]))
         except ValueError as e:
             return _fail(str(e), 400)
+        if "is_admin" in data:
+            target = (auth.get_user(user_id) or {}).get("username", "?")
+            _log("Made an admin" if data["is_admin"] else "Removed an admin", target)
         return jsonify({"success": True})
 
     @app.route("/auth/users/<int:user_id>", methods=["DELETE"])
@@ -295,10 +335,12 @@ def register(app, state: dict, lock) -> None:
     def auth_delete_user(user_id):
         if user_id == current_user()["id"]:
             return _fail("You can't delete your own account", 400)
+        target = (auth.get_user(user_id) or {}).get("username", "?")
         try:
             auth.delete_user(user_id)
         except ValueError as e:
             return _fail(str(e), 400)
+        _log("Deleted an account", target)
         return jsonify({"success": True})
 
     @app.route("/auth/users/<int:user_id>/reset", methods=["POST"])
@@ -310,6 +352,7 @@ def register(app, state: dict, lock) -> None:
         except ValueError as e:
             return _fail(str(e), 400)
         auth.logout_user(user_id)
+        _log("Made a password reset link", (auth.get_user(user_id) or {}).get("username", "?"))
         return jsonify({"success": True, "code": code})
 
     # ── Files ─────────────────────────────────────────────────────────
@@ -367,6 +410,8 @@ def register(app, state: dict, lock) -> None:
         finally:
             shutil.rmtree(os.path.dirname(tmp), ignore_errors=True)
         results["created_total"] = created if "error" not in results else 0
+        if created:
+            _log("Imported from Excel", f"{created} item(s) from {upload.filename}")
         results["message"] = results.get("error") or (
             f"Imported {created} items" + (f" ({len(results.get('warnings', []))} skipped or warnings)"
                                            if results.get("warnings") else ""))
@@ -394,12 +439,13 @@ def register(app, state: dict, lock) -> None:
         tmp = os.path.join(tmpdir, "restore.db")
         upload.save(tmp)
         try:
-            return _restore_from(tmp)
+            return _restore_from(tmp, f"uploaded {upload.filename}")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-    def _restore_from(path: str):
+    def _restore_from(path: str, label: str | None = None):
         """Replace the database with the backup at ``path`` (validated first)."""
+        who = current_user()
         with open(path, "rb") as f:
             if f.read(16) != SQLITE_MAGIC:
                 return jsonify({"success": False, "message": "That isn't a budget backup file"}), 400
@@ -422,6 +468,7 @@ def register(app, state: dict, lock) -> None:
             fresh = FinanceManager([], [], [])
             fresh.load_from_database()
             state["manager"] = fresh
+        _log("Restored a backup", label or "", who)
         return jsonify({"success": True, "message": "Backup restored",
                         "previous_saved_to": os.path.join(backups.backup_dir(), safety["name"])})
 
@@ -439,6 +486,7 @@ def register(app, state: dict, lock) -> None:
     def files_backup_now():
         with lock:
             info = backups.run_backup("manual")
+        _log("Backed up the database", info["name"])
         return jsonify({"success": True, "message": f"Backed up to {info['name']}", "backup": info})
 
     @app.route("/files/backups/<name>", methods=["GET"])
@@ -453,6 +501,7 @@ def register(app, state: dict, lock) -> None:
         try:
             if not backups.delete(name):
                 return _fail("No such backup", 404)
+            _log("Deleted a backup", name)
         except OSError as e:  # e.g. being downloaded right now (Windows)
             return _fail(f"Couldn't delete {name}: {e.strerror or e}", 409)
         return jsonify({"success": True, "message": f"Deleted {name}"})
@@ -467,7 +516,7 @@ def register(app, state: dict, lock) -> None:
         try:
             tmp = os.path.join(tmpdir, "restore.db")
             backups.sqlite_copy(path, tmp)
-            return _restore_from(tmp)
+            return _restore_from(tmp, name)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

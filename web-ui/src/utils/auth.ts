@@ -96,6 +96,23 @@ export const resetPassword = (code: string, password: string) =>
 export const changePassword = (currentPassword: string, newPassword: string) =>
   call('POST', '/auth/password', { current_password: currentPassword, new_password: newPassword })
 
+// Your signed-in devices
+
+export interface DeviceSession {
+  id: string
+  device: string
+  ip: string
+  created_at: string | null
+  last_seen: string | null
+  current: boolean
+}
+
+export const listSessions = () => call('GET', '/auth/sessions') as Promise<Result & { sessions?: DeviceSession[] }>
+
+export const revokeSession = (id: string) => call('DELETE', `/auth/sessions/${encodeURIComponent(id)}`)
+
+export const revokeOtherSessions = () => call('DELETE', '/auth/sessions/others')
+
 // Admin
 
 export const listUsers = () =>

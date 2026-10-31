@@ -14,6 +14,7 @@ const routes = [
   { path: '/debt-payoff', name: 'DebtPayoff', component: () => import('../views/DebtPayoffView.vue') },
   { path: '/scenarios', name: 'Scenarios', component: () => import('../views/ScenarioView.vue') },
   { path: '/reports', name: 'Reports', component: () => import('../views/ReportsView.vue') },
+  { path: '/activity', name: 'Activity', component: () => import('../views/ActivityView.vue') },
   { path: '/settings', name: 'Settings', component: () => import('../views/SettingsView.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

@@ -354,14 +354,18 @@ def reset_password(code: str, password: str) -> dict:
 
 # ── Sessions ───────────────────────────────────────────────────────────
 
-def create_session(user_id: int) -> str:
+SEEN_EVERY = timedelta(minutes=5)   # how often "last active" is written
+
+
+def create_session(user_id: int, user_agent: str | None = None, ip: str | None = None) -> str:
     token = secrets.token_urlsafe(32)
     session = db.get_session()
     try:
         now = datetime.now()
         session.query(db.AuthSessionModel).filter(db.AuthSessionModel.expires_at < now).delete()
         session.add(db.AuthSessionModel(token_hash=_sha(token), user_id=user_id,
-                                        expires_at=now + timedelta(days=SESSION_DAYS)))
+                                        expires_at=now + timedelta(days=SESSION_DAYS), last_seen=now,
+                                        user_agent=(user_agent or "")[:300], ip=(ip or "")[:64]))
         session.commit()
     finally:
         session.close()
@@ -375,9 +379,13 @@ def session_user(token: str | None) -> dict | None:
     session = db.get_session()
     try:
         row = session.query(db.AuthSessionModel).filter_by(token_hash=_sha(token)).first()
-        if row is None or row.user_id is None or row.expires_at <= datetime.now():
+        now = datetime.now()
+        if row is None or row.user_id is None or row.expires_at <= now:
             return None
         user = session.get(db.UserModel, row.user_id)
+        if user and (row.last_seen is None or now - row.last_seen >= SEEN_EVERY):
+            row.last_seen = now
+            session.commit()
         return _user_dict(user) if user else None
     finally:
         session.close()
@@ -403,6 +411,58 @@ def logout_user(user_id: int, keep_token: str | None = None) -> None:
             q = q.filter(db.AuthSessionModel.token_hash != _sha(keep_token))
         q.delete()
         session.commit()
+    finally:
+        session.close()
+
+
+def describe_device(user_agent: str | None) -> str:
+    """ "Chrome on Windows", "Safari on iPhone", "curl"... from a User-Agent string."""
+    ua = user_agent or ""
+    if not ua:
+        return "Unknown device"
+    low = ua.lower()
+    if "curl/" in low or "python" in low or "wget" in low:
+        return ua.split(" ")[0]
+    browser = next((name for key, name in (("edg/", "Edge"), ("opr/", "Opera"), ("firefox/", "Firefox"),
+                                           ("fxios", "Firefox"), ("crios", "Chrome"), ("chrome/", "Chrome"),
+                                           ("safari/", "Safari")) if key in low), None)
+    if browser is None:  # an app or script: show its own name
+        return ua.split(" ")[0][:40]
+    system = next((name for key, name in (("iphone", "iPhone"), ("ipad", "iPad"), ("android", "Android"),
+                                          ("windows", "Windows"), ("mac os", "Mac"), ("cros", "ChromeOS"),
+                                          ("linux", "Linux")) if key in low), "")
+    return f"{browser} on {system}" if system else browser
+
+
+def list_sessions(user_id: int, current_token: str | None = None) -> list[dict]:
+    """A user's signed-in devices, most recently active first."""
+    current = _sha(current_token) if current_token else None
+    session = db.get_session()
+    try:
+        rows = (session.query(db.AuthSessionModel)
+                .filter(db.AuthSessionModel.user_id == user_id, db.AuthSessionModel.expires_at > datetime.now())
+                .all())
+        out = [{"id": r.token_hash[:16], "device": describe_device(r.user_agent), "ip": r.ip or "",
+                "created_at": db.to_local(r.created_at).isoformat(timespec="seconds") if r.created_at else None,
+                "last_seen": r.last_seen.isoformat(timespec="seconds") if r.last_seen else None,
+                "current": r.token_hash == current} for r in rows]
+        return sorted(out, key=lambda d: (d["current"], d["last_seen"] or ""), reverse=True)
+    finally:
+        session.close()
+
+
+def revoke_session(user_id: int, session_id: str) -> bool:
+    """Sign out one of the user's devices by its id (the first 16 characters of the token hash)."""
+    if not re.fullmatch(r"[0-9a-f]{16}", session_id or ""):
+        return False
+    session = db.get_session()
+    try:
+        n = (session.query(db.AuthSessionModel)
+             .filter(db.AuthSessionModel.user_id == user_id,
+                     db.AuthSessionModel.token_hash.like(session_id + "%"))
+             .delete(synchronize_session=False))
+        session.commit()
+        return n > 0
     finally:
         session.close()
 

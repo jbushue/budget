@@ -33,6 +33,8 @@
       <span v-if="next && confirmPw && next !== confirmPw" class="negative" style="font-size:0.85rem">Passwords don't match</span>
       <span v-if="message" :class="ok ? 'positive' : 'negative'" style="font-size:0.85rem">{{ message }}</span>
     </div>
+
+    <SignedInDevices />
   </div>
 
   <UsersAdmin v-if="authState.user?.is_admin" />
@@ -42,6 +44,7 @@
 import { ref } from 'vue'
 import { authState, changePassword, checkAuth, logout } from '../utils/auth'
 import UsersAdmin from './UsersAdmin.vue'
+import SignedInDevices from './SignedInDevices.vue'
 
 const current = ref('')
 const next = ref('')

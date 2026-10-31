@@ -8,7 +8,9 @@
       While the app is running it checks every couple of minutes for work: rolling bill periods over and recording net
       worth each day, the daily backup, SimpleFIN sync, the email digest and phone notifications.
     </p>
-    <div v-if="!rows.length" class="help">Nothing has run since the server started.</div>
+    <div v-if="!rows.length" class="help">
+      Nothing has needed doing since the server started — today's upkeep and backup may already be done.
+    </div>
     <div v-else class="table-wrap">
       <table>
         <thead><tr><th>Job</th><th>Last run</th><th>Result</th></tr></thead>

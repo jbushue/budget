@@ -592,6 +592,12 @@ export const GET_JOB_STATUS = gql`
   query GetJobStatus { jobStatus }
 `
 
+export const GET_ACTIVITY = gql`
+  query GetActivity($limit: Int, $beforeId: Int, $username: String) {
+    activity(limit: $limit, beforeId: $beforeId, username: $username)
+  }
+`
+
 export const GET_DASHBOARD_SUMMARY = gql`
   query GetDashboardSummary {
     dashboardSummary {

@@ -23,7 +23,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from models.graphql_schema import schema
 from models.finance_manager import FinanceManager
-from models import auth, jobs, web_routes
+from models import activity, auth, jobs, web_routes
 
 
 def create_app():
@@ -105,6 +105,7 @@ def create_app():
         data = request.get_json(silent=True) or {}
         query = data.get('query')
         variables = data.get('variables')
+        operation_name = data.get('operationName')
 
         if not query:
             return jsonify({'errors': [{'message': 'No query provided'}]}), 400
@@ -115,8 +116,15 @@ def create_app():
                 result = schema.execute(
                     query,
                     variable_values=variables,
+                    operation_name=operation_name,
                     context_value={'manager': state['manager']}
                 )
+            if result.data and not result.errors and 'mutation' in query:
+                try:
+                    activity.record_mutations(query, variables, operation_name, result.data,
+                                              web_routes.current_user())
+                except Exception as e:  # history must never break a change that succeeded
+                    print(f"⚠️  Couldn't record activity: {e}")
 
             response = {}
             if result.data:
