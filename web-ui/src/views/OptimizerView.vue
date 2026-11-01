@@ -17,6 +17,67 @@
       </div>
     </div>
 
+    <!-- What the optimizer aims for -->
+    <div class="goal-bar">
+      <span class="goal-label">Aim for</span>
+      <div class="segmented" role="radiogroup" aria-label="Optimizer goal">
+        <button v-for="g in GOALS" :key="g.key" role="radio" :aria-checked="goal === g.key"
+                :class="{ active: goal === g.key }" :disabled="g.key === 'payoff_credit_account' && !targets.length"
+                :title="g.key === 'payoff_credit_account' && !targets.length ? 'No card has a balance' : g.hint"
+                @click="setGoal(g.key)">
+          <Icon :name="g.icon" :size="15" /> {{ g.label }}
+        </button>
+      </div>
+      <select v-if="goal === 'payoff_credit_account'" v-model="target" style="width:auto" aria-label="Card to pay off">
+        <option v-for="t in targets" :key="t" :value="t">{{ t }}</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="compareOpen = !compareOpen">
+        <Icon name="chart" :size="15" /> {{ compareOpen ? 'Hide comparison' : 'Compare goals' }}
+      </button>
+    </div>
+
+    <!-- Each goal's plan side by side -->
+    <div v-if="compareOpen" class="card" style="margin-bottom:1.5rem">
+      <div class="card-header">
+        <span class="card-title">How each goal plays out over {{ days }} days</span>
+      </div>
+      <div v-if="cmpLoading" class="loading">Running the optimizer once per goal...</div>
+      <div v-else-if="cmpError" class="callout danger">{{ cmpError.message }}</div>
+      <div v-else class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Goal</th>
+              <th style="text-align:right">Cash at the end</th>
+              <th style="text-align:right">Interest paid</th>
+              <th style="text-align:right">Interest earned</th>
+              <th style="text-align:right">Fees</th>
+              <th style="text-align:right">Extra to card</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="sgy in strategies" :key="sgy.goal" :class="{ 'row-current': sgy.goal === goal }">
+              <td style="font-weight:550">{{ sgy.label }}</td>
+              <td style="text-align:right" :class="{ best: sgy.finalCash === bestCash }">{{ currency(sgy.finalCash) }}</td>
+              <td style="text-align:right" :class="{ best: sgy.interestPaid === leastInterest }">{{ currency(sgy.interestPaid) }}</td>
+              <td style="text-align:right">{{ currency(sgy.interestEarned) }}</td>
+              <td style="text-align:right">{{ currency(sgy.fees) }}</td>
+              <td style="text-align:right">{{ sgy.extraTotal ? currency(sgy.extraTotal) : '—' }}</td>
+              <td style="text-align:right">
+                <button v-if="sgy.goal !== goal" class="btn btn-outline btn-sm" @click="setGoal(sgy.goal)">Use</button>
+                <span v-else class="badge badge-info">In use</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="muted" style="font-size:0.8rem;margin:0.6rem 0 0">
+          “Pay off a card” sends spare cash to {{ target || 'the chosen card' }} after each paycheck.
+          <template v-if="!targets.length">It's unavailable because no card has a balance.</template>
+        </p>
+      </div>
+    </div>
+
     <div v-if="loading" class="loading">Analyzing your payment plan...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
@@ -287,20 +348,64 @@
 
 <script setup lang="ts">
 import Icon from '../components/Icon.vue'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { GET_PAYMENT_INSIGHTS, GET_PAYMENT_PLAN } from '../graphql/queries'
+import { COMPARE_STRATEGIES, GET_STRATEGY_TARGETS } from '../graphql/tools'
 import { currency, fmtDate, fmtDateShort, pct, billName } from '../utils/format'
 import InsightList from '../components/InsightList.vue'
 import type { BillTiming, GroupPayoff, OutcomeSummary, PaymentInsights, PaymentPlan } from '../types'
+
+interface Strategy {
+  goal: string; label: string; finalCash: number; interestPaid: number; interestEarned: number
+  fees: number; problems: number; extraTotal: number
+}
 
 const days = ref(90)
 const violationsOpen = ref(false)
 const attentionOnly = ref(false)
 
+// ── Goal (remembered on this device) ──────────────────────────────────
+const GOALS = [
+  { key: 'maximize_discretionary', label: 'Most cash', icon: 'banknote', hint: 'Keep as much cash on hand as possible' },
+  { key: 'minimize_interest', label: 'Least interest', icon: 'trendingDown', hint: 'Pay interest-bearing debt as early as it makes sense' },
+  { key: 'payoff_credit_account', label: 'Pay off a card', icon: 'card', hint: 'Send spare cash to one card after each paycheck' },
+]
+const GOAL_KEY = 'budget-optimizer-goal'
+const saved = JSON.parse(localStorage.getItem(GOAL_KEY) || '{}')
+const goal = ref<string>(saved.goal || 'maximize_discretionary')
+const target = ref<string>(saved.target || '')
+const compareOpen = ref(false)
+
+const { result: targetsResult } = useQuery<{ strategyTargets: string[] }>(GET_STRATEGY_TARGETS)
+const targets = computed(() => targetsResult.value?.strategyTargets ?? [])
+watch(targets, list => {
+  if (!list.includes(target.value)) target.value = list[0] ?? ''
+  if (goal.value === 'payoff_credit_account' && !list.length) goal.value = 'maximize_discretionary'
+}, { immediate: true })
+watch([goal, target], () => localStorage.setItem(GOAL_KEY, JSON.stringify({ goal: goal.value, target: target.value })))
+
+function setGoal(key: string) {
+  goal.value = key
+}
+
+const insightVars = computed(() => ({
+  days: days.value,
+  strategy: goal.value === 'payoff_credit_account' && !target.value ? 'maximize_discretionary' : goal.value,
+  targetAccount: goal.value === 'payoff_credit_account' ? target.value : null,
+}))
+
 const { result, loading, error, refetch } = useQuery<{ paymentInsights: PaymentInsights }>(
-  GET_PAYMENT_INSIGHTS, () => ({ variables: { days: days.value } })
+  GET_PAYMENT_INSIGHTS, () => ({ variables: insightVars.value })
 )
+
+const { result: cmpResult, loading: cmpLoading, error: cmpError } = useQuery<{ compareStrategies: Strategy[] }>(
+  COMPARE_STRATEGIES,
+  () => ({ variables: { days: days.value, targetAccount: target.value || null }, enabled: compareOpen.value }),
+)
+const strategies = computed(() => cmpResult.value?.compareStrategies ?? [])
+const bestCash = computed(() => Math.max(...strategies.value.map(x => x.finalCash)))
+const leastInterest = computed(() => Math.min(...strategies.value.map(x => x.interestPaid)))
 const { result: planResult, refetch: refetchPlan } = useQuery<{ paymentPlan: PaymentPlan }>(
   GET_PAYMENT_PLAN, () => ({ variables: { days: days.value } })
 )
@@ -463,6 +568,10 @@ function eventBadgeClass(type: string): string {
 </script>
 
 <style scoped>
+.goal-bar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin: -0.5rem 0 1.25rem; }
+.goal-label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+.row-current td { background: var(--primary-light); }
+td.best { color: var(--success-text); font-weight: 650; }
 .cell-note { font-size: 0.72rem; color: var(--text-muted); }
 .move-title { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; font-size: 0.9rem; }
 </style>

@@ -243,8 +243,11 @@ def describe_outcome_change(base: dict, other: dict, base_label: str, other_labe
 class PaymentInsightsAnalyzer:
     """Builds the payment insights for a FinanceManager's current state."""
 
-    def __init__(self, manager, start_date: date | None = None, days: int = 90):
+    def __init__(self, manager, start_date: date | None = None, days: int = 90,
+                 goal: str = "maximize_discretionary", target_account: str | None = None):
         self.manager = manager
+        self.goal = goal or "maximize_discretionary"
+        self.target_account = target_account or None
         self.start = start_date or date.today()
         self.days = max(7, int(days))
         self.end = self.start + timedelta(days=self.days)
@@ -260,7 +263,8 @@ class PaymentInsightsAnalyzer:
         banks2, income2, bills2, groups2 = deepcopy((m.banks, m.income_sources, m.bills, m.bill_groups))
         optimizer = PaymentOptimizer(banks2, income2, bills2, groups2, **m.sim_options())
         optimized, plan = optimizer.run_optimized_simulation(
-            self.start, self.end, discretionary_buffer=max(300.0, getattr(m, "cushion", 0.0)),
+            self.start, self.end, self.goal, self.target_account,
+            discretionary_buffer=max(300.0, getattr(m, "cushion", 0.0)),
             min_hold_days=getattr(m, "min_hold_days", 7))
 
         base_sum = summarize_simulation(baseline, m.banks)

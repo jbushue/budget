@@ -5,7 +5,9 @@
         <h2>Accounts</h2>
         <p class="view-sub">Your banks, cards and loans, and what each one holds or owes.</p>
       </div>
-      <div style="display:flex;gap:0.5rem">
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button v-if="banks.length" class="btn btn-outline" title="Type in today's balance for every account at once" @click="showCheckIn = true"><Icon name="pencil" :size="15" /> Update balances</button>
+        <button v-if="banks.some(b => b.bankAccounts.length)" class="btn btn-outline" @click="showTransfer = true"><Icon name="repeat" :size="15" /> Move money</button>
         <button class="btn btn-outline" @click="showBankModal = true"><Icon name="plus" :size="16" /> Bank</button>
         <button class="btn btn-primary" @click="showAccountModal = true"><Icon name="plus" :size="16" /> Account</button>
       </div>
@@ -177,6 +179,8 @@
                     <div class="row-actions">
                       <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, m.accountName, m.currentPrincipal, 'mortgage')">Update</button>
                       <RowMenu :items="[
+                        { label: 'Payoff & schedule', icon: 'calendar', action: () => openMortgage(bank.name, m.accountName) },
+                        { label: 'Pay extra principal', icon: 'trendingDown', action: () => openMortgage(bank.name, m.accountName, 'pay') },
                         { label: 'Edit details', icon: 'pencil', action: () => openEdit(bank.name, 'mortgage', m) },
                         { label: 'Balance history', icon: 'history', action: () => openHistory(bank.name, m.accountName, 'mortgage') },
                         { label: 'SimpleFIN transactions', icon: 'transactions', hidden: !isSynced(bank.name, m.accountName), action: () => openTransactions(bank.name, m.accountName) },
@@ -653,8 +657,13 @@
                 </td>
                 <td style="font-size:0.8rem">{{ fmtDate(p.endDate) }}</td>
                 <td style="text-align:right;white-space:nowrap">
-                  <button class="btn btn-outline btn-sm" @click="openEditPromo(p)" style="margin-right:0.25rem">Edit</button>
-                  <button class="btn btn-danger btn-sm" @click="removePromo(p.promoName)">Del</button>
+                  <button v-if="p.promoBalance > 0" class="btn btn-outline btn-sm" @click="openPromoMoney('pay', p)">Pay</button>
+                  <RowMenu :items="[
+                    { label: 'Add a purchase', icon: 'plus', disabled: !p.isActive, action: () => openPromoMoney('purchase', p) },
+                    { label: 'Pay down', icon: 'banknote', disabled: p.promoBalance <= 0, action: () => openPromoMoney('pay', p) },
+                    { label: 'Edit offer', icon: 'pencil', action: () => openEditPromo(p) },
+                    { label: 'Remove offer', icon: 'trash', danger: true, divider: true, action: () => removePromo(p.promoName) },
+                  ]" />
                 </td>
               </tr>
             </tbody>
@@ -700,13 +709,27 @@
         </div>
       </div>
     </div>
+
+    <TransferDialog :open="showTransfer" :banks="banks" @close="showTransfer = false" @done="refetch()" />
+    <BalanceCheckIn :open="showCheckIn" :banks="banks" @close="showCheckIn = false" @done="refetch()" />
+    <MortgageTools :open="!!mortgageTarget" :bank-name="mortgageTarget?.bank ?? ''" :account-name="mortgageTarget?.account ?? ''"
+                   :initial-tab="mortgageTarget?.tab" :banks="banks" @close="mortgageTarget = null" @done="refetch()" />
+    <PromoMoneyDialog :open="!!promoMoney" :mode="promoMoney?.mode ?? 'pay'" :bank-name="promoTarget.bankName"
+                      :account-name="promoTarget.accountName" :promo-name="promoMoney?.promo.promoName ?? ''"
+                      :promo-balance="promoMoney?.promo.promoBalance ?? 0" :banks="banks"
+                      @close="promoMoney = null" @done="refetch()" />
   </div>
 </template>
 
 <script setup lang="ts">
+import TransferDialog from '../components/TransferDialog.vue'
+import BalanceCheckIn from '../components/BalanceCheckIn.vue'
+import MortgageTools from '../components/MortgageTools.vue'
+import PromoMoneyDialog from '../components/PromoMoneyDialog.vue'
+import { useRoute, useRouter } from 'vue-router'
 import RowMenu from '../components/RowMenu.vue'
 import Icon from '../components/Icon.vue'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {
   GET_ALL_BANKS, CREATE_BANK, CREATE_ACCOUNT,
@@ -1102,6 +1125,35 @@ const newPromo = ref({
   startDate: '',
   endDate: '',
 })
+
+// ── Money moves (transfers, balance check-in, mortgage tools, promo purchases/payments)
+const showTransfer = ref(false)
+const showCheckIn = ref(false)
+const mortgageTarget = ref<{ bank: string; account: string; tab?: string } | null>(null)
+function openMortgage(bank: string, account: string, tab?: string) {
+  mortgageTarget.value = { bank, account, tab }
+}
+const promoMoney = ref<{ mode: 'purchase' | 'pay'; promo: PromoOffer } | null>(null)
+function openPromoMoney(mode: 'purchase' | 'pay', promo: PromoOffer) {
+  promoMoney.value = { mode, promo }
+}
+// Keep the open promo list in step with fresh data after a purchase or payment
+watch(banks, list => {
+  if (!showPromosModal.value) return
+  const cc = list.find(b => b.name === promoTarget.value.bankName)?.creditAccounts
+    .find(c => c.accountName === promoTarget.value.accountName)
+  if (cc) Object.assign(promoTarget.value, { balance: cc.balance, regularBalance: cc.regularBalance, promos: cc.promoOffers ?? [] })
+})
+
+// Open a dialog from a link elsewhere (e.g. the command palette): /accounts?action=transfer
+const route = useRoute()
+const router = useRouter()
+watch(() => route.query.action, action => {
+  if (action === 'transfer') showTransfer.value = true
+  else if (action === 'balances') showCheckIn.value = true
+  else return
+  router.replace({ query: { ...route.query, action: undefined } })
+}, { immediate: true })
 
 function openPromos(bankName: string, cc: CreditAccount) {
   promoTarget.value = {

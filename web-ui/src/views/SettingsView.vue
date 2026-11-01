@@ -193,6 +193,7 @@
       <div v-if="dbMessage" style="margin-top:0.75rem;font-size:0.85rem" :class="dbSuccess ? 'positive' : 'negative'">
         {{ dbMessage }}
       </div>
+      <DatabaseInfo />
     </div>
 
     <!-- Server status -->
@@ -214,6 +215,7 @@
 </template>
 
 <script setup lang="ts">
+import DatabaseInfo from '../components/DatabaseInfo.vue'
 import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {

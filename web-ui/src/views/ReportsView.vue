@@ -105,6 +105,8 @@
 
       <YearReview v-if="hasTransactions" style="margin-top:1.5rem" />
     </template>
+
+    <ReportDownloads style="margin-top:1.5rem" />
   </div>
 </template>
 
@@ -120,6 +122,7 @@ import {
 } from 'chart.js'
 import { GET_SPENDING_REPORT } from '../graphql/ledger'
 import YearReview from '../components/YearReview.vue'
+import ReportDownloads from '../components/ReportDownloads.vue'
 import { GET_NET_WORTH_HISTORY } from '../graphql/queries'
 import { currency, fmtDate } from '../utils/format'
 import type { NetWorthSnapshot, SpendingMonth, SpendingReport } from '../types'

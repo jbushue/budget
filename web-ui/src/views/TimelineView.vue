@@ -13,6 +13,7 @@
           <option :value="180">6 months</option>
           <option :value="365">1 year</option>
         </select>
+        <RowMenu text="Download" icon="download" :items="downloadItems" />
         <button class="btn btn-outline" @click="refetch()"><Icon name="refresh" :size="15" /> Refresh</button>
       </div>
     </div>
@@ -128,17 +129,76 @@
         </div>
       </div>
 
-      <!-- Financial Calendar -->
+      <!-- Financial Calendar / event list / month by month -->
       <div class="card">
-        <div class="card-header">
-          <span class="card-title">Financial calendar</span>
-          <div style="display:flex;align-items:center;gap:0.5rem">
+        <div class="card-header" style="flex-wrap:wrap;gap:0.75rem">
+          <div class="segmented" role="tablist" aria-label="View">
+            <button v-for="v in VIEWS" :key="v.key" role="tab" :aria-selected="calView === v.key" :class="{ active: calView === v.key }" @click="calView = v.key">
+              <Icon :name="v.icon" :size="15" /> {{ v.label }}
+            </button>
+          </div>
+          <div v-if="calView === 'list'" class="chip-group" style="margin:0">
+            <button v-for="f in FILTERS" :key="f.key" class="chip" :class="{ selected: listFilter === f.key }" @click="listFilter = f.key">{{ f.label }}</button>
+          </div>
+          <div v-if="calView === 'calendar'" style="display:flex;align-items:center;gap:0.5rem">
             <button class="btn btn-outline btn-sm btn-icon" aria-label="Previous month" @click="prevMonth"><Icon name="chevronLeft" :size="16" /></button>
             <span style="font-weight:700;min-width:140px;text-align:center">{{ calendarMonthLabel }}</span>
             <button class="btn btn-outline btn-sm btn-icon" aria-label="Next month" @click="nextMonth"><Icon name="chevronRight" :size="16" /></button>
           </div>
         </div>
 
+        <!-- Every event, filterable -->
+        <div v-if="calView === 'list'">
+          <div v-if="!listGroups.length" class="empty-state"><p>Nothing in this period.</p></div>
+          <div v-for="g in listGroups" :key="g.date" class="ev-day">
+            <div class="ev-date">
+              <strong>{{ fmtDayShort(g.date) }}</strong>
+              <span>{{ currency(g.endCash) }} in checking &amp; savings after</span>
+            </div>
+            <div v-for="(e, i) in g.events" :key="i" class="ev-row" :class="eventClass(e)">
+              <span class="ev-icon"><Icon :name="eventIcon(e.eventType)" :size="15" /></span>
+              <span class="ev-desc">
+                {{ billName(e.description) }}
+                <small>{{ eventTypeLabel(e.eventType) }}<template v-if="e.sourceAccount"> · {{ e.sourceAccount }}</template><template v-if="e.status === 'deferred'"> · can't be paid yet</template></small>
+              </span>
+              <span class="ev-amt" :class="e.eventType === 'INCOME' ? 'positive' : ''">{{ e.eventType === 'INCOME' ? '+' : '' }}{{ currency(Math.abs(e.amount)) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Month by month -->
+        <div v-else-if="calView === 'months'">
+          <div v-if="monthsLoading && !months.length" class="loading">Adding up each month...</div>
+          <div v-else class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th style="text-align:right">Income</th>
+                  <th style="text-align:right">Bills &amp; payments</th>
+                  <th style="text-align:right">Everyday</th>
+                  <th style="text-align:right">Net</th>
+                  <th style="text-align:right">Cash at end</th>
+                  <th style="text-align:right">Debt at end</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="m in months" :key="m.month">
+                  <td style="font-weight:550">{{ monthLabel(m.month) }}</td>
+                  <td style="text-align:right" class="positive">{{ currency(m.income) }}</td>
+                  <td style="text-align:right">{{ currency(m.payments) }}</td>
+                  <td style="text-align:right">{{ currency(m.spending) }}</td>
+                  <td style="text-align:right;font-weight:600" :class="m.net >= 0 ? 'positive' : 'negative'">{{ m.net >= 0 ? '+' : '' }}{{ currency(m.net) }}</td>
+                  <td style="text-align:right">{{ currency(m.endCash) }}</td>
+                  <td style="text-align:right">{{ currency(m.endDebt) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="muted" style="font-size:0.8rem;margin:0.6rem 0 0">Months at the edges are partial. Fees and interest are included in the net.</p>
+          </div>
+        </div>
+
+        <template v-else>
         <!-- Day-of-week headers -->
         <div class="cal-grid">
           <div v-for="dow in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="dow" class="cal-header">{{ dow }}</div>
@@ -276,12 +336,15 @@
         <div v-else-if="calendarDaysMap.size > 0" class="cal-hint">
           Click on a day with events to see payment details and expected balances.
         </div>
+        </template>
       </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
+import RowMenu from '../components/RowMenu.vue'
+import { GET_MONTHLY_PROJECTION } from '../graphql/tools'
 import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
@@ -305,6 +368,71 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const days = ref(90)
 const showPerAccount = ref(true)
+
+// ── Calendar / list / month-by-month
+const VIEWS = [
+  { key: 'calendar', label: 'Calendar', icon: 'calendar' },
+  { key: 'list', label: 'List', icon: 'menu' },
+  { key: 'months', label: 'By month', icon: 'chart' },
+]
+const FILTERS = [
+  { key: 'all', label: 'Everything' },
+  { key: 'income', label: 'Income' },
+  { key: 'bills', label: 'Bills' },
+  { key: 'debt', label: 'Cards & loans' },
+  { key: 'moves', label: 'Transfers' },
+]
+const calView = ref<string>(localStorage.getItem('budget-timeline-view') || 'calendar')
+watch(calView, v => localStorage.setItem('budget-timeline-view', v))
+const listFilter = ref('all')
+
+function eventKind(t: string): string {
+  if (t === 'INCOME') return 'income'
+  if (isTransferType(t)) return 'moves'
+  if (/CREDIT|MORTGAGE|HELOC|PROMO|BILL_GROUP/.test(t)) return 'debt'
+  if (t.startsWith('BILL')) return 'bills'
+  return 'other'
+}
+function eventTypeLabel(t: string): string {
+  const labels: Record<string, string> = {
+    INCOME: 'Income', BILL_PAYMENT: 'Bill', BILL_DEFERRED: 'Bill', CREDIT_PAYMENT: 'Card payment',
+    MORTGAGE_PAYMENT: 'Mortgage', HELOC_PAYMENT: 'HELOC payment', BILL_GROUP_PAYMENT: 'Loan group',
+    EXTRA_CREDIT_PAYMENT: 'Extra card payment', PROMO_PAYOFF: 'Promo payoff', SAVINGS_SWEEP: 'To savings',
+    SAVINGS_RECALL: 'From savings', HELOC_PARK: 'Parked in HELOC', HELOC_RECALL: 'Back from HELOC',
+    INTEREST: 'Interest', FEE: 'Fee', EVERYDAY_SPENDING: 'Everyday spending',
+  }
+  return labels[t] ?? t.replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase())
+}
+const listGroups = computed(() => (proj.value?.calendarDays ?? [])
+  .map(d => ({
+    date: d.date,
+    endCash: d.total,
+    events: d.events.filter(e => e.eventType !== 'EVERYDAY_SPENDING'
+      && (listFilter.value === 'all' || eventKind(e.eventType) === listFilter.value)),
+  }))
+  .filter(g => g.events.length))
+function fmtDayShort(iso: string) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+function monthLabel(key: string) {
+  return new Date(key + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+}
+
+interface MonthRow { month: string; income: number; payments: number; spending: number; interest: number; fees: number; net: number; endCash: number; endDebt: number }
+const { result: monthsResult, loading: monthsLoading } = useQuery<{ monthlyProjection: MonthRow[] }>(GET_MONTHLY_PROJECTION,
+  () => ({ variables: { days: Math.max(days.value, 60) }, enabled: calView.value === 'months' }))
+const months = computed(() => monthsResult.value?.monthlyProjection ?? [])
+
+// ── Downloads
+function go(url: string) { window.location.href = url }
+const downloadItems = computed(() => [
+  { heading: 'This projection', label: 'Every event (CSV)', icon: 'file', action: () => go(`/files/reports/timeline.csv?days=${days.value}`) },
+  { label: 'Every event (Excel)', icon: 'file', action: () => go(`/files/reports/timeline.xlsx?days=${days.value}`) },
+  { label: 'Month by month (Excel)', icon: 'chart', action: () => go(`/files/reports/monthly.xlsx?days=${Math.max(days.value, 60)}`) },
+  { label: 'Daily balances (Excel)', icon: 'accounts', action: () => go(`/files/reports/balances.xlsx?days=${days.value}`) },
+  { label: 'Bills & paydays (calendar file)', icon: 'calendar', divider: true, action: () => go('/files/calendar.ics') },
+  { label: 'Print or save as PDF', icon: 'printer', action: () => window.print() },
+])
 const { result, loading, error, refetch } = useQuery<{ projection: Projection }>(GET_PROJECTION, () => ({ variables: { days: days.value } }))
 
 const proj = computed(() => result.value?.projection)
@@ -752,6 +880,20 @@ watch([calendarMonth, calendarYear], () => {
 </script>
 
 <style scoped>
+/* ── Event list ─────────────────────────────────────────────────── */
+.ev-day + .ev-day { margin-top: 0.9rem; }
+.ev-date { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;
+  font-size: 0.82rem; padding: 0 0.25rem 0.35rem; border-bottom: 1px solid var(--border); margin-bottom: 0.25rem; }
+.ev-date span { color: var(--text-light); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.ev-row { display: flex; align-items: center; gap: 0.65rem; padding: 0.4rem 0.25rem; border-radius: 6px; }
+.ev-row:hover { background: var(--surface-hover); }
+.ev-icon { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-alt); color: var(--text-muted); }
+.ev-row.event-income .ev-icon { background: var(--success-light); color: var(--success-text); }
+.ev-row.event-transfer .ev-icon { background: var(--primary-light); color: var(--primary); }
+.ev-row.event-deferred .ev-icon { background: var(--danger-light); color: var(--danger-text); }
+.ev-desc { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 0.88rem; font-weight: 500; line-height: 1.3; }
+.ev-desc small { color: var(--text-muted); font-weight: 400; font-size: 0.75rem; }
+.ev-amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* ── Calendar Grid ──────────────────────────────────────────────── */
 .cal-grid {
   display: grid;

@@ -57,6 +57,10 @@ class FinanceCLI:
     #  DASHBOARD & OVERVIEW
     # ─────────────────────────────────────────────────────────────────────────
 
+    def view_snapshot(self):
+        """Print the current financial snapshot."""
+        print(self.manager.generate_snapshot())
+
     def dashboard_menu(self):
         """Dashboard hub – at-a-glance views and quick actions."""
         while True:

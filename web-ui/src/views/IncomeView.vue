@@ -67,7 +67,7 @@
                 <td style="font-size:0.8rem;color:var(--text-muted)">
                   <template v-if="parseDist(inc.distribution)">
                     <div v-for="(val, acct) in parseDist(inc.distribution)" :key="acct">
-                      <strong>{{ acct }}:</strong> {{ val === null ? 'remainder' : currency(val as number) }}
+                      <strong>{{ acct }}:</strong> {{ distLabel(inc, String(acct), val as number | null) }}
                     </div>
                   </template>
                   <span v-else>Primary account</span>
@@ -141,9 +141,14 @@
     <!-- Edit Distribution Modal -->
     <div v-if="showDistModal" class="modal-overlay" @click.self="showDistModal = false">
       <div class="modal" style="max-width:560px">
-        <h3>Edit distribution: {{ distForm.sourceName }}</h3>
+        <h3>Split “{{ distForm.sourceName }}” between accounts</h3>
+        <div class="segmented" style="margin-bottom:0.75rem" role="radiogroup" aria-label="Split by">
+          <button :class="{ active: distForm.mode === 'fixed' }" role="radio" :aria-checked="distForm.mode === 'fixed'" @click="setDistMode('fixed')">Dollar amounts</button>
+          <button :class="{ active: distForm.mode === 'percent' }" role="radio" :aria-checked="distForm.mode === 'percent'" @click="setDistMode('percent')">Percentages</button>
+        </div>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
-          Assign fixed amounts to checking/savings accounts. At most one account can receive the "remainder" (leave its amount blank).
+          {{ distForm.mode === 'fixed' ? 'Send a set amount' : 'Send a share of each paycheck' }} to each account.
+          Leave one account blank to get whatever is left.
         </p>
         <div v-for="(entry, idx) in distForm.entries" :key="idx" style="display:flex;gap:0.5rem;margin-bottom:0.5rem;align-items:center">
           <select v-model="entry.bank" style="flex:1" @change="entry.account = ''">
@@ -154,13 +159,18 @@
             <option value="">Select account...</option>
             <option v-for="acc in depositAccountsForBank(entry.bank)" :key="acc.name" :value="acc.name">{{ acc.name }} ({{ acc.type }})</option>
           </select>
-          <input v-model.number="entry.amount" type="number" step="0.01" placeholder="Amt (blank=rest)" style="flex:0.8" />
+          <div class="amt-wrap" style="flex:0.8">
+            <input v-model.number="entry.amount" type="number" :step="distForm.mode === 'percent' ? 1 : 0.01" min="0"
+                   :max="distForm.mode === 'percent' ? 100 : undefined" :placeholder="distForm.mode === 'percent' ? '% (blank = rest)' : 'Amount (blank = rest)'" />
+            <span v-if="distForm.mode === 'percent'" class="amt-suffix">%</span>
+          </div>
           <button class="btn btn-danger btn-sm" @click="distForm.entries.splice(idx, 1)" style="padding:0.3rem 0.5rem">&times;</button>
         </div>
+        <p v-if="distPreview" class="muted" style="font-size:0.82rem;margin:0.25rem 0 0.75rem">{{ distPreview }}</p>
         <button class="btn btn-outline btn-sm" @click="distForm.entries.push({ bank: '', account: '', amount: null })" style="margin-bottom:1rem"><Icon name="plus" :size="16" /> Add account</button>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showDistModal = false">Cancel</button>
-          <button class="btn btn-primary" @click="saveDist">Save distribution</button>
+          <button class="btn btn-primary" @click="saveDist">Save split</button>
         </div>
       </div>
     </div>
@@ -168,6 +178,7 @@
 </template>
 
 <script setup lang="ts">
+import { onRouteAction } from '../utils/routeAction'
 import RowMenu from '../components/RowMenu.vue'
 import Icon from '../components/Icon.vue'
 import { ref, computed } from 'vue'
@@ -233,6 +244,8 @@ function openCreate() {
   showModal.value = true
 }
 
+onRouteAction({ add: () => openCreate() })
+
 function openEdit(inc: IncomeItem) {
   editMode.value = true
   form.value = {
@@ -285,12 +298,50 @@ async function deleteIncome(name: string) {
 
 // ── Edit Distribution
 const showDistModal = ref(false)
-const distForm = ref<{ sourceName: string; entries: { bank: string; account: string; amount: number | null }[] }>({ sourceName: '', entries: [] })
+const distForm = ref<{ sourceName: string; paycheck: number; mode: 'fixed' | 'percent'; entries: { bank: string; account: string; amount: number | null }[] }>({ sourceName: '', paycheck: 0, mode: 'fixed', entries: [] })
+
+/** The saved split with each entry's type ("percentage" values are stored as 0–1). */
+function distDetail(inc: IncomeItem): Record<string, { value: number | null; type: string }> | null {
+  const raw = inc.distributionDetail
+  if (!raw) return null
+  try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return null }
+}
+
+function distLabel(inc: IncomeItem, account: string, val: number | null) {
+  if (val === null) return 'the rest'
+  if (distDetail(inc)?.[account]?.type === 'percentage') return `${Math.round(val * 1000) / 10}% (${currency(inc.amount * val)})`
+  return currency(val)
+}
+
+function setDistMode(mode: 'fixed' | 'percent') {
+  if (distForm.value.mode === mode) return
+  const pay = distForm.value.paycheck || 1
+  for (const e of distForm.value.entries) {
+    if (e.amount == null || (e.amount as unknown) === '') continue
+    e.amount = mode === 'percent' ? Math.round((e.amount / pay) * 1000) / 10 : Math.round(pay * e.amount) / 100
+  }
+  distForm.value.mode = mode
+}
+
+const distPreview = computed(() => {
+  const f = distForm.value
+  const parts = f.entries.filter(e => e.account && e.amount != null && (e.amount as unknown) !== '')
+    .map(e => `${e.account} ${currency(f.mode === 'percent' ? f.paycheck * Number(e.amount) / 100 : Number(e.amount))}`)
+  const given = f.entries.reduce((sum, e) => sum + (e.amount == null || (e.amount as unknown) === '' ? 0
+    : f.mode === 'percent' ? f.paycheck * Number(e.amount) / 100 : Number(e.amount)), 0)
+  const rest = f.entries.find(e => e.account && (e.amount == null || (e.amount as unknown) === ''))
+  if (rest) parts.push(`${rest.account} ${currency(Math.max(0, f.paycheck - given))} (the rest)`)
+  if (!parts.length) return ''
+  return `From a ${currency(f.paycheck)} paycheck: ${parts.join(' · ')}` + (given > f.paycheck + 0.005 ? ' — more than the paycheck!' : '')
+})
 
 function openDistEdit(inc: IncomeItem) {
   const dist = parseDist(inc.distribution)
+  const detail = distDetail(inc)
+  const percent = !!detail && Object.values(detail).some(d => d?.type === 'percentage')
   const entries = dist
-    ? Object.entries(dist).map(([account, amount]) => {
+    ? Object.entries(dist).map(([account, rawAmount]) => {
+        const amount = percent && rawAmount != null ? Math.round(Number(rawAmount) * 1000) / 10 : rawAmount
         // Try to find which bank owns this account
         let bankName = ''
         for (const b of banks.value) {
@@ -302,12 +353,14 @@ function openDistEdit(inc: IncomeItem) {
       })
     : []
   if (entries.length === 0) entries.push({ bank: '', account: '', amount: null })
-  distForm.value = { sourceName: inc.sourceName, entries }
+  distForm.value = { sourceName: inc.sourceName, paycheck: inc.amount, mode: percent ? 'percent' : 'fixed', entries }
   showDistModal.value = true
 }
 
 async function saveDist() {
-  const distObj: Record<string, number | null> = {}
+  const distObj: Record<string, { value: number; type: string } | null> = {}
+  const percent = distForm.value.mode === 'percent'
+  let totalPct = 0
   let remainderCount = 0
   for (const entry of distForm.value.entries) {
     const account = entry.account.trim()
@@ -320,7 +373,13 @@ async function saveDist() {
       notify(`The amount for "${account}" can’t be negative`, 'error')
       return
     }
-    distObj[account] = amount
+    if (amount !== null && percent) totalPct += amount
+    distObj[account] = amount === null ? null
+      : { value: percent ? amount / 100 : amount, type: percent ? 'percentage' : 'fixed_amount' }
+  }
+  if (percent && totalPct > 100.0001) {
+    notify('The percentages add up to more than 100%', 'error')
+    return
   }
   if (remainderCount > 1) {
     notify('Only one account can receive the remainder (blank amount)', 'error')
@@ -336,3 +395,9 @@ async function saveDist() {
 }
 </script>
 
+
+<style scoped>
+.amt-wrap { position: relative; }
+.amt-wrap input { width: 100%; }
+.amt-suffix { position: absolute; right: 0.6rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; pointer-events: none; }
+</style>

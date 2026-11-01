@@ -121,6 +121,7 @@ export interface BillItem {
   estimatedAmount: number | null
   actualAmount: number | null
   hasActualAmount: boolean
+  amountHistory?: number[]
   carryoverBalance: number
   effectiveAmount: number
   isAccountLinked: boolean
@@ -164,6 +165,7 @@ export interface IncomeItem {
   startDate?: string | null
   nextPayDate: string
   distribution: Record<string, number | null> | null
+  distributionDetail?: string | Record<string, { value: number | null; type: string }> | null
 }
 
 export interface BalanceSnapshot {

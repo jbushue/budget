@@ -1100,10 +1100,12 @@ class FinanceManager:
                                                'your current plan', 'This scenario'),
         }
 
-    def payment_insights(self, days: int = 90, start_date: date = None) -> dict:
+    def payment_insights(self, days: int = 90, start_date: date = None,
+                         goal: str = "maximize_discretionary", target_account: str = None) -> dict:
         """Plain-language payment recommendations (see models/payment_insights.py)."""
         from models.payment_insights import PaymentInsightsAnalyzer
-        return PaymentInsightsAnalyzer(self, start_date=start_date, days=days).analyze()
+        return PaymentInsightsAnalyzer(self, start_date=start_date, days=days, goal=goal,
+                                       target_account=target_account).analyze()
 
     # ========== Reporting ==========
 

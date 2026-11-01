@@ -212,6 +212,7 @@ export const GET_ALL_BILLS = gql`
       estimatedAmount
       actualAmount
       hasActualAmount
+      amountHistory
       carryoverBalance
       effectiveAmount
       isAccountLinked
@@ -233,6 +234,7 @@ export const GET_ALL_INCOME = gql`
       startDate
       nextPayDate
       distribution
+      distributionDetail
     }
   }
 `
@@ -351,8 +353,8 @@ const OUTCOME_FIELDS = `
 `
 
 export const GET_PAYMENT_INSIGHTS = gql`
-  query GetPaymentInsights($days: Int) {
-    paymentInsights(days: $days) {
+  query GetPaymentInsights($days: Int, $strategy: String, $targetAccount: String) {
+    paymentInsights(days: $days, strategy: $strategy, targetAccount: $targetAccount) {
       startDate
       endDate
       days

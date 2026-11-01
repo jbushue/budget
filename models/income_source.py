@@ -56,7 +56,7 @@ class IncomeSource:
         if isinstance(pay_date, int):
             pay_date = [pay_date]
         self.pay_date = pay_date  # Day(s) of month (1-31)
-        self.distribution = DistributionType.__fromdict__(dist_dict=distribution)
+        self.distribution = distribution if isinstance(distribution, DistributionType) else DistributionType.__fromdict__(dist_dict=distribution)
         self.start_date = start_date  # Anchor for non-monthly frequencies
 
         # Tracking
@@ -257,10 +257,13 @@ class IncomeSource:
         distribution = distribution_obj.__todict__()
         deposit_date = deposit_date or date.today()
 
-        # Check if using percentages (sum to ~1.0) or fixed amounts
-        is_percentage = all(0 <= v <= 1 for v in distribution.values() if isinstance(v, (int, float)))
+        # Each entry says whether it's a fixed amount or a share of the paycheck
+        def is_share(name, value):
+            kind = distribution_obj.get_distribution_type(name)
+            return kind == DistributionEnumType.PERCENTAGE if kind is not None else 0 < value <= 1
 
-        total_fixed = 0.0
+        any_share = False
+        total_given = 0.0
         remainder_account = None
 
         for account_name, value in distribution.items():
@@ -270,13 +273,10 @@ class IncomeSource:
                     raise ValueError("Only one account can be set as 'remainder'.")
                 remainder_account = account_name
             elif isinstance(value, (int, float)):
-                if is_percentage and value > 0:
-                    # Treat as percentage
-                    amount = self.amount * value
-                else:
-                    # Treat as fixed amount
-                    amount = value
-                    total_fixed += amount
+                share = is_share(account_name, value)
+                any_share = any_share or share
+                amount = self.amount * value if share else value
+                total_given += amount
 
                 if account_name not in bank.accounts:
                     raise ValueError(f"Account '{account_name}' does not exist in the bank.")
@@ -291,13 +291,7 @@ class IncomeSource:
 
         # Handle remainder
         if remainder_account:
-            if is_percentage:
-                remainder = self.amount - sum(
-                    self.amount * v for v in distribution.values()
-                    if isinstance(v, (int, float)) and v != "remainder"
-                )
-            else:
-                remainder = self.amount - total_fixed
+            remainder = self.amount - total_given
 
             if remainder < -1e-6:
                 raise ValueError(f"Distributed amounts exceed total income. Deficit: {-remainder:.2f}")
@@ -314,11 +308,11 @@ class IncomeSource:
                 deposits[remainder_account] = remainder
                 self._record_deposit(remainder_account, remainder, deposit_date)
 
-        elif not is_percentage:
+        elif not any_share:
             # Fixed amounts and no remainder specified
-            if abs(total_fixed - self.amount) > 1e-6:
+            if abs(total_given - self.amount) > 1e-6:
                 raise ValueError(
-                    f"Distributed amounts ({total_fixed:.2f}) do not sum to total income ({self.amount:.2f}) "
+                    f"Distributed amounts ({total_given:.2f}) do not sum to total income ({self.amount:.2f}) "
                     "and no remainder account specified."
                 )
 

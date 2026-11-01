@@ -337,17 +337,36 @@ The **Promos** dialog shows the card's total and regular (interest-bearing) bala
 | Start Date | When the promo began. |
 | End Date (optional) | Calculated from start + months if blank. |
 
-**Edit** changes any of a promo's fields: name, months, purchase limit, balance and dates (changing the months or start date recalculates the end date unless you give one). **Del** removes the promo and returns its balance to the regular balance.
+**Edit** changes any of a promo's fields: name, months, purchase limit, balance and dates (changing the months or start date recalculates the end date unless you give one). **Remove** removes the promo and returns its balance to the regular balance.
+
+Each promo's **⋯** menu also has:
+
+- **Add a purchase** — charges a new purchase to the card and puts it on this promo (if the promo is still active and under its purchase limit; otherwise it goes on the regular balance).
+- **Pay down** (or the **Pay** button) — pays the promo balance from a checking or savings account. The money comes out of that account and off the promo first. The amount is capped at what's left on the promo.
 
 #### Convert to HELOC (**→ HELOC**)
 
 Replaces a credit card with a HELOC, keeping its balance, APR, credit limit, and due day. You choose the draw period, total term (must be longer than the draw period), start date, and optionally a new name. The card's payment bill is replaced by the HELOC's.
+
+### Update all balances and Move money
+
+**Update balances** (top of the page, also on the Dashboard) lists every account with its current balance. Type in today's numbers from your banks' apps; only the ones you change are saved, and each change is added to that account's balance history. Cards, loans and home equity lines take what you owe.
+
+**Move money** records a transfer between any two checking or savings accounts — at the same bank or different ones. It won't take an account below zero.
 
 ### Mortgage Accounts table
 
 Columns: **Status**, **APR**, **Due Day**, **Principal**, **Monthly Payment** (P&I + escrow), **P & I** (this month's principal/interest split), **Escrow** (monthly taxes, insurance, PMI, HOA).
 
 Actions: **Edit** (amounts, rate, term, start date, due day, each escrow amount, market value, pay-from account, name and bank), **Update** (set the current principal), **Hist**, **Txns**, **Del**. Mortgage payments are made from the Bills page.
+
+**Payoff & schedule** (in the row's ⋯ menu) opens the mortgage tools:
+
+- The balance, monthly payment (loan + escrow), payoff month, interest still to pay and, with a market value, equity and loan-to-value.
+- **Pay off sooner** — slide or type an extra monthly amount to see how much sooner the loan is paid off and how much interest that saves.
+- **Next 12** — the next 12 payments: date, payment, principal, interest, escrow and what's owed after each.
+- **By year** — principal and interest paid each remaining year and the balance at year end.
+- **Pay extra** — a one-time payment straight to principal, taken from a checking or savings account (or recorded without moving money if you already paid it).
 
 ### HELOC Accounts table
 
@@ -356,6 +375,32 @@ Columns: **Phase** (draw / repayment / paid_off), **APR**, **Due Day**, **Balanc
 Actions: **Edit** (limit, rate, draw period, total term, start date, due day, pay-from account, name and bank), **Update**, **Hist**, **Txns**, **Del**.
 
 ---
+
+## Search and quick actions
+
+Press **Ctrl+K** (⌘K on a Mac) or **/** anywhere, or click **Search or jump to...** at the top. Type to find:
+
+- any page, account (with its balance), bill, income source or savings goal;
+- an action: add a transaction, bill, income or goal, move money, update all balances, download the bills calendar, export to Excel, print the page, or switch light/dark mode;
+- **Search transactions for "..."** — opens Transactions filtered by what you typed.
+
+Use ↑ ↓ and Enter, or click. Esc closes it.
+
+## Downloads and printing
+
+**Reports → Download a report** (and the **Download** menu on the Timeline) gives CSV or Excel files for 30 days to a year ahead:
+
+| Report | What's in it |
+|---|---|
+| Month by month | Projected income, bills and payments, everyday spending, fees, interest, net change, and cash and debt at each month's end |
+| Every payment and paycheck | Each projected event by date, with its account |
+| Payment plan | When to pay each bill and from which account (the Optimizer's plan) |
+| Daily balances | Every account's projected end-of-day balance |
+| Accounts today | Every account with its balance, limit and rate |
+
+The **bills & paydays calendar** (.ics) adds the next six months of due dates and paydays to Google, Apple or Outlook calendar, with a reminder the day before each bill. Download it again whenever your bills change.
+
+To get a **PDF**, print any page and choose *Save as PDF* — the sidebar, menus and buttons are left out.
 
 ## 5. Bills & Payments
 
@@ -484,14 +529,14 @@ The members table lists each loan's bank, account, APR, balance, allocation meth
 | Pay Day / First & Second Pay Day | **Monthly** and **Semi-monthly** only: day(s) of the month you're paid (e.g. 15 and 31). |
 | First Pay Date (optional) | **Weekly, Bi-weekly, Bi-monthly, Quarterly, Yearly, One-time**: the date of any actual paycheck. Pay dates repeat from it (every 7 or 14 days, every 2 / 3 / 12 months, or just once for one-time). Set this so bi-weekly paychecks land on the right Fridays — including the two months a year with three paychecks. |
 
-### Distribution — **Dist**
+### Split between accounts
 
-Controls which accounts a paycheck lands in. Add one row per account (checking/savings only):
+In the row's ⋯ menu. Controls which accounts a paycheck lands in. Choose **Dollar amounts** or **Percentages**, then add one row per account (checking/savings only):
 
-- **Amount** – a fixed dollar amount sent to that account each paycheck.
-- **Blank** – "remainder": everything left over. Only one account may be the remainder.
+- **Amount** – a set dollar amount (or a percentage of each paycheck) sent to that account.
+- **Blank** – "the rest": everything left over. Only one account may get the rest.
 
-Example: $500 → Savings, blank → Checking. With no distribution set, the whole paycheck goes to the first checking account.
+A preview shows how a paycheck would be split. Examples: $500 → Savings, blank → Checking; or 20% → Savings, blank → Checking. Switching between dollars and percentages converts what you've entered. With no split set, the whole paycheck goes to the first checking account.
 
 ---
 
@@ -629,9 +674,19 @@ Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecas
 
 Every account's balance at the end of the period, grouped by type, with a Net Worth total.
 
-### 📅 Financial Calendar
+### Calendar, list, or by month
 
-A month grid with ← / → navigation. Each day shows colored dots — **green** income, **red** payments, **blue** optimizer transfers, **amber** deferred payments — and today is outlined. Click a day to see:
+The bottom card switches between three views (your choice is remembered):
+
+- **Calendar** — described below.
+- **List** — every event in the period grouped by day, with the cash in checking and savings after each day. Filter to **Income**, **Bills**, **Cards & loans** or **Transfers**.
+- **By month** — income, bills and payments, everyday spending, the net change, and cash and debt at the end of each month (at least 60 days are shown).
+
+**Download** (top right) saves the events, the month-by-month table or the daily balances as CSV/Excel, the bills & paydays calendar file, or prints the page.
+
+### Financial Calendar
+
+A month grid with ‹ / › navigation. Each day shows colored dots — **green** income, **red** payments, **blue** optimizer transfers, **amber** deferred payments — and today is outlined. Click a day to see:
 
 - **Transactions** – each event with its source account and amount. A deferred payment shows "⚠️ Insufficient funds — payment deferred": the projection found no account able to cover it that day.
 - **Expected Account Balances (End of Day)** – every account after that day's events, plus the net total.
@@ -640,7 +695,7 @@ A month grid with ← / → navigation. Each day shows colored dots — **green*
 
 ## 15. Payment Optimizer
 
-**Route:** `/optimizer` · Answers *"what's the best way to get every bill paid?"* for the chosen period (30 days – 1 year, pick it top-right and click **Analyze**). It compares two versions of the same period and explains the difference in plain language:
+**Route:** `/optimizer` · Answers *"what's the best way to get every bill paid?"* for the chosen period (30 days – 1 year, pick it top-right). It compares two versions of the same period and explains the difference in plain language:
 
 - **On due date**: every bill comes out of its usual account on the day it's due, and nothing else moves.
 - **Optimized**: the same bills, plus the optimizer's moves (below).
@@ -648,6 +703,16 @@ A month grid with ← / → navigation. Each day shows colored dots — **green*
 **The optimized plan is never worse than paying on due dates.** Every move is tested in a full day-by-day simulation of your accounts, and it's only kept if it leaves you better off. A plan also may not add a late payment or a fee, or take checking below your cushion (Settings → Planning, at least $300), or below the lowest point paying on due dates would reach. If nothing helps, the plan *is* "pay everything on its due date".
 
 Nothing is changed: it's advice. The Timeline and the Dashboard chart already assume the optimized plan.
+
+### Choosing the goal
+
+**Aim for** picks what the optimized plan favors (remembered on this device):
+
+- **Most cash** (the default) — keep as much money on hand as possible; bills are paid on their due dates unless moving money is worth it.
+- **Least interest** — pay interest-bearing debt as early as makes sense after each paycheck.
+- **Pay off a card** — pick a card with a balance; spare cash goes to it a couple of days after each paycheck.
+
+Every goal keeps the same safety rules (no extra late payments or fees, checking never below your cushion). **Compare goals** runs all of them for the period and shows, side by side, the cash you'd end with, interest paid and earned, fees, and how much extra would go to the chosen card. **Use** switches to that goal.
 
 ### What the optimizer does
 

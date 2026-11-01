@@ -145,6 +145,8 @@
                     <button v-else class="btn btn-outline btn-sm" @click="resetBill(row.billData!.billName)" style="margin-right:0.25rem" title="Reset for new period">Reset</button>
                     <RowMenu :items="[
                       { label: 'Edit bill', icon: 'pencil', action: () => openEdit(row.billData!) },
+                      { label: 'Amount history', icon: 'history', hidden: row.billData?.billType !== 'floating', action: () => openSetActual(row.billData!) },
+                      { label: 'Back to estimate', icon: 'refresh', hidden: !row.billData?.hasActualAmount, action: () => resetToEstimate(row.billData!) },
                       { label: 'Delete bill', icon: 'trash', danger: true, divider: true, action: () => deleteBill(row.billData!.billName) },
                     ]" />
                   </template>
@@ -320,8 +322,23 @@
         <div class="form-group">
           <label>Actual amount</label>
           <input v-model.number="actualForm.amount" type="number" step="0.01" />
+          <small class="muted">Estimate: {{ currency(actualForm.estimate) }}. After it's paid, the amount goes back to the estimate.</small>
         </div>
+        <div v-if="actualForm.history.length" class="history-box">
+          <div class="history-head">
+            <strong>Past amounts</strong>
+            <span class="muted">avg {{ currency(histStats.avg) }} · low {{ currency(histStats.min) }} · high {{ currency(histStats.max) }}</span>
+          </div>
+          <div class="history-bars" aria-hidden="true">
+            <span v-for="(v, i) in actualForm.history" :key="i" :style="{ height: `${Math.max(8, (v / histStats.max) * 100)}%` }" :title="currency(v)"></span>
+          </div>
+          <div class="history-chips">
+            <button v-for="(v, i) in [...actualForm.history].reverse()" :key="i" class="chip" @click="actualForm.amount = v">{{ currency(v) }}</button>
+          </div>
+        </div>
+        <p v-else class="muted" style="font-size:0.82rem">No past amounts yet — each payment you mark adds one, and the estimate learns from them.</p>
         <div class="modal-actions">
+          <button v-if="actualForm.hasActual" class="btn btn-ghost" style="margin-right:auto" @click="resetToEstimate(actualForm.bill!); showActualModal = false">Back to estimate</button>
           <button class="btn btn-outline" @click="showActualModal = false">Cancel</button>
           <button class="btn btn-primary" @click="setActualAmount">Set amount</button>
         </div>
@@ -403,6 +420,8 @@
 </template>
 
 <script setup lang="ts">
+import { onRouteAction } from '../utils/routeAction'
+import { RESET_BILL_TO_ESTIMATE } from '../graphql/tools'
 import RowMenu from '../components/RowMenu.vue'
 import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
@@ -733,6 +752,8 @@ function openCreate() {
   showModal.value = true
 }
 
+onRouteAction({ add: () => openCreate() })
+
 function openEdit(b: BillItem) {
   editMode.value = true
   form.value = {
@@ -837,12 +858,25 @@ async function resetBill(name: string) {
 
 // ── Set Floating Bill Actual Amount ──
 const showActualModal = ref(false)
-const actualForm = ref({ billName: '', amount: 0, min: 0, max: 0 })
+const actualForm = ref({ billName: '', amount: 0, min: 0, max: 0, estimate: 0, history: [] as number[], hasActual: false, bill: null as BillItem | null })
 const { mutate: doSetActual } = useMutation<{ setFloatingBillAmount: MutationPayload }>(SET_FLOATING_BILL_AMOUNT)
+const { mutate: doResetEstimate } = useMutation<{ resetBillToEstimate: MutationPayload }>(RESET_BILL_TO_ESTIMATE)
 
 function openSetActual(b: BillItem) {
-  actualForm.value = { billName: b.billName, amount: b.amount, min: b.minAmount || 0, max: b.maxAmount || 0 }
+  actualForm.value = { billName: b.billName, amount: b.amount, min: b.minAmount || 0, max: b.maxAmount || 0,
+    estimate: b.estimatedAmount ?? b.amount, history: b.amountHistory ?? [], hasActual: b.hasActualAmount, bill: b }
   showActualModal.value = true
+}
+
+const histStats = computed(() => {
+  const h = actualForm.value.history
+  return h.length ? { avg: h.reduce((a, b) => a + b, 0) / h.length, min: Math.min(...h), max: Math.max(...h) } : { avg: 0, min: 0, max: 1 }
+})
+
+async function resetToEstimate(b: BillItem) {
+  const ok = await runMutation(() => doResetEstimate({ variables: { billName: b.billName } }), 'resetBillToEstimate',
+    { failMessage: 'Could not reset the amount', showSuccess: true })
+  if (ok) refetch()
 }
 
 async function setActualAmount() {
@@ -964,3 +998,11 @@ async function markGroupPaid() {
 </script>
 
 
+
+<style scoped>
+.history-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; margin-bottom: 0.5rem; }
+.history-head { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; font-size: 0.82rem; margin-bottom: 0.5rem; }
+.history-bars { display: flex; align-items: flex-end; gap: 4px; height: 48px; margin-bottom: 0.5rem; }
+.history-bars span { flex: 1; background: var(--primary-light); border-top: 2px solid var(--primary); border-radius: 3px 3px 0 0; }
+.history-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+</style>

@@ -1,5 +1,9 @@
 <template>
-  <button ref="btn" class="btn btn-ghost btn-icon row-menu-btn" :class="{ open }" :aria-label="label" :title="label"
+  <button v-if="text" ref="btn" class="btn btn-outline row-menu-btn" :class="{ open }"
+          aria-haspopup="menu" :aria-expanded="open" @click.stop="toggle">
+    <Icon v-if="icon" :name="icon" :size="15" /> {{ text }} <Icon name="chevronDown" :size="14" />
+  </button>
+  <button v-else ref="btn" class="btn btn-ghost btn-icon row-menu-btn" :class="{ open }" :aria-label="label" :title="label"
           aria-haspopup="menu" :aria-expanded="open" @click.stop="toggle">
     <Icon name="more" :size="18" :stroke="2.4" />
   </button>
@@ -7,6 +11,7 @@
     <div v-if="open" ref="menu" class="row-menu" role="menu" :style="pos" @click.stop>
       <template v-for="(item, i) in visible" :key="i">
         <div v-if="item.divider" class="rm-divider"></div>
+        <div v-if="item.heading" class="rm-heading">{{ item.heading }}</div>
         <button class="rm-item" :class="{ danger: item.danger }" role="menuitem" :disabled="item.disabled" @click="pick(item)">
           <Icon v-if="item.icon" :name="item.icon" :size="15" />
           <span>{{ item.label }}</span>
@@ -28,9 +33,12 @@ export interface RowMenuItem {
   disabled?: boolean
   hidden?: boolean
   divider?: boolean   // draw a line above this item
+  heading?: string    // small caption above this item
 }
 
-const props = withDefaults(defineProps<{ items: RowMenuItem[]; label?: string }>(), { label: 'More actions' })
+// `text` turns the ⋯ button into a labeled one (e.g. "Download ▾")
+const props = withDefaults(defineProps<{ items: RowMenuItem[]; label?: string; text?: string; icon?: string }>(),
+  { label: 'More actions', text: '', icon: '' })
 
 const open = ref(false)
 const btn = ref<HTMLButtonElement | null>(null)
@@ -101,5 +109,6 @@ onUnmounted(close)
 .rm-item:disabled { opacity: 0.5; cursor: not-allowed; }
 .rm-item.danger, .rm-item.danger svg { color: var(--danger-text); }
 .rm-item.danger:hover { background: var(--danger-light); }
+.rm-heading { font-size: 0.7rem; font-weight: 650; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.4rem 0.6rem 0.15rem; }
 .rm-divider { height: 1px; background: var(--border); margin: 0.3rem 0.2rem; }
 </style>

@@ -100,6 +100,7 @@
 </template>
 
 <script setup lang="ts">
+import { onRouteAction } from '../utils/routeAction'
 import Icon from '../components/Icon.vue'
 import { ref, reactive, computed } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
@@ -134,6 +135,8 @@ function openGoal(g?: SavingsGoal) {
     : { id: null, name: '', targetAmount: 0, targetDate: '', account: '', savedAmount: 0 })
   showGoal.value = true
 }
+
+onRouteAction({ add: () => openGoal() })
 
 async function save() {
   const [bankName, accountName] = form.account ? form.account.split(':') : ['', '']

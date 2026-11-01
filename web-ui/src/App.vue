@@ -6,6 +6,7 @@
     <header class="mobile-bar">
       <button class="menu-btn" aria-label="Open menu" @click="drawerOpen = true"><Icon name="menu" :size="22" /></button>
       <span class="mobile-title">{{ current.label }}</span>
+      <button class="menu-btn" aria-label="Search" @click="paletteState.open = true"><Icon name="search" :size="20" /></button>
       <AlertBell dark />
     </header>
     <div class="drawer-backdrop" @click="drawerOpen = false"></div>
@@ -58,7 +59,14 @@
           </template>
           <span v-else>{{ today }}</span>
         </div>
-        <AlertBell />
+        <div class="top-actions">
+          <button class="search-btn" title="Search and quick actions" @click="paletteState.open = true">
+            <Icon name="search" :size="15" />
+            <span>Search or jump to...</span>
+            <kbd>{{ isMac ? '⌘' : 'Ctrl' }} K</kbd>
+          </button>
+          <AlertBell />
+        </div>
       </div>
       <div class="page">
         <div v-if="authState.user?.must_change_password" class="callout warning pw-banner">
@@ -70,6 +78,7 @@
       </div>
     </main>
     <DialogHost />
+    <CommandPalette />
   </div>
 </template>
 
@@ -79,41 +88,12 @@ import { useRoute } from 'vue-router'
 import AlertBell from './components/AlertBell.vue'
 import LoginScreen from './components/LoginScreen.vue'
 import DialogHost from './components/DialogHost.vue'
+import CommandPalette from './components/CommandPalette.vue'
+import { paletteState } from './utils/palette'
 import Icon from './components/Icon.vue'
 import { authState, checkAuth, logout } from './utils/auth'
+import { NAV } from './utils/nav'
 
-const NAV = [
-  { label: '', items: [
-    { path: '/', icon: 'dashboard', label: 'Dashboard' },
-  ] },
-  { label: 'Money', items: [
-    { path: '/accounts', icon: 'accounts', label: 'Accounts' },
-    { path: '/transactions', icon: 'transactions', label: 'Transactions' },
-    { path: '/bills', icon: 'bills', label: 'Bills' },
-    { path: '/income', icon: 'income', label: 'Income' },
-    { path: '/bill-groups', icon: 'loans', label: 'Loan groups' },
-  ] },
-  { label: 'Plan', items: [
-    { path: '/budgets', icon: 'budgets', label: 'Budgets' },
-    { path: '/goals', icon: 'goals', label: 'Goals' },
-    { path: '/subscriptions', icon: 'repeat', label: 'Subscriptions' },
-    { path: '/timeline', icon: 'calendar', label: 'Timeline' },
-  ] },
-  { label: 'Optimize', items: [
-    { path: '/optimizer', icon: 'zap', label: 'Optimizer' },
-    { path: '/debt-payoff', icon: 'trendingDown', label: 'Debt payoff' },
-    { path: '/scenarios', icon: 'sparkles', label: 'What-If' },
-  ] },
-  { label: 'Insights', items: [
-    { path: '/reports', icon: 'chart', label: 'Reports' },
-    { path: '/net-worth', icon: 'gem', label: 'Net worth' },
-    { path: '/checkup', icon: 'health', label: 'Health check' },
-  ] },
-  { label: 'Manage', items: [
-    { path: '/activity', icon: 'history', label: 'Activity' },
-    { path: '/settings', icon: 'settings', label: 'Settings' },
-  ] },
-]
 
 // Mid-size screens (tablets, small laptops) start with the icon-only sidebar;
 // a choice made with the button is remembered.
@@ -127,6 +107,7 @@ function toggleCollapsed() {
   localStorage.setItem(COLLAPSE_KEY, sidebarCollapsed.value ? '1' : '0')
 }
 
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
 const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 const route = useRoute()
 const isActive = (path: string) => path === '/' ? route.path === '/' : route.path.startsWith(path)
@@ -172,6 +153,17 @@ onUnmounted(() => document.removeEventListener('keydown', onKey))
 .crumbs strong { color: var(--text-muted); font-weight: 550; }
 @media (max-width: 1199px) { .top-bar { padding: 0 1.5rem; } }
 @media (max-width: 767px) { .top-bar { display: none; } }
+
+.top-actions { display: flex; align-items: center; gap: 0.6rem; }
+.search-btn {
+  display: inline-flex; align-items: center; gap: 0.5rem; height: 36px; padding: 0 0.5rem 0 0.75rem; min-width: 250px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text-light);
+  font: inherit; font-size: 0.84rem; cursor: pointer; box-shadow: var(--shadow);
+}
+.search-btn:hover { border-color: var(--border-strong); color: var(--text-muted); }
+.search-btn span { flex: 1; text-align: left; }
+.search-btn kbd { font: inherit; font-size: 0.7rem; padding: 0.1rem 0.4rem; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-alt); color: var(--text-muted); }
+@media (max-width: 1023px) { .search-btn { min-width: 0; } .search-btn span, .search-btn kbd { display: none; } }
 
 /* Reminder while the generated admin password is still in use */
 .pw-banner { margin-bottom: 1.25rem; align-items: center; }

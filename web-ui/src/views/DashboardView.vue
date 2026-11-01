@@ -5,7 +5,11 @@
         <h2>Dashboard</h2>
         <p class="view-sub">Where your money stands today and what's coming up.</p>
       </div>
-      <button class="btn btn-outline" @click="refreshAll()"><Icon name="refresh" :size="15" /> Refresh</button>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <RouterLink to="/accounts?action=balances" class="btn btn-outline"><Icon name="pencil" :size="15" /> Update balances</RouterLink>
+        <RouterLink to="/transactions?action=add" class="btn btn-outline"><Icon name="plus" :size="15" /> Transaction</RouterLink>
+        <button class="btn btn-ghost btn-icon" title="Refresh" aria-label="Refresh" @click="refreshAll()"><Icon name="refresh" :size="16" /></button>
+      </div>
     </div>
 
     <div v-if="loading" class="loading">Loading financial snapshot...</div>
@@ -76,7 +80,7 @@
                 </div>
                 <div style="text-align:right">
                   <div style="font-weight:600">{{ currency(b.amount) }}</div>
-                  <span class="badge" :class="PERIOD_BADGE[b.status].cls">{{ PERIOD_BADGE[b.status].label }}<template v-if="b.status === 'short'"> {{ currency(b.shortBy) }}</template></span>
+                  <span class="badge" :class="PERIOD_BADGE[b.status].cls">{{ PERIOD_BADGE[b.status].label }}{{ b.status === 'short' && b.shortBy >= 0.01 ? ` ${currency(b.shortBy)}` : '' }}</span>
                 </div>
                 <button v-if="b.status !== 'paid'" class="btn btn-sm btn-outline" style="margin-left:0.5rem" @click="payBill = { name: b.name, billName: b.billName, amount: b.amount, sourceAccount: b.sourceAccount }">Mark paid</button>
               </li>

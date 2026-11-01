@@ -262,6 +262,7 @@ class BillType(graphene.ObjectType):
     estimated_amount = graphene.Float()
     actual_amount = graphene.Float()
     has_actual_amount = graphene.Boolean()
+    amount_history = graphene.List(graphene.Float, description="Past actual amounts of a floating bill, oldest first")
     carryover_balance = graphene.Float()
     effective_amount = graphene.Float()
     is_account_linked = graphene.Boolean()
@@ -303,6 +304,7 @@ def _income_to_type(income) -> 'IncomeSourceType':
         pay_dates=income.pay_date,
         next_pay_date=_next_occurrence(income.get_next_pay_date(date.today() - timedelta(days=1))),
         distribution=_serialize_distribution(income.distribution),
+        distribution_detail=income.distribution.to_json() if hasattr(income.distribution, 'to_json') else None,
         start_date=_iso(getattr(income, 'start_date', None)),
     )
 
@@ -329,6 +331,7 @@ def _bill_to_type(bill) -> 'BillType':
         estimated_amount=getattr(bill, 'estimated_amount', None),
         actual_amount=getattr(bill, '_actual_amount', None),
         has_actual_amount=getattr(bill, 'has_actual_amount', False),
+        amount_history=list(getattr(bill, 'amount_history', None) or []),
         carryover_balance=carryover,
         effective_amount=effective,
         is_account_linked=is_linked,
@@ -390,6 +393,8 @@ class IncomeSourceType(graphene.ObjectType):
     pay_dates = graphene.List(graphene.Int)  # List of pay dates (e.g., [15, 31] for semimonthly)
     next_pay_date = graphene.String()
     distribution = graphene.JSONString()
+    distribution_detail = graphene.JSONString(
+        description='{account: {"value": n, "type": "fixed_amount | percentage | remainder"}}')
     start_date = graphene.String()
 
     def resolve_distribution(self, info):
@@ -803,6 +808,8 @@ class Query(ExtQuery, graphene.ObjectType):
     payment_insights = graphene.Field(
         PaymentInsightsType,
         days=graphene.Int(default_value=90),
+        strategy=graphene.String(description="maximize_discretionary | minimize_interest | payoff_credit_account"),
+        target_account=graphene.String(description="Card to pay off first (payoff_credit_account)"),
         description="Plain-language payment recommendations: on-time vs. early vs. optimized"
     )
     balance_history = graphene.List(
@@ -1309,12 +1316,17 @@ class Query(ExtQuery, graphene.ObjectType):
             violations=plan.violations
         )
 
-    def resolve_payment_insights(self, info, days=90):
+    def resolve_payment_insights(self, info, days=90, strategy=None, target_account=None):
         """Payment recommendations for the next `days` days (capped at 365)."""
         manager = info.context.get('manager')
         if not manager:
             return None
-        out = manager.payment_insights(days=max(7, min(days, 365)))
+        from models.tools import STRATEGIES
+        goal = strategy if strategy in STRATEGIES else "maximize_discretionary"
+        if goal == "payoff_credit_account" and not target_account:
+            goal = "maximize_discretionary"
+        out = manager.payment_insights(days=max(7, min(days, 365)), goal=goal,
+                                       target_account=target_account if goal == "payoff_credit_account" else None)
         comparison = out.pop('comparison')
         return {**out, 'on_due_date': comparison['on_due_date'], 'optimized': comparison['optimized'],
                 'net_benefit': comparison['net_benefit'], 'changes': comparison['changes']}

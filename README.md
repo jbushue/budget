@@ -17,12 +17,16 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 - Loan groups ("bill groups") — one payment split across several loans (e.g. student loans), proportionally, equally, or by fixed amounts
 - Every setting editable later; rename an account or move it to another bank and its bills, history, transactions and links follow
 - Optional automatic balance sync through [SimpleFIN Bridge](https://bridge.simplefin.org)
+- **Update all balances** in one pass (a quick check-in from your bank apps), and **move money** between accounts at any bank
+- Promo offers: charge a purchase to a 0% promo, or **pay a promo down** from checking before it expires
+- Mortgage tools: **amortization schedule** (next 12 payments and year by year), an **early-payoff calculator** (how much sooner and how much interest an extra monthly amount saves), and one-time **extra principal** payments
 
 **Bills and income**
 - Fixed and variable bills; one-time, weekly, bi-weekly, monthly, quarterly, semi-annual, and yearly schedules
 - Card, mortgage, HELOC, and loan-group payments are created automatically as bills
 - Mark bills paid (from checking, savings, or a card), with partial payments, carryover, and payment history
-- Income sources with flexible schedules and per-account distribution (fixed, percentage, remainder)
+- Income sources with flexible schedules and per-account distribution — dollar amounts or percentages, plus "the rest"
+- Variable bills keep their **amount history** (average, low, high) and go back to the estimate after they're paid — or on demand
 
 **Dashboard**
 - A status banner (are all bills covered, and through when?)
@@ -39,12 +43,13 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 - Bill payments are **recognized in your transactions** and marked paid automatically (no money moved twice); repeating charges that aren't bills yet are suggested
 
 **Planning and analysis**
-- **Timeline** — a day-by-day projection with a financial calendar
+- **Timeline** — a day-by-day projection as a calendar, a filterable list (income, bills, cards and loans, transfers), or a month-by-month summary
 - **Payment Optimizer** — compares *paying every bill on its due date* with an *optimized plan* (paying down costly debt with spare cash, savings sweeps, HELOC parking, promo payoffs, covering missed bills). Every move is verified in a full simulation, so the plan is never worse than paying on due dates. It explains, in plain language:
   - which bills will be short and how to fix it
   - which payments are worth making early on payday (and how much that saves) — and which aren't
   - how a loan group's payment is split, and what aiming it at the highest rate or paying a little more would save
   - which 0% promos are on track before they expire
+  - and lets you choose the goal — **most cash**, **least interest**, or **pay off one card** — and compare all three side by side
 - **Debt Payoff** — minimum-only vs. avalanche vs. snowball
 - **What-If Scenarios** — job loss, a raise, new or cut bills, paid-off debts — with a plain-language verdict
 - **Late and overdraft fees** are modeled (app-wide defaults plus a per-bill late fee)
@@ -59,7 +64,10 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 
 **Data and access**
 - Everything is saved automatically to a local SQLite database
-- Excel import/export and a fill-in template, a transactions CSV, and one-click database **backup / restore** — all from Settings
+- Excel import/export and a fill-in template, a transactions CSV, and one-click database **backup / restore** — all from Settings, along with record counts and the database size
+- **Report downloads** (CSV or Excel): month by month, every projected payment and paycheck, the payment plan, daily balances, and today's accounts; any page prints cleanly to PDF
+- A **calendar file** (.ics) of the next six months of bills and paydays, with a reminder the day before each bill, for Google, Apple or Outlook calendar
+- **Search and quick actions** (Ctrl+K or /): jump to any page, account, bill, income or goal, search transactions, or start an action (add a bill, move money, update balances...)
 - **User accounts**: everyone signs in with their own username and password and shares the same budget; new people join with an invite link from an admin. Works from your phone or other devices on your network; installable as an app (PWA)
 - **Activity history** — who changed what, and when; see and sign out your signed-in devices
 - **Light and dark themes** (or follow the device's setting), and a layout that adapts to phones, tablets and desktops
@@ -146,7 +154,7 @@ Open `http://<this computer's address>:3000` on your phone and sign in (sign-ins
 | `BUDGET_DEBUG` | off | Set to `1` for Flask's development server with auto-reload. Never on a network: its debugger can run code. |
 
 ### Command-line menu
-`python cli.py` opens an interactive text menu with the same features, plus Excel import/export and report exports.
+`python cli.py` opens an interactive text menu. The web interface covers the same ground (transfers, promo purchases and payments, mortgage schedules and extra principal, payment strategies, report exports and more).
 
 ---
 

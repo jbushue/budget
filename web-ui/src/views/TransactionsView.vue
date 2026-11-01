@@ -286,6 +286,7 @@
 </template>
 
 <script setup lang="ts">
+import { onRouteAction } from '../utils/routeAction'
 import Icon from '../components/Icon.vue'
 import { ref, reactive, computed, watch } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
@@ -514,6 +515,8 @@ function openAdd() {
     amount: 0, category: '', account: '', notes: '', tags: '' })
   showAdd.value = true
 }
+
+onRouteAction({ add: () => openAdd(), search: q => { filters.text = q } })
 
 async function saveAdd() {
   const [bankName, accountName] = addForm.account ? addForm.account.split(':') : ['', '']

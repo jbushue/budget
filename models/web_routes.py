@@ -533,6 +533,32 @@ def register(app, state: dict, lock) -> None:
         return send_file(data, mimetype="text/csv", as_attachment=True,
                          download_name=f"transactions-{_stamp()}.csv")
 
+    @app.route("/files/reports/<kind>.<fmt>", methods=["GET"])
+    def files_report(kind, fmt):
+        from models import report_export
+        if kind not in report_export.REPORTS or fmt not in ("csv", "xlsx"):
+            return jsonify({"success": False, "message": "Unknown report"}), 404
+        try:
+            days = int(request.args.get("days", 90))
+        except ValueError:
+            days = 90
+        with lock:
+            headers, rows = report_export.build(state["manager"], kind, days)
+        name = f"{kind}-{_stamp()}.{fmt}"
+        if fmt == "csv":
+            return send_file(io.BytesIO(report_export.to_csv(headers, rows)), mimetype="text/csv",
+                             as_attachment=True, download_name=name)
+        data = report_export.to_xlsx(kind.capitalize(), headers, rows)
+        return send_file(io.BytesIO(data), mimetype=XLSX, as_attachment=True, download_name=name)
+
+    @app.route("/files/calendar.ics", methods=["GET"])
+    def files_calendar():
+        from models import report_export
+        with lock:
+            data = report_export.calendar_ics(state["manager"])
+        return send_file(io.BytesIO(data), mimetype="text/calendar", as_attachment=True,
+                         download_name="bills-and-paydays.ics")
+
     # ── Built web UI (optional) ───────────────────────────────────────
 
     if os.path.isdir(DIST_DIR):
