@@ -11,6 +11,9 @@ from models.income_source import IncomeSource
 from models.timeline_simulator import TimelineSimulator, TimelineEvent
 
 
+from models.types import is_savings_like
+
+
 @dataclass
 class PromoPayoffPriority:
     """Represents a promotional offer that needs to be paid off before expiration."""
@@ -533,7 +536,7 @@ class PaymentOptimizer:
             return [d for d in dates if is_clamped_day(d, day_of_month)]
 
         savings = [(b.name, n, a) for b in self.banks for n, a in b.accounts.items()
-                   if a.account_type.value == "savings" and a.interest_rate > 0]
+                   if is_savings_like(a) and a.interest_rate > 0]
         best_savings_rate = max((a.interest_rate for _, _, a in savings), default=0.0)
 
         moves: list[tuple[float, TimelineEvent]] = []
@@ -547,7 +550,7 @@ class PaymentOptimizer:
             name = cf['description'].replace(" (insufficient funds)", "")
             balances = snapshots[index[day]]['balances'] if day in index else {}
             any_savings = [(b.name, n) for b in self.banks for n, a in b.accounts.items()
-                           if a.account_type.value == "savings" and balances.get(f"{b.name}:{n}", 0.0) > 0]
+                           if is_savings_like(a) and balances.get(f"{b.name}:{n}", 0.0) > 0]
             if any_savings:
                 b, n = max(any_savings, key=lambda s: balances[f"{s[0]}:{s[1]}"])
                 moves.append((1e6 + need, TimelineEvent(
@@ -728,7 +731,7 @@ class PaymentOptimizer:
             for name, acc in bank.accounts.items():
                 if acc.account_type.value == "checking":
                     checking_info.append((bank.name, name, acc))
-                elif acc.account_type.value == "savings" and acc.interest_rate > 0:
+                elif is_savings_like(acc) and acc.interest_rate > 0:
                     savings_info.append((bank.name, name, acc))
             for name, heloc in bank.heloc_accounts.items():
                 from models.types import HELOCPhase
@@ -2281,7 +2284,7 @@ class PaymentOptimizer:
                         'balance': account.balance,
                         'apy': account.interest_rate
                     })
-                elif account.account_type.value == "savings":
+                elif is_savings_like(account):
                     savings_accounts.append({
                         'name': name,
                         'account': account,

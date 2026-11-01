@@ -387,7 +387,7 @@ watch(calView, v => localStorage.setItem('budget-timeline-view', v))
 const listFilter = ref('all')
 
 function eventKind(t: string): string {
-  if (t === 'INCOME') return 'income'
+  if (t === 'INCOME' || t === 'ACCOUNT_REFILL') return 'income'
   if (isTransferType(t)) return 'moves'
   if (/CREDIT|MORTGAGE|HELOC|PROMO|BILL_GROUP/.test(t)) return 'debt'
   if (t.startsWith('BILL')) return 'bills'
@@ -400,6 +400,8 @@ function eventTypeLabel(t: string): string {
     EXTRA_CREDIT_PAYMENT: 'Extra card payment', PROMO_PAYOFF: 'Promo payoff', SAVINGS_SWEEP: 'To savings',
     SAVINGS_RECALL: 'From savings', HELOC_PARK: 'Parked in HELOC', HELOC_RECALL: 'Back from HELOC',
     INTEREST: 'Interest', FEE: 'Fee', EVERYDAY_SPENDING: 'Everyday spending',
+    ACCOUNT_REFILL: 'Refill', ACCOUNT_SPENDING: 'Benefit spending', EXTRA_DEBT_PAYMENT: 'Extra debt payment',
+    PURCHASE: 'Purchase',
   }
   return labels[t] ?? t.replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase())
 }
@@ -407,7 +409,7 @@ const listGroups = computed(() => (proj.value?.calendarDays ?? [])
   .map(d => ({
     date: d.date,
     endCash: d.total,
-    events: d.events.filter(e => e.eventType !== 'EVERYDAY_SPENDING'
+    events: d.events.filter(e => e.eventType !== 'EVERYDAY_SPENDING' && e.eventType !== 'ACCOUNT_SPENDING'
       && (listFilter.value === 'all' || eventKind(e.eventType) === listFilter.value)),
   }))
   .filter(g => g.events.length))

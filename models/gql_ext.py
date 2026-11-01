@@ -107,6 +107,7 @@ class DashboardSummaryType(graphene.ObjectType):
     upcoming_income = graphene.List(DashboardIncomeType)
     insights = graphene.List(DashboardInsightType)
     headline = graphene.String()
+    other_money = graphene.JSONString(description="Benefits, other cash, savings and investments outside checking")
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -175,6 +176,8 @@ class ExtQuery(LedgerQuery, GoalsQuery, PlanningQuery, ToolsQuery, graphene.Obje
     dashboard_summary = graphene.Field(DashboardSummaryType)
     alerts = graphene.List(AlertType, include_dismissed=graphene.Boolean())
     digest_preview = graphene.String(description="Today's digest email text")
+    digest_html = graphene.String(description="Today's digest email as HTML (what the email looks like)")
+    account_kinds = graphene.JSONString(description="Kinds of bank account and how the planner treats each")
     job_status = graphene.JSONString(description="Last result of each background job")
     activity = graphene.JSONString(limit=graphene.Int(), before_id=graphene.Int(), username=graphene.String(),
                                    description="Who changed what, newest first")
@@ -203,6 +206,17 @@ class ExtQuery(LedgerQuery, GoalsQuery, PlanningQuery, ToolsQuery, graphene.Obje
             return []
         from models.alerts import build_alerts
         return build_alerts(manager, include_dismissed=bool(include_dismissed))
+
+    def resolve_account_kinds(self, info):
+        from models.types import ACCOUNT_KINDS
+        return [dict(v, value=k) for k, v in ACCOUNT_KINDS.items()]
+
+    def resolve_digest_html(self, info):
+        manager = _manager(info)
+        if not manager:
+            return None
+        from models.alerts import digest_html
+        return digest_html(manager)
 
     def resolve_digest_preview(self, info):
         manager = _manager(info)

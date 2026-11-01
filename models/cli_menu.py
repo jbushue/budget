@@ -2547,9 +2547,11 @@ class FinanceCLI:
                 print("❌ Account name cannot be empty.")
                 return
 
-            account_type = input("Account type (checking/savings/credit) [default: checking]: ").strip().lower()
-            if account_type not in ["checking", "savings", "credit", ""]:
-                print("❌ Invalid type. Use 'checking', 'savings', or 'credit'.")
+            from models.types import ACCOUNT_KINDS
+            kinds = list(ACCOUNT_KINDS) + ["credit"]
+            account_type = input(f"Account type ({'/'.join(kinds)}) [default: checking]: ").strip().lower()
+            if account_type not in kinds + [""]:
+                print(f"❌ Invalid type. Use one of: {', '.join(kinds)}.")
                 return
             account_type = account_type or "checking"
 

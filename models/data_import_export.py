@@ -44,10 +44,15 @@ SHEET_COLUMNS: dict[str, list[tuple[str, bool, str]]] = {
     "Bank_Accounts": [
         ("bank_name", True, "Must match a name in Banks sheet"),
         ("account_name", True, "Name for this account"),
-        ("account_type", True, "checking or savings"),
+        ("account_type", True, "checking, savings, money_market, cd, cash, prepaid, wallet, ebt, hsa, fsa, "
+                               "investment, retirement or other"),
         ("balance", True, "Current balance"),
-        ("interest_rate", False, "APR % for savings accounts"),
+        ("interest_rate", False, "APR % for savings accounts (expected growth % for investments)"),
         ("interest_accrual_date", False, "Day of month (1-31) for interest"),
+        ("refill_amount", False, "Added each month without coming from checking (EBT benefits, HSA)"),
+        ("refill_day", False, "Day of month (1-31) the refill lands"),
+        ("weekly_spending", False, "Spent from this account each week (e.g. groceries on EBT)"),
+        ("offsets_everyday", False, "yes if that spending replaces part of your everyday spending"),
     ],
     "Credit_Accounts": [
         ("bank_name", True, "Must match a name in Banks sheet"),
@@ -147,7 +152,7 @@ SHEET_COLUMNS: dict[str, list[tuple[str, bool, str]]] = {
 
 SHEET_DESCRIPTIONS = {
     "Banks": "Define your financial institutions",
-    "Bank_Accounts": "Checking and savings accounts",
+    "Bank_Accounts": "Checking, savings, EBT, HSA, investment and other cash accounts",
     "Credit_Accounts": "Credit cards and loans",
     "Mortgages": "Home loans with escrow details",
     "HELOCs": "Home equity lines of credit",
@@ -620,6 +625,10 @@ class DataImportExport:
                     starting_balance=_to_float(row.get("balance"), 0.0),
                     interest_rate=_to_float(row.get("interest_rate"), 0.0),
                     interest_accrual_date=_to_int(row.get("interest_accrual_date")),
+                    refill_amount=_to_float(row.get("refill_amount"), 0.0) or 0.0,
+                    refill_day=_to_int(row.get("refill_day")),
+                    weekly_spending=_to_float(row.get("weekly_spending"), 0.0) or 0.0,
+                    offsets_everyday=_to_bool(row.get("offsets_everyday")),
                 )
                 results["bank_accounts_created"] += 1
             except Exception as e:
@@ -1015,6 +1024,10 @@ class DataImportExport:
                     "balance": account.balance,
                     "interest_rate": account.interest_rate,
                     "interest_accrual_date": getattr(account, "interest_accrual_date", None),
+                    "refill_amount": getattr(account, "refill_amount", 0.0),
+                    "refill_day": getattr(account, "refill_day", None),
+                    "weekly_spending": getattr(account, "weekly_spending", 0.0),
+                    "offsets_everyday": "yes" if getattr(account, "offsets_everyday", False) else "",
                 })
 
             for name, credit in bank.credit_accounts.items():

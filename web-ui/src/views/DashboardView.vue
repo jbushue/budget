@@ -100,6 +100,7 @@
           </div>
           <InsightList :items="dash.insights" compact />
         </div>
+        <OtherMoneyCard :data="dash.otherMoney" style="margin-bottom:1.5rem" />
         <BillMatchSuggestions style="margin-bottom:1.5rem" @changed="refreshAll" />
       </template>
       <div v-else-if="dashLoading" class="loading">Checking your bills...</div>
@@ -281,6 +282,7 @@ import {
 import { GET_HEALTH_CHECK } from '../graphql/planning'
 import InsightList from '../components/InsightList.vue'
 import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
+import OtherMoneyCard from '../components/OtherMoneyCard.vue'
 import MarkPaidDialog, { type PayableBill } from '../components/MarkPaidDialog.vue'
 import { currency, fmtDate, fmtDateShort, frequencyLabel, daysFromNow, billName, accountTypeLabel } from '../utils/format'
 import type { HealthCheck } from '../types'

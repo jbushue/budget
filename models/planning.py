@@ -164,7 +164,10 @@ def health_check(manager, today: date | None = None) -> dict:
             "Trim a budget category or automate a transfer to savings on payday — even 5% more adds up.", 2)
 
     # 2. Emergency fund: liquid cash vs. a month of essentials
-    liquid = sum(a.balance for b in manager.banks for a in b.accounts.values())
+    # (not benefits, investments or retirement: they can't cover rent in an emergency)
+    from models.types import account_kind
+    liquid = sum(a.balance for b in manager.banks for a in b.accounts.values()
+                 if account_kind(a)["group"] in ("cash", "savings"))
     essentials = bills["total"] + everyday_m
     if essentials > 0:
         months_cov = liquid / essentials

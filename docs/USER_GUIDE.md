@@ -111,6 +111,13 @@ A **bank** is a container for accounts. Each bank has a type (Traditional, Credi
 |---|---|---|
 | Checking | Asset | Where bills are paid from and paychecks land by default. |
 | Savings | Asset | Earns interest (APY); the optimizer may "sweep" spare cash here. |
+| Money market | Asset | Treated like savings. |
+| CD | Asset | Earns interest but is locked, so it never pays bills. |
+| Cash, Prepaid card, PayPal / Venmo / Cash App | Asset | Spending money outside your bank. Prepaid cards and payment apps can pay bills; cash can't. |
+| EBT / SNAP | Asset (restricted) | Food benefits. Never counted in Safe to spend and never used for bills. Can have a monthly benefit deposit and weekly grocery spending (see below). |
+| HSA, FSA | Asset (restricted) | Health money: not spending money and never used for bills. An HSA can earn interest. |
+| Brokerage, Retirement | Asset | Counted in net worth. The rate is the growth you expect per year, added monthly in projections. |
+| Other | Asset | Anything else; counted in net worth only. |
 | Credit card | Liability | Has a limit, APR, due day, statement day, and optional 0% promos. |
 | HELOC | Liability | Home-equity line with a draw period (interest-only minimums) followed by a repayment period. |
 | Mortgage | Liability | Fixed-rate home loan with a principal/interest/escrow breakdown. Its monthly payment is calculated for you. |
@@ -279,7 +286,10 @@ The 🔔 bell at the top right of every page lists alerts (§19). **Refresh** re
 | Account Type | all | Checking, Savings, Credit Card, HELOC, or Mortgage. |
 | Starting Balance / Current Balance (owed) | all | For cards, HELOCs, and mortgages this is the amount **owed**. For a mortgage it's the current principal; leave it blank (0) for a brand-new loan to use the original amount. |
 | APY % / APR % | all | Annual percentage. |
-| Interest Day (1-31, optional) | checking, savings | Day of month interest is credited. Leave blank for the end of each month; an account that earns nothing just has an APY of 0. |
+| Interest Day (1-31, optional) | accounts that earn | Day of month interest is credited. Leave blank for the end of each month; an account that earns nothing just has an APY of 0. |
+| Money added each month + day | EBT, HSA, FSA, cash, apps, investments | A deposit that doesn't come from checking: SNAP benefits, HSA or 401(k) contributions. |
+| Spent per week | EBT, HSA, FSA, cash, apps, prepaid | How much you spend from it each week (groceries on EBT, for example). |
+| This replaces part of my everyday spending | same | Checked: while the account has money, it pays that part of your everyday spending, so it doesn't also come out of checking. When it runs out, checking covers it until the next deposit. |
 | Credit Limit | credit card, HELOC | Required and must be greater than 0. |
 | Payment Due Day (1-31) | credit card, HELOC | Sets the due day of the card's `[Auto]` payment bill. |
 | Statement Day (1-31, optional) | credit card | Day interest is charged each month. |
@@ -695,6 +705,12 @@ A month grid with ‹ / › navigation. Each day shows colored dots — **green*
 
 ## 15. Payment Optimizer
 
+> **Go further** (a card on this page) has three more tools. Each answer is checked with the same full day-by-day simulation:
+>
+> - **Pay down debt faster** – the most you can put toward debt each month without checking dropping below your cushion (or the lowest point paying minimums would reach) and with nothing late. It tries amounts and narrows in to the nearest $10. Pick **Highest interest first** (avalanche) or **Smallest balance first** (snowball) and how far ahead (3 months – 2 years). It shows the interest saved, debt at the end, your lowest checking balance, each debt's extra payments and payoff date, and how the other order compares. Type an amount in **Try** to test your own; too much is flagged.
+> - **Better due dates** – for each monthly bill, tries due days just after your paydays and lists the moves that fix a late payment or raise your lowest balance (measured after the first month, once the new date settles in). Ask the company to move it, then click **I moved it** to update the bill.
+> - **When can I buy it?** – a chart of how much you could spend on each day ahead and still stay above your cushion, plus the earliest day a purchase of the amount you type fits (checked so no bill is pushed late).
+
 **Route:** `/optimizer` · Answers *"what's the best way to get every bill paid?"* for the chosen period (30 days – 1 year, pick it top-right). It compares two versions of the same period and explains the difference in plain language:
 
 - **On due date**: every bill comes out of its usual account on the day it's due, and nothing else moves.
@@ -881,7 +897,7 @@ The **🔔** at the top right of every page counts what needs attention (red whe
 
 **Browser notifications** (Settings → Alerts) pop up urgent and warning alerts once each, while the app is open in a tab. Your browser asks for permission the first time.
 
-**Daily email digest** (Settings → Alerts) – a morning email with the status, Safe to spend, alerts, and this pay period's bills. It needs an email account's SMTP settings; it's sent after 7am by the running API server, so the app has to be running.
+**Daily email digest** (Settings → Alerts) – a designed morning email with the status, Safe to spend, checking and the lowest point ahead, alerts, this pay period's bills, paychecks coming in, benefits (and when they run out), budgets and optimizer tips. A plain-text version is included for email apps that don't show HTML. If you set the app address, it has an **Open your budget** button. It needs an email account's SMTP settings; it's sent after 7am by the running API server, so the app has to be running.
 
 **Phone notifications** (Settings → Alerts) – urgent alerts (and, if you like, warnings and a short morning summary) pushed to your phone through the free [ntfy](https://ntfy.sh) app, once each. They're sent by the running server, so they arrive even when no browser has the app open.
 
@@ -911,7 +927,7 @@ Pick **Light**, **Dark**, or **Match device** (follows your phone or computer's 
 - **Warn when checking is projected to dip below the cushion.**
 - **Mark bills paid automatically when a transaction clearly matches** (§8). Off = every match waits for you to confirm.
 - **Browser notifications for urgent alerts.**
-- **Daily email digest** – *Send to*, the SMTP server, port, username, and password (for Gmail: `smtp.gmail.com`, port 587, your address, and an *app password*). The password is stored but never shown again. **Send a test digest now** saves and sends one immediately; **Preview digest** shows today's text.
+- **Daily email digest** – *Send to*, the SMTP server, port, username, and password (for Gmail: `smtp.gmail.com`, port 587, your address, and an *app password*). The password is stored but never shown again. **Send a test digest now** saves and sends one immediately; **Preview digest** shows today's email as it will look (switch to **Plain text** for the text version).
 - **Phone notifications** – install the ntfy app, subscribe to a topic with a hard-to-guess name (anyone who knows the name can read it), and paste its URL, e.g. `https://ntfy.sh/budget-k3j9x2`. A self-hosted ntfy server works too; for a protected topic add its *access token* (stored, never shown again). Choose *warnings and urgent alerts* or *only urgent*, and optionally *a short summary every morning*. *App address* (e.g. `https://budget.example.com`) makes tapping a notification open the right page. **Send a test notification** saves and sends one.
 
 ### 💾 Data & backup

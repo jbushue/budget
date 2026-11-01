@@ -28,9 +28,10 @@ class Bank:
         account_name: str,
         starting_balance: float = 0.0,
         interest_rate: float = 0.0,
-        interest_accrual_date: int = None
+        interest_accrual_date: int = None,
+        **extras,
     ) -> BankAccount:
-        """Add a traditional bank account (checking/savings)."""
+        """Add a cash-type account (checking, savings, EBT, HSA, ... see ACCOUNT_KINDS)."""
         if account_name in self.accounts:
             raise ValueError(f"Account '{account_name}' already exists in {self.name}.")
 
@@ -39,7 +40,8 @@ class Bank:
             account_name=account_name,
             balance=starting_balance,
             interest_rate=interest_rate,
-            interest_accrual_date=interest_accrual_date
+            interest_accrual_date=interest_accrual_date,
+            **extras,
         )
         self.accounts[account_name] = account
         return account

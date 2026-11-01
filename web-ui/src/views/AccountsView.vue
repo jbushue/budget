@@ -30,7 +30,7 @@
             <span class="badge">{{ BANK_TYPES[bank.bankType] ?? bank.bankType }}</span>
           </div>
           <div class="row-actions">
-            <span v-if="bank.bankAccounts.length" class="bank-total" title="Cash in this bank's checking and savings">{{ currency(bank.totalBalance) }}</span>
+            <span v-if="bank.bankAccounts.length" class="bank-total" title="Total in this bank's accounts">{{ currency(bank.totalBalance) }}</span>
             <RowMenu label="Bank actions" :items="[
               { label: 'Edit bank', icon: 'pencil', action: () => openEditBank(bank) },
               { label: 'Delete bank', icon: 'trash', danger: true, divider: true, action: () => deleteBank(bank.name) },
@@ -40,15 +40,15 @@
 
         <!-- Bank accounts -->
         <div v-if="bank.bankAccounts.length" style="margin-bottom:1rem">
-          <h4>Checking &amp; savings</h4>
+          <h4>{{ bankAccountsTitle(bank.bankAccounts) }}</h4>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Account</th>
                   <th>Type</th>
-                  <th>APY</th>
-                  <th>Interest day</th>
+                  <th>Rate</th>
+                  <th>Details</th>
                   <th style="text-align:right">Balance</th>
                   <th></th>
                 </tr>
@@ -61,9 +61,12 @@
                       <span class="sync-label">SimpleFIN</span>
                     </span>
                   </td>
-                  <td><span class="badge" :class="acc.accountType === 'savings' ? 'badge-success' : 'badge-info'">{{ accountTypeLabel(acc.accountType) }}</span></td>
-                  <td>{{ pct(acc.interestRate) }}</td>
-                  <td>{{ acc.interestAccrualDate ?? (acc.interestRate > 0 ? 'Month end' : '-') }}</td>
+                  <td>
+                    <span class="badge" :class="GROUP_BADGE[kindInfo(acc.accountType).group]" :title="kindInfo(acc.accountType).hint">{{ accountTypeLabel(acc.accountType) }}</span>
+                    <span v-if="acc.paysBills === false" class="restricted-note" title="Not counted as spending money and never used to pay bills">not for bills</span>
+                  </td>
+                  <td>{{ acc.interestRate > 0 ? pct(acc.interestRate) + (kindInfo(acc.accountType).group === 'invested' ? ' growth' : '') : '—' }}</td>
+                  <td class="acct-details">{{ accountDetails(acc) || '—' }}</td>
                   <td style="text-align:right;font-weight:600" :class="acc.balance >= 0 ? 'positive' : 'negative'">{{ currency(acc.balance) }}</td>
                   <td style="text-align:right;white-space:nowrap">
                     <div class="row-actions">
@@ -329,12 +332,16 @@
         <div class="form-group">
           <label>Account type</label>
           <select v-model="newAccount.type">
-            <option value="checking">Checking</option>
-            <option value="savings">Savings</option>
-            <option value="credit">Credit card</option>
-            <option value="heloc">HELOC</option>
-            <option value="mortgage">Mortgage</option>
+            <optgroup v-for="g in KIND_GROUPS" :key="g.group" :label="g.label">
+              <option v-for="k in g.kinds" :key="k.value" :value="k.value">{{ k.label }}</option>
+            </optgroup>
+            <optgroup label="Debt">
+              <option value="credit">Credit card</option>
+              <option value="heloc">HELOC</option>
+              <option value="mortgage">Mortgage</option>
+            </optgroup>
           </select>
+          <small v-if="isBankKind(newAccount.type)" class="muted">{{ kindInfo(newAccount.type).hint }}</small>
         </div>
         <div v-if="newAccount.type === 'mortgage'" class="form-group">
           <label>Original loan amount</label>
@@ -345,10 +352,11 @@
           <label>{{ newAccount.type === 'credit' ? 'Current Balance' : newAccount.type === 'heloc' ? 'Current Balance Owed' : newAccount.type === 'mortgage' ? 'Current Principal Owed (blank = original amount)' : 'Starting Balance' }}</label>
           <input v-model.number="newAccount.balance" type="number" step="0.01" />
         </div>
-        <div class="form-group">
-          <label>{{ newAccount.type === 'checking' || newAccount.type === 'savings' ? 'APY %' : 'APR %' }}</label>
+        <div v-if="!isBankKind(newAccount.type) || kindInfo(newAccount.type).earns" class="form-group">
+          <label>{{ isBankKind(newAccount.type) ? rateLabel(newAccount.type) : 'APR %' }}</label>
           <input v-model.number="newAccount.interestRate" type="number" step="0.01" />
         </div>
+        <AccountExtrasFields v-if="isBankKind(newAccount.type)" v-model="newAccount.extras" :type="newAccount.type" />
         <div v-if="newAccount.type === 'credit' || newAccount.type === 'heloc'" class="form-group">
           <label>Credit limit</label>
           <input v-model.number="newAccount.creditLimit" type="number" step="0.01" min="0" />
@@ -366,7 +374,7 @@
           </div>
         </template>
         <!-- Checking / savings: interest posting day -->
-        <div v-if="newAccount.type === 'checking' || newAccount.type === 'savings'" class="form-group">
+        <div v-if="isBankKind(newAccount.type) && (newAccount.interestRate || 0) > 0" class="form-group">
           <label>Interest day (1-31, optional)</label>
           <input v-model.number="newAccount.interestAccrualDate" type="number" min="1" max="31" />
           <small style="color:var(--text-muted)">Day of the month interest posts.</small>
@@ -746,9 +754,11 @@ import {
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
 import { currency, pct, fmtDate, statusBadge, todayISO, accountTypeLabel } from '../utils/format'
+import { GROUP_BADGE, KIND_GROUPS, isBankKind, kindInfo, rateLabel } from '../utils/accountKinds'
+import AccountExtrasFields, { type AccountExtras } from '../components/AccountExtrasFields.vue'
 import { runMutation } from '../utils/mutation'
 import EditAccountModal, { type AccountKind, type AnyAccount } from '../components/EditAccountModal.vue'
-import type { Bank, CreditAccount, BalanceHistoryEntry, SimplefinSyncedAccount, SimplefinTransaction, PromoOffer, MutationPayload } from '../types'
+import type { Bank, BankAccount, CreditAccount, BalanceHistoryEntry, SimplefinSyncedAccount, SimplefinTransaction, PromoOffer, MutationPayload } from '../types'
 import { ask, notify } from '../utils/dialog'
 
 
@@ -828,6 +838,26 @@ async function deleteBank(name: string) {
   if (ok) refetch()
 }
 
+function ordinal(n: number) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+/** Short summary of an account's interest day, refill and weekly spending. */
+function accountDetails(acc: BankAccount): string {
+  const parts: string[] = []
+  if ((acc.refillAmount ?? 0) > 0) parts.push(`+${currency(acc.refillAmount!)} on the ${ordinal(acc.refillDay ?? 1)}`)
+  if ((acc.weeklySpending ?? 0) > 0) parts.push(`${currency(acc.weeklySpending!)}/wk spent${acc.offsetsEveryday ? ' (part of everyday)' : ''}`)
+  if (acc.interestRate > 0 && kindInfo(acc.accountType).earns) {
+    parts.push(acc.interestAccrualDate ? `interest on the ${ordinal(acc.interestAccrualDate)}` : 'interest at month end')
+  }
+  return parts.join(' · ')
+}
+function bankAccountsTitle(list: BankAccount[]): string {
+  const kinds = new Set(list.map(a => a.accountType))
+  if ([...kinds].every(k => k === 'checking' || k === 'savings')) return 'Checking & savings'
+  return 'Cash & other accounts'
+}
+
 // ── Create account
 const showAccountModal = ref(false)
 function emptyAccount() {
@@ -846,9 +876,14 @@ function emptyAccount() {
     escrowOther: null as number | string | null,
     marketValue: null as number | string | null,
     sourceBank: '', sourceAccount: '',
+    extras: { refillAmount: null, refillDay: null, weeklySpending: null, offsetsEveryday: false } as AccountExtras,
   }
 }
 const newAccount = ref(emptyAccount())
+// Pick a bank so the form can be saved right away
+watch([showAccountModal, banks], ([open]) => {
+  if (open && !newAccount.value.bankName && banks.value.length) newAccount.value.bankName = banks.value[0].name
+})
 const needsCreditLimit = computed(() => newAccount.value.type === 'credit' || newAccount.value.type === 'heloc')
 
 const canCreateAccount = computed(() => {
@@ -935,7 +970,12 @@ async function createAccount() {
     }}), 'createMortgageAccount', { failMessage: 'Failed to create mortgage' })
   } else {
     const isCredit = a.type === 'credit'
+    const x = a.extras
     ok = await runMutation(() => doCreateAccount({ variables: {
+      ...(isCredit ? {} : {
+        refillAmount: optAmount(x.refillAmount) ?? 0, refillDay: optDay(x.refillDay),
+        weeklySpending: optAmount(x.weeklySpending) ?? 0, offsetsEveryday: x.offsetsEveryday,
+      }),
       bankName: a.bankName,
       accountName: a.name,
       accountType: a.type,
@@ -1151,8 +1191,13 @@ const router = useRouter()
 watch(() => route.query.action, action => {
   if (action === 'transfer') showTransfer.value = true
   else if (action === 'balances') showCheckIn.value = true
-  else return
-  router.replace({ query: { ...route.query, action: undefined } })
+  else if (action === 'add') {
+    // /accounts?action=add&q=ebt opens the form with that kind picked
+    const kind = typeof route.query.q === 'string' ? route.query.q : ''
+    newAccount.value = { ...emptyAccount(), type: isBankKind(kind) || ['credit', 'heloc', 'mortgage'].includes(kind) ? kind : 'checking' }
+    showAccountModal.value = true
+  } else return
+  router.replace({ query: { ...route.query, action: undefined, q: undefined } })
 }, { immediate: true })
 
 function openPromos(bankName: string, cc: CreditAccount) {
@@ -1265,6 +1310,8 @@ function refreshPromoTarget() {
 </script>
 
 <style scoped>
+.restricted-note { margin-left: 0.35rem; font-size: 0.7rem; color: var(--text-light); white-space: nowrap; }
+.acct-details { font-size: 0.8rem; color: var(--text-muted); max-width: 300px; }
 .sync-indicator {
   display: inline-flex;
   align-items: center;

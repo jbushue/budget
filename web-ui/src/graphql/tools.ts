@@ -78,3 +78,21 @@ export const GET_DATABASE_INFO = gql`
 export const GET_REPORT_KINDS = gql`
   query GetReportKinds { reportKinds { key description } }
 `
+
+export const GET_ACCOUNT_KINDS = gql`
+  query GetAccountKinds { accountKinds }
+`
+
+export const GET_DEBT_BOOST = gql`
+  query GetDebtBoost($days: Int, $strategy: String, $monthly: Float) {
+    debtBoost(days: $days, strategy: $strategy, monthly: $monthly)
+  }
+`
+
+export const GET_DUE_DATE_MOVES = gql`
+  query GetDueDateMoves($days: Int) { dueDateMoves(days: $days) }
+`
+
+export const GET_PURCHASE_PLANNER = gql`
+  query GetPurchasePlanner($amount: Float, $days: Int) { purchasePlanner(amount: $amount, days: $days) }
+`

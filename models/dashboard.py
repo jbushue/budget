@@ -44,6 +44,50 @@ def _pay_dates(manager, start: date, days: int) -> list[date]:
     return sorted(dates)
 
 
+def _next_refill(day: int, today: date) -> date:
+    from models.date_utils import is_clamped_day
+    d = today
+    while not is_clamped_day(d, day):
+        d += timedelta(days=1)
+    return d
+
+
+def other_money(manager, snapshots: list[dict], today: date) -> list[dict]:
+    """
+    Money outside checking, grouped: benefits (EBT, HSA, FSA), other cash
+    (cash, payment apps, prepaid), savings and investments. Benefits that
+    are spent each week say when they run out before the next refill.
+    """
+    from models.types import account_kind, PURPOSE_LABELS
+    out = []
+    for bank in manager.banks:
+        for acc in bank.get_all_accounts():
+            kind = account_kind(acc)
+            if acc.account_type.value == "checking":
+                continue
+            key = f"{bank.name}:{acc.account_name}"
+            refill_on = _next_refill(acc.refill_day, today + timedelta(days=1))                 if getattr(acc, "refill_day", None) and acc.refill_amount > 0 else None
+            runs_out = None
+            if getattr(acc, "weekly_spending", 0) > 0:
+                for snap in snapshots:
+                    if refill_on and snap["date"] >= refill_on:
+                        break
+                    if snap["balances"].get(key, 0.0) <= 0.005:
+                        runs_out = snap["date"].isoformat()
+                        break
+            out.append({
+                "bank": bank.name, "account": acc.account_name, "type": acc.account_type.value,
+                "label": kind["label"], "group": kind["group"], "balance": _r(acc.balance),
+                "purpose": PURPOSE_LABELS.get(kind.get("purpose"), ""),
+                "refill_amount": _r(getattr(acc, "refill_amount", 0.0)),
+                "next_refill": refill_on.isoformat() if refill_on else None,
+                "weekly_spending": _r(getattr(acc, "weekly_spending", 0.0)),
+                "runs_out": runs_out,
+            })
+    order = {"benefits": 0, "cash": 1, "savings": 2, "invested": 3, "other": 4}
+    return sorted(out, key=lambda a: (order.get(a["group"], 9), -a["balance"]))
+
+
 def _bill_label(bill) -> str:
     if isinstance(bill, GroupLinkedBill):
         return bill.linked_group.group_name
@@ -279,6 +323,7 @@ def build_dashboard(manager, today: date | None = None) -> dict:
 
     spend = manager.everyday_spending
     return {
+        "other_money": other_money(manager, analyzer.baseline["snapshots"], today),
         "status": status,
         "status_title": title,
         "status_detail": detail,

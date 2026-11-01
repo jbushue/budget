@@ -22,6 +22,8 @@ export const GET_SNAPSHOT = gql`
           balance
           interestRate
           interestAccrualDate
+          kindLabel kindGroup paysBills
+          refillAmount refillDay weeklySpending offsetsEveryday
         }
         creditAccounts {
           id
@@ -118,6 +120,8 @@ export const GET_ALL_BANKS = gql`
         balance
         interestRate
         interestAccrualDate
+        kindLabel kindGroup paysBills
+        refillAmount refillDay weeklySpending offsetsEveryday
       }
       creditAccounts {
         id
@@ -418,6 +422,10 @@ export const CREATE_ACCOUNT = gql`
     $paymentDueDate: Int
     $statementDate: Int
     $interestAccrualDate: Int
+    $refillAmount: Float
+    $refillDay: Int
+    $weeklySpending: Float
+    $offsetsEveryday: Boolean
   ) {
     createAccount(
       bankName: $bankName
@@ -429,6 +437,10 @@ export const CREATE_ACCOUNT = gql`
       paymentDueDate: $paymentDueDate
       statementDate: $statementDate
       interestAccrualDate: $interestAccrualDate
+      refillAmount: $refillAmount
+      refillDay: $refillDay
+      weeklySpending: $weeklySpending
+      offsetsEveryday: $offsetsEveryday
     ) {
       success
       message
@@ -590,7 +602,7 @@ export const DISMISS_ALERT = gql`
 `
 
 export const GET_DIGEST_PREVIEW = gql`
-  query GetDigestPreview { digestPreview }
+  query GetDigestPreview { digestPreview digestHtml }
 `
 
 export const SEND_DIGEST_EMAIL = gql`
@@ -617,7 +629,7 @@ export const GET_DASHBOARD_SUMMARY = gql`
       status statusTitle statusDetail
       safeToSpend safePerDay lowestBalance lowestDate checkingNow cushion
       overdueTotal shortTotal goalReserves everydayWeekly spendingMode
-      nextPayday horizon coveredThrough headline
+      nextPayday horizon coveredThrough headline otherMoney
       billsThisPeriod { name billName kind dueDate amount status shortBy daysOverdue sourceAccount }
       upcomingIncome { date name amount }
       insights { severity category title detail impact date }
@@ -1202,6 +1214,7 @@ export const UPDATE_ACCOUNT = gql`
     $bankName: String!, $accountName: String!, $accountType: String!,
     $newName: String, $newBankName: String, $newAccountType: String,
     $interestRate: Float, $interestAccrualDate: Int,
+    $refillAmount: Float, $refillDay: Int, $weeklySpending: Float, $offsetsEveryday: Boolean,
     $creditLimit: Float, $paymentDueDate: Int, $statementDate: Int, $status: String,
     $originalPrincipal: Float, $currentPrincipal: Float, $loanTermMonths: Int, $startDate: String,
     $escrowPropertyTax: Float, $escrowInsurance: Float, $escrowPmi: Float, $escrowHoa: Float, $escrowOther: Float,
@@ -1212,6 +1225,8 @@ export const UPDATE_ACCOUNT = gql`
       bankName: $bankName, accountName: $accountName, accountType: $accountType,
       newName: $newName, newBankName: $newBankName, newAccountType: $newAccountType,
       interestRate: $interestRate, interestAccrualDate: $interestAccrualDate,
+      refillAmount: $refillAmount, refillDay: $refillDay, weeklySpending: $weeklySpending,
+      offsetsEveryday: $offsetsEveryday,
       creditLimit: $creditLimit, paymentDueDate: $paymentDueDate, statementDate: $statementDate, status: $status,
       originalPrincipal: $originalPrincipal, currentPrincipal: $currentPrincipal,
       loanTermMonths: $loanTermMonths, startDate: $startDate,

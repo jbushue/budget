@@ -85,7 +85,11 @@ class DatabaseRepository:
                     account_name=db_account.account_name,
                     balance=db_account.balance,
                     interest_rate=db_account.interest_rate,
-                    interest_accrual_date=db_account.interest_accrual_date
+                    interest_accrual_date=db_account.interest_accrual_date,
+                    refill_amount=db_account.refill_amount or 0.0,
+                    refill_day=db_account.refill_day,
+                    weekly_spending=db_account.weekly_spending or 0.0,
+                    offsets_everyday=bool(db_account.offsets_everyday),
                 )
                 bank.accounts[db_account.account_name] = account
 
@@ -191,6 +195,10 @@ class DatabaseRepository:
                 interest_accrual_date=account.interest_accrual_date
             )
             self.session.add(db_account)
+        db_account.refill_amount = getattr(account, "refill_amount", 0.0) or 0.0
+        db_account.refill_day = getattr(account, "refill_day", None)
+        db_account.weekly_spending = getattr(account, "weekly_spending", 0.0) or 0.0
+        db_account.offsets_everyday = bool(getattr(account, "offsets_everyday", False))
 
         self.session.commit()
         return db_account

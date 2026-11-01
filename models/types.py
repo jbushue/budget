@@ -11,6 +11,70 @@ class AccountType(enum.Enum):
     CHECKING = "checking"
     SAVINGS = "savings"
     MORTGAGE = "mortgage"
+    MONEY_MARKET = "money_market"
+    CD = "cd"
+    CASH = "cash"
+    PREPAID = "prepaid"
+    WALLET = "wallet"
+    EBT = "ebt"
+    HSA = "hsa"
+    FSA = "fsa"
+    INVESTMENT = "investment"
+    RETIREMENT = "retirement"
+    OTHER = "other"
+
+
+# What each kind of bank account is for and how the planner treats it.
+#   group      cash | savings | benefits | invested | other (how it's grouped on screen)
+#   pays_bills the planner may pay bills and move money from it
+#   earns      its rate is added monthly (interest, or expected growth for investments)
+#   purpose    what a restricted balance can be spent on
+ACCOUNT_KINDS = {
+    "checking": {"label": "Checking", "group": "cash", "pays_bills": True, "earns": False,
+                 "hint": "Your everyday account. Bills and Safe to spend come from here."},
+    "savings": {"label": "Savings", "group": "savings", "pays_bills": True, "earns": True,
+                "hint": "Earns interest. The optimizer can move spare cash here and back."},
+    "money_market": {"label": "Money market", "group": "savings", "pays_bills": True, "earns": True,
+                     "hint": "Treated like savings."},
+    "cd": {"label": "CD", "group": "savings", "pays_bills": False, "earns": True,
+           "hint": "Locked until it matures, so it's never used to pay bills."},
+    "cash": {"label": "Cash", "group": "cash", "pays_bills": False, "earns": False,
+             "hint": "Cash on hand. Counted in your net worth, not used for bills."},
+    "prepaid": {"label": "Prepaid card", "group": "cash", "pays_bills": True, "earns": False,
+                "hint": "A reloadable card that can pay bills."},
+    "wallet": {"label": "PayPal / Venmo / Cash App", "group": "cash", "pays_bills": True, "earns": False,
+               "hint": "Money sitting in a payment app."},
+    "ebt": {"label": "EBT / SNAP", "group": "benefits", "pays_bills": False, "earns": False, "purpose": "food",
+            "hint": "Food benefits. Never counted as spending money or used for bills; "
+                    "it can pay for part of your groceries."},
+    "hsa": {"label": "HSA", "group": "benefits", "pays_bills": False, "earns": True, "purpose": "medical",
+            "hint": "Health savings. Only for medical costs, so it isn't spending money."},
+    "fsa": {"label": "FSA", "group": "benefits", "pays_bills": False, "earns": False, "purpose": "medical",
+            "hint": "Flexible spending for medical (or dependent care) costs."},
+    "investment": {"label": "Brokerage", "group": "invested", "pays_bills": False, "earns": True,
+                   "hint": "Investments. The rate is the growth you expect per year."},
+    "retirement": {"label": "Retirement", "group": "invested", "pays_bills": False, "earns": True,
+                   "hint": "401(k), IRA and similar. The rate is the growth you expect per year."},
+    "other": {"label": "Other", "group": "other", "pays_bills": False, "earns": False,
+              "hint": "Anything else. Counted in your net worth only."},
+}
+BANK_ACCOUNT_KINDS = tuple(ACCOUNT_KINDS)
+PURPOSE_LABELS = {"food": "Groceries", "medical": "Medical"}
+
+
+def account_kind(account) -> dict:
+    """The ACCOUNT_KINDS entry for a bank account (or a type value)."""
+    value = getattr(getattr(account, "account_type", account), "value", getattr(account, "account_type", account))
+    return ACCOUNT_KINDS.get(value, ACCOUNT_KINDS["other"])
+
+
+def pays_bills(account) -> bool:
+    return account_kind(account)["pays_bills"]
+
+
+def is_savings_like(account) -> bool:
+    """Savings and money market: where the optimizer parks spare cash."""
+    return account_kind(account)["group"] == "savings" and account_kind(account)["pays_bills"]
 
 class CreditAccountStatus(enum.Enum):
     ACTIVE = "active"

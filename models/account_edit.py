@@ -22,16 +22,16 @@ from sqlalchemy import text
 from models import database as db
 from models.fixed_bill import AccountLinkedBill
 from models.mortgage_account import EscrowBreakdown
-from models.types import AccountType, CreditAccountStatus
+from models.types import AccountType, BANK_ACCOUNT_KINDS, CreditAccountStatus
 
 # kind -> (Bank attribute holding these accounts, database table)
 KINDS = {
-    "checking": ("accounts", "bank_accounts"),
-    "savings": ("accounts", "bank_accounts"),
+    **{k: ("accounts", "bank_accounts") for k in BANK_ACCOUNT_KINDS if k != "mortgage"},
     "credit": ("credit_accounts", "credit_accounts"),
     "mortgage": ("mortgage_accounts", "mortgage_accounts"),
     "heloc": ("heloc_accounts", "heloc_accounts"),
 }
+BANK_KINDS = tuple(k for k in BANK_ACCOUNT_KINDS if k != "mortgage")
 BANK_TYPES = ("traditional", "credit_issuer", "mortgage_lender")
 
 
@@ -66,7 +66,7 @@ def _tables(session) -> set[str]:
 
 def _kind_clause(kind: str) -> str:
     """SQL condition matching an account_type column to this kind of account."""
-    if kind in ("checking", "savings"):
+    if kind in BANK_KINDS:
         return "{col} NOT IN ('credit', 'mortgage', 'heloc')"
     return f"{{col}} = '{kind}'"
 
@@ -159,7 +159,7 @@ def rename_account(manager, kind: str, bank_name: str, old: str, new_name: str |
         if kind == "credit":
             session.execute(text("UPDATE bill_group_members SET bank_name = :nb, account_name = :na "
                                  "WHERE bank_name = :ob AND account_name = :oa"), p)
-        if kind in ("checking", "savings"):
+        if kind in BANK_KINDS:
             # Places that pay from (or save into) a bank account
             for t, b, a in (("bills", "preferred_source_bank", "preferred_source_account"),
                             ("bill_payments", "source_bank", "source_account"),
@@ -179,7 +179,7 @@ def rename_account(manager, kind: str, bank_name: str, old: str, new_name: str |
             session.execute(text("UPDATE simplefin_account_mappings SET local_bank_name = :nb, "
                                  "local_account_name = :na WHERE local_bank_name = :ob AND local_account_name = :oa "
                                  "AND " + _kind_clause(kind).format(col="local_account_type")), p)
-        if kind in ("checking", "savings"):
+        if kind in BANK_KINDS:
             _rename_spending_account(session, bank_name, old, target_name, new)
         session.commit()
     finally:
@@ -201,7 +201,7 @@ def rename_account(manager, kind: str, bank_name: str, old: str, new_name: str |
                     member.bank_name, member.account_name = target_name, new
         if manager.target_credit_account == old:
             manager.target_credit_account = new
-    if kind in ("checking", "savings"):
+    if kind in BANK_KINDS:
         sources = list(manager.bills) + list(manager.bill_groups) + [
             a for b in manager.banks for a in list(b.mortgage_accounts.values()) + list(b.heloc_accounts.values())]
         for obj in sources:
@@ -296,7 +296,8 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
     Apply ``changes`` (only the keys present) to an account and return its
     (possibly new) name. Everything is validated before anything changes.
 
-    Keys: name, bank_name, account_type (checking <-> savings), balance,
+    Keys: name, bank_name, account_type (any bank-account kind), balance,
+    refill_amount, refill_day (0 clears), weekly_spending, offsets_everyday,
     interest_rate, interest_accrual_date (0 clears), credit_limit,
     payment_due_date, statement_date (0 clears), status, original_principal,
     current_principal, loan_term_months, start_date (ISO), escrow_property_tax,
@@ -317,11 +318,14 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
         except ValueError:
             raise EditError("Start date must be YYYY-MM-DD") from None
 
-    if kind in ("checking", "savings"):
-        new_type = c.get("account_type", kind)
-        if new_type not in ("checking", "savings"):
-            raise EditError("A bank account can only be checking or savings")
+    if kind in BANK_KINDS:
+        new_type = c.get("account_type") or acc.account_type.value
+        if new_type not in BANK_KINDS:
+            raise EditError(f"Unknown account type '{new_type}'")
         day = _day(c.get("interest_accrual_date"), "Interest day", allow_clear=True)
+        refill_day = _day(c.get("refill_day"), "Refill day", allow_clear=True)
+        _non_negative(c.get("refill_amount"), "Refill amount")
+        _non_negative(c.get("weekly_spending"), "Weekly spending")
         if "balance" in c:
             acc.balance = float(c["balance"])
         if "interest_rate" in c:
@@ -329,6 +333,14 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
         if day is not None:
             acc.interest_accrual_date = day or None
         acc.account_type = AccountType(new_type)
+        if "refill_amount" in c:
+            acc.refill_amount = float(c["refill_amount"])
+        if refill_day is not None:
+            acc.refill_day = refill_day or None
+        if "weekly_spending" in c:
+            acc.weekly_spending = float(c["weekly_spending"])
+        if "offsets_everyday" in c:
+            acc.offsets_everyday = bool(c["offsets_everyday"])
 
     elif kind == "credit":
         limit = c.get("credit_limit", acc.credit_limit)

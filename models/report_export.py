@@ -67,13 +67,13 @@ def monthly_summary(manager, days: int = 180) -> list[dict]:
             continue
         m = month(_d(cf["date"])[:7])
         amt = abs(cf["amount"])
-        if kind == "INCOME":
+        if kind in ("INCOME", "ACCOUNT_REFILL"):
             m["income"] += amt
         elif kind == "INTEREST":
             m["interest"] += cf["amount"]
         elif kind == "FEE":
             m["fees"] += amt
-        elif kind == "EVERYDAY_SPENDING":
+        elif kind in ("EVERYDAY_SPENDING", "ACCOUNT_SPENDING", "PURCHASE"):
             m["spending"] += amt
         else:
             m["payments"] += amt

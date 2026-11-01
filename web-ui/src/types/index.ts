@@ -1,6 +1,8 @@
 // ── Enums ────────────────────────────────────────────────────────────
 
-export type AccountType = 'checking' | 'savings'
+export type AccountType = 'checking' | 'savings' | 'money_market' | 'cd' | 'cash' | 'prepaid' | 'wallet'
+  | 'ebt' | 'hsa' | 'fsa' | 'investment' | 'retirement' | 'other'
+export type AccountGroup = 'cash' | 'savings' | 'benefits' | 'invested' | 'other'
 export type BillTypeEnum = 'fixed' | 'floating' | 'credit_payment' | 'mortgage_payment' | 'heloc_payment'
 export type BillFrequency = 'once' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'semi_annual' | 'yearly'
 export type IncomeFrequency = 'once' | 'weekly' | 'biweekly' | 'monthly' | 'semimonthly' | 'bimonthly' | 'quarterly' | 'yearly'
@@ -15,6 +17,23 @@ export interface BankAccount {
   balance: number
   interestRate: number
   interestAccrualDate: number | null
+  kindLabel?: string
+  kindGroup?: AccountGroup
+  paysBills?: boolean
+  refillAmount?: number
+  refillDay?: number | null
+  weeklySpending?: number
+  offsetsEveryday?: boolean
+}
+
+export interface AccountKindInfo {
+  value: AccountType; label: string; group: AccountGroup; pays_bills: boolean; earns: boolean
+  purpose?: string; hint: string
+}
+
+export interface OtherMoney {
+  bank: string; account: string; type: AccountType; label: string; group: AccountGroup; balance: number
+  purpose: string; refill_amount: number; next_refill: string | null; weekly_spending: number; runs_out: string | null
 }
 
 export interface PromoOffer {
@@ -402,6 +421,7 @@ export interface PeriodBill {
 }
 
 export interface DashboardSummary {
+  otherMoney?: string | null
   status: 'ok' | 'warning' | 'danger'
   statusTitle: string
   statusDetail: string

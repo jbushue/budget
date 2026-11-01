@@ -90,6 +90,23 @@
         </ul>
       </div>
 
+      <!-- More ways to get ahead -->
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+          <span class="card-title">Go further</span>
+          <span class="muted" style="font-size:0.78rem">Each answer is checked with the full day-by-day plan</span>
+        </div>
+        <div class="tabs" role="tablist" style="margin-bottom:1rem">
+          <button v-for="t in TOOLS" :key="t.key" class="tab" :class="{ active: tool === t.key }" role="tab"
+                  :aria-selected="tool === t.key" @click="setTool(t.key)">
+            <Icon :name="t.icon" :size="14" /> {{ t.label }}
+          </button>
+        </div>
+        <DebtBoost v-if="tool === 'debt'" />
+        <DueDateMoves v-else-if="tool === 'dates'" @changed="refetchAll()" />
+        <PurchasePlanner v-else />
+      </div>
+
       <!-- Due date vs optimized -->
       <div class="card" style="margin-bottom:1.5rem">
         <div class="card-header">
@@ -350,10 +367,14 @@
 import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
+import { useRoute } from 'vue-router'
 import { GET_PAYMENT_INSIGHTS, GET_PAYMENT_PLAN } from '../graphql/queries'
 import { COMPARE_STRATEGIES, GET_STRATEGY_TARGETS } from '../graphql/tools'
 import { currency, fmtDate, fmtDateShort, pct, billName } from '../utils/format'
 import InsightList from '../components/InsightList.vue'
+import DebtBoost from '../components/DebtBoost.vue'
+import DueDateMoves from '../components/DueDateMoves.vue'
+import PurchasePlanner from '../components/PurchasePlanner.vue'
 import type { BillTiming, GroupPayoff, OutcomeSummary, PaymentInsights, PaymentPlan } from '../types'
 
 interface Strategy {
@@ -362,6 +383,21 @@ interface Strategy {
 }
 
 const days = ref(90)
+
+const TOOLS = [
+  { key: 'debt', label: 'Pay down debt faster', icon: 'card' },
+  { key: 'dates', label: 'Better due dates', icon: 'calendar' },
+  { key: 'buy', label: 'When can I buy it?', icon: 'banknote' },
+]
+const route = useRoute()
+const tool = ref(localStorage.getItem('budget-optimizer-tool') || 'debt')
+watch(() => route.query.tool, t => {
+  if (typeof t === 'string' && TOOLS.some(x => x.key === t)) setTool(t)
+}, { immediate: true })
+function setTool(key: string) {
+  tool.value = key
+  localStorage.setItem('budget-optimizer-tool', key)
+}
 const violationsOpen = ref(false)
 const attentionOnly = ref(false)
 

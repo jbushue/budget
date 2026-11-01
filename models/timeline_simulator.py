@@ -6,6 +6,7 @@ from models.fixed_bill import Bill, AccountLinkedBill, GroupLinkedBill
 from models.bill_group import BillGroup
 from models.income_source import IncomeSource
 from models.date_utils import add_months, clamped_date, is_clamped_day
+from models.types import account_kind, pays_bills, PURPOSE_LABELS
 
 
 @dataclass
@@ -154,6 +155,20 @@ class TimelineSimulator:
                         bank_name=bill.preferred_source_bank or "(unassigned)"
                     ))
 
+
+            # Monthly refills (EBT benefits, HSA contributions) land on their day
+            for bank in self.banks:
+                for account in bank.get_all_accounts():
+                    if (getattr(account, "refill_amount", 0) > 0 and account.refill_day
+                            and is_clamped_day(current_date, account.refill_day)):
+                        self.events.append(TimelineEvent(
+                            event_date=current_date,
+                            event_type="ACCOUNT_REFILL",
+                            amount=account.refill_amount,
+                            description=f"Refill: {account.account_name}",
+                            account_name=account.account_name,
+                            bank_name=bank.name,
+                        ))
 
             # Check for interest accrual on this day
             # Accrual days are clamped to the month length (day 31 accrues on
@@ -362,6 +377,20 @@ class TimelineSimulator:
                                                 "bank": target_bank.name
                                             })
                             break
+
+                elif event.event_type == "ACCOUNT_REFILL":
+                    bank = self._get_bank_by_name(event.bank_name)
+                    account = bank.accounts.get(event.account_name) if bank else None
+                    if account is not None:
+                        account.deposit(event.amount, description=event.description, transaction_date=current_date)
+                        cash_flow.append({
+                            "date": current_date,
+                            "type": "ACCOUNT_REFILL",
+                            "description": f"{event.account_name} refill",
+                            "amount": event.amount,
+                            "account": event.account_name,
+                            "bank": bank.name,
+                        })
 
                 elif event.event_type == "BILL_DUE":
                     # Find matching bill and pay it — handles all bill types uniformly
@@ -631,10 +660,26 @@ class TimelineSimulator:
                                           "HELOC_PARK", "HELOC_RECALL",
                                           "EXTRA_CREDIT_PAYMENT", "PROMO_PAYOFF"):
                     self._process_optimization_event(event, current_date, cash_flow)
+                elif event.event_type == "EXTRA_DEBT_PAYMENT":
+                    self._extra_debt_payment(event, current_date, cash_flow)
+                elif event.event_type == "PURCHASE":
+                    bank = self._get_bank_by_name(event.from_bank) if event.from_bank else None
+                    if bank and event.from_account in bank.accounts:
+                        account = bank.accounts[event.from_account]
+                    else:
+                        bank, account = self._spending_account()
+                    if account is not None:
+                        self._force_withdraw(account, event.amount, event.description, current_date)
+                        cash_flow.append({
+                            "date": current_date, "type": "PURCHASE", "description": event.description,
+                            "amount": -event.amount, "account": account.account_name, "bank": bank.name,
+                        })
 
-            # Everyday spending (groceries, gas, ...) happens every day
+            # Everyday spending (groceries, gas, ...) happens every day; accounts
+            # like EBT pay their share first
+            covered = self._apply_account_spending(current_date, cash_flow)
             if self.daily_spending:
-                self._apply_daily_spending(current_date, cash_flow)
+                self._apply_daily_spending(current_date, cash_flow, covered)
             # Overdraft fee each time a checking account newly drops below $0
             self._charge_overdraft_fees(current_date, cash_flow, overdrawn)
 
@@ -825,11 +870,44 @@ class TimelineSimulator:
         account.balance -= amount
         account._record_transaction("WITHDRAWAL", -amount, description, when)
 
-    def _apply_daily_spending(self, current_date: date, cash_flow: list[dict]):
+    def _apply_account_spending(self, current_date: date, cash_flow: list[dict]) -> float:
+        """
+        Spending paid from accounts with a weekly amount (groceries on EBT, ...),
+        as far as their balance goes. Returns how much of it replaces everyday
+        spending (accounts marked offsets_everyday).
+        """
+        covered = 0.0
+        for bank in self.banks:
+            for account in bank.get_all_accounts():
+                weekly = getattr(account, "weekly_spending", 0.0)
+                if weekly <= 0 or account.balance <= 0:
+                    continue
+                amount = round(min(weekly / 7.0, account.balance), 2)
+                if amount <= 0:
+                    continue
+                account.balance -= amount
+                account._record_transaction("WITHDRAWAL", -amount, "Spending", current_date)
+                kind = account_kind(account)
+                label = PURPOSE_LABELS.get(kind.get("purpose"), "Spending")
+                cash_flow.append({
+                    "date": current_date,
+                    "type": "ACCOUNT_SPENDING",
+                    "description": f"{label} from {account.account_name}",
+                    "amount": -amount,
+                    "account": account.account_name,
+                    "bank": bank.name,
+                })
+                if account.offsets_everyday:
+                    covered += amount
+        return covered
+
+    def _apply_daily_spending(self, current_date: date, cash_flow: list[dict], covered: float = 0.0):
         bank, account = self._spending_account()
         if account is None:
             return
-        amount = round(self.daily_spending["amount"], 2)
+        amount = round(max(0.0, self.daily_spending["amount"] - covered), 2)
+        if amount <= 0:
+            return
         self._force_withdraw(account, amount, "Everyday spending", current_date)
         cash_flow.append({
             "date": current_date,
@@ -912,6 +990,7 @@ class TimelineSimulator:
         """
         order = {
             "INCOME": 0,
+            "ACCOUNT_REFILL": 0,
             # Recalls fund the same day's bills
             "SAVINGS_RECALL": 1,
             "HELOC_RECALL": 2,
@@ -920,6 +999,8 @@ class TimelineSimulator:
             # Optimization events — after bills, before interest
             "PROMO_PAYOFF": 6,
             "EXTRA_CREDIT_PAYMENT": 7,
+            "EXTRA_DEBT_PAYMENT": 7,
+            "PURCHASE": 7,
             "HELOC_PARK": 8,
             "SAVINGS_SWEEP": 9,
             "INTEREST": 10,
@@ -1040,7 +1121,8 @@ class TimelineSimulator:
         candidates = []
         for bank in self.banks:
             for name, acc in bank.accounts.items():
-                if acc.balance >= amount:
+                # EBT, HSA, CDs, investments, ... never pay bills on their own
+                if acc.balance >= amount and pays_bills(acc):
                     candidates.append((bank, name, acc.balance))
 
         if not candidates:
@@ -1176,6 +1258,63 @@ class TimelineSimulator:
                             "to_bank": event.to_bank, "to_account": event.to_account,
                             "credit_balance_after": credit.balance,
                         })
+
+    def _debts(self) -> list[tuple]:
+        """(kind, bank, name, account, balance, rate) for every debt with a balance."""
+        out = []
+        for bank in self.banks:
+            for name, c in bank.credit_accounts.items():
+                if c.balance > 0.005:
+                    out.append(("credit", bank, name, c, c.balance, c.interest_rate))
+            for name, h in bank.heloc_accounts.items():
+                if h.balance > 0.005:
+                    out.append(("heloc", bank, name, h, h.balance, h.interest_rate))
+            for name, m in bank.mortgage_accounts.items():
+                if m.current_principal > 0.005:
+                    out.append(("mortgage", bank, name, m, m.current_principal, m.interest_rate))
+        return out
+
+    def _extra_debt_payment(self, event: TimelineEvent, current_date: date, cash_flow: list[dict]):
+        """
+        Extra payment toward debt from a cash account. ``to_account`` names
+        the debt, or "(avalanche)" (highest rate first) / "(snowball)"
+        (smallest balance first) to pick one at payment time — whatever is
+        left after one debt is paid off goes to the next.
+        """
+        src_bank = self._get_bank_by_name(event.from_bank)
+        if not src_bank or event.from_account not in src_bank.accounts:
+            return
+        src = src_bank.accounts[event.from_account]
+        left = round(min(event.amount, max(0.0, src.balance)), 2)
+        strategy = event.to_account
+        while left > 0.005:
+            debts = self._debts()
+            if strategy == "(avalanche)":
+                debts.sort(key=lambda d: (-d[5], d[4]))
+            elif strategy == "(snowball)":
+                debts.sort(key=lambda d: (d[4], -d[5]))
+            else:
+                debts = [d for d in debts if d[2] == strategy and (not event.to_bank or d[1].name == event.to_bank)]
+            if not debts:
+                break
+            kind, bank, name, acct, balance, _ = debts[0]
+            pay = min(round(min(left, balance), 2), balance)
+            if pay <= 0:
+                break
+            src.withdraw(pay, description=f"Extra payment to {name}", transaction_date=current_date)
+            if kind == "mortgage":
+                acct.make_extra_principal_payment(pay, src_bank.name, event.from_account, current_date)
+            else:
+                acct.make_payment(pay, description=f"Extra payment from {event.from_account}",
+                                  transaction_date=current_date)
+            cash_flow.append({
+                "date": current_date, "type": "EXTRA_DEBT_PAYMENT", "description": f"Extra payment to {name}",
+                "amount": -pay, "from_bank": src_bank.name, "from_account": event.from_account,
+                "to_bank": bank.name, "to_account": name, "debt_kind": kind,
+            })
+            left = round(left - pay, 2)
+            if strategy not in ("(avalanche)", "(snowball)"):
+                break
 
     @staticmethod
     def _resolve_promo_name(event: TimelineEvent, credit) -> str | None:

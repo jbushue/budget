@@ -11,7 +11,9 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 ## Features
 
 **Accounts**
-- Banks with checking and savings accounts (APY and interest dates)
+- Banks with checking and savings accounts (APY and interest dates), plus **every other kind of account**: money market, CDs, cash, prepaid cards, PayPal/Venmo/Cash App, **EBT / SNAP**, HSA, FSA, brokerage, retirement and other
+- Each kind is treated the way it works in real life: benefits (EBT, HSA, FSA), CDs and investments never pay bills or count as spending money; investments grow at the rate you expect
+- **EBT and other benefit cards**: a monthly benefit deposit on its day, weekly grocery spending that can replace part of your everyday spending (checking takes over when the benefits run out), and the dashboard shows when they'll run out before the next deposit
 - Credit cards with APR, statement/due dates, minimum payments, and **0% promo offers** with deferred-interest tracking
 - **Mortgages** (amortization, escrow, equity) and **HELOCs** (draw and repayment phases)
 - Loan groups ("bill groups") — one payment split across several loans (e.g. student loans), proportionally, equally, or by fixed amounts
@@ -50,6 +52,9 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
   - how a loan group's payment is split, and what aiming it at the highest rate or paying a little more would save
   - which 0% promos are on track before they expire
   - and lets you choose the goal — **most cash**, **least interest**, or **pay off one card** — and compare all three side by side
+  - **Pay down debt faster**: searches for the most you can put toward debt each month without checking ever dropping below your cushion or a bill going late (every amount is simulated), sends it highest-interest-first or smallest-first, and shows the interest saved and payoff dates
+  - **Better due dates**: finds bills due at the wrong time for your paydays and the day to ask the company to move them to
+  - **When can I buy it?**: how much you could spend on each day ahead, and the earliest day a purchase fits
 - **Debt Payoff** — minimum-only vs. avalanche vs. snowball
 - **What-If Scenarios** — job loss, a raise, new or cut bills, paid-off debts — with a plain-language verdict
 - **Late and overdraft fees** are modeled (app-wide defaults plus a per-bill late fee)
@@ -60,7 +65,7 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 
 **Alerts**
 - A bell with everything that needs attention: overdue or short bills, bills due soon, a low balance ahead, budgets running over, payments to review
-- Optional browser notifications, **phone push notifications** (ntfy) and a daily email digest
+- Optional browser notifications, **phone push notifications** (ntfy) and a **daily email digest**: a designed HTML email (status, Safe to spend, alerts, this pay period's bills, paychecks, benefits, budgets and optimizer tips) with a plain-text version, previewed in Settings
 
 **Data and access**
 - Everything is saved automatically to a local SQLite database
@@ -178,6 +183,8 @@ models/
   planning.py            Left to budget, financial health check, subscriptions, year in review
   bill_matching.py       Recognize bill payments in transactions; detect recurring charges
   alerts.py              Alerts and the daily email digest
+  digest_email.py        The digest as an HTML email
+  optimizer_plus.py      Debt boost, due-date moves and the purchase planner (simulation-checked)
   notify.py              Phone push notifications (ntfy)
   jobs.py                Background jobs: daily upkeep, backups, SimpleFIN sync, digest, push
   backups.py             Database backups kept on the server

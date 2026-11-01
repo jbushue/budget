@@ -151,10 +151,27 @@ def digest_text(manager, today: date | None = None) -> tuple[str, str]:
         lines += ["", "Bills this pay period:"]
         lines += [f"  {b['due_date']}  {b['name']:<28} {_money(b['amount']):>12}  {b['status'].replace('_', ' ')}"
                   for b in upcoming]
+    if dash.get("upcoming_income"):
+        lines += ["", "Money coming in:"]
+        lines += [f"  {i['date']}  {i['name']:<28} {_money(i['amount']):>12}" for i in dash["upcoming_income"][:4]]
+    other = [o for o in dash.get("other_money", []) if o["group"] == "benefits" and
+             (o["balance"] > 0 or o["refill_amount"] > 0)]
+    if other:
+        lines += ["", "Benefits:"]
+        for o in other:
+            extra = (f", runs out {o['runs_out']}" if o["runs_out"] else "") + (
+                f", +{_money(o['refill_amount'])} on {o['next_refill']}" if o["next_refill"] else "")
+            lines.append(f"  {o['account']} ({o['label']}): {_money(o['balance'])}{extra}")
     icon = {"ok": "✅", "warning": "⚠️", "danger": "🚨"}.get(dash["status"], "")
     subject = f"{icon} Budget: {_money(dash['safe_to_spend'])} safe to spend" + (
         f", {sum(1 for a in alerts if a['severity'] == 'danger')} urgent" if any(a["severity"] == "danger" for a in alerts) else "")
     return subject, "\n".join(lines)
+
+
+def digest_html(manager, today: date | None = None) -> str:
+    """The digest as a styled HTML email (see models/digest_email.py)."""
+    from models.digest_email import build
+    return build(manager, today)[1]
 
 
 def send_digest(manager, force: bool = False, today: date | None = None) -> str:
@@ -175,6 +192,7 @@ def send_digest(manager, force: bool = False, today: date | None = None) -> str:
     msg["From"] = s["smtp_user"] or s["email_to"]
     msg["To"] = s["email_to"]
     msg.set_content(body)
+    msg.add_alternative(digest_html(manager, today), subtype="html")
     port = int(s["smtp_port"] or 587)
     if port == 465:
         server = smtplib.SMTP_SSL(s["smtp_host"], port, timeout=20, context=ssl.create_default_context())

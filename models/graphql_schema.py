@@ -26,6 +26,26 @@ class BankAccountType(graphene.ObjectType):
     balance = graphene.Float()
     interest_rate = graphene.Float()
     interest_accrual_date = graphene.Int()
+    kind_label = graphene.String(description="e.g. 'EBT / SNAP'")
+    kind_group = graphene.String(description="cash | savings | benefits | invested | other")
+    pays_bills = graphene.Boolean(description="The planner may pay bills from it")
+    refill_amount = graphene.Float()
+    refill_day = graphene.Int()
+    weekly_spending = graphene.Float()
+    offsets_everyday = graphene.Boolean()
+
+
+def _bank_account_type(name, acc):
+    from models.types import account_kind
+    kind = account_kind(acc)
+    return BankAccountType(
+        id=name, account_name=name, account_type=acc.account_type.value, balance=acc.balance,
+        interest_rate=acc.interest_rate, interest_accrual_date=acc.interest_accrual_date,
+        kind_label=kind["label"], kind_group=kind["group"], pays_bills=kind["pays_bills"],
+        refill_amount=getattr(acc, "refill_amount", 0.0), refill_day=getattr(acc, "refill_day", None),
+        weekly_spending=getattr(acc, "weekly_spending", 0.0),
+        offsets_everyday=bool(getattr(acc, "offsets_everyday", False)),
+    )
 
 
 class PromoOfferType(graphene.ObjectType):
@@ -121,17 +141,7 @@ class BankType(graphene.ObjectType):
 
     def resolve_bank_accounts(self, info):
         """Resolve bank accounts."""
-        return [
-            BankAccountType(
-                id=name,
-                account_name=name,
-                account_type=acc.account_type.value,
-                balance=acc.balance,
-                interest_rate=acc.interest_rate,
-                interest_accrual_date=acc.interest_accrual_date
-            )
-            for name, acc in self.accounts.items()
-        ]
+        return [_bank_account_type(name, acc) for name, acc in self.accounts.items()]
 
     def resolve_credit_accounts(self, info):
         """Resolve credit accounts."""
@@ -1675,7 +1685,7 @@ class CreateBank(graphene.Mutation):
 
 
 class CreateAccount(graphene.Mutation):
-    """Create a checking/savings account or a credit card in a bank."""
+    """Create a bank account of any kind (checking, savings, EBT, HSA, ...) or a credit card in a bank."""
 
     class Arguments:
         bank_name = graphene.String(required=True)
@@ -1687,13 +1697,19 @@ class CreateAccount(graphene.Mutation):
         payment_due_date = graphene.Int()
         statement_date = graphene.Int()
         interest_accrual_date = graphene.Int()
+        refill_amount = graphene.Float()
+        refill_day = graphene.Int()
+        weekly_spending = graphene.Float()
+        offsets_everyday = graphene.Boolean()
 
     account = graphene.Field(BankAccountType)
     success = graphene.Boolean()
     message = graphene.String()
 
     def mutate(self, info, bank_name, account_name, account_type, balance, interest_rate,
-               credit_limit=None, payment_due_date=None, statement_date=None, interest_accrual_date=None):
+               credit_limit=None, payment_due_date=None, statement_date=None, interest_accrual_date=None,
+               refill_amount=None, refill_day=None, weekly_spending=None, offsets_everyday=None):
+        from models.types import BANK_ACCOUNT_KINDS
         manager = info.context.get('manager')
         if not manager:
             return CreateAccount(success=False, message="Manager not available")
@@ -1718,15 +1734,16 @@ class CreateAccount(graphene.Mutation):
                 card.regular_balance = balance
                 account = BankAccountType(id=account_name, account_name=account_name, account_type="credit",
                                           balance=balance, interest_rate=interest_rate)
-            elif account_type in ("checking", "savings"):
-                acc = bank.add_account(account_type, account_name, balance, interest_rate, interest_accrual_date)
-                account = BankAccountType(id=account_name, account_name=account_name,
-                                          account_type=acc.account_type.value, balance=acc.balance,
-                                          interest_rate=acc.interest_rate,
-                                          interest_accrual_date=acc.interest_accrual_date)
+            elif account_type in BANK_ACCOUNT_KINDS and account_type != "mortgage":
+                acc = bank.add_account(account_type, account_name, balance, interest_rate, interest_accrual_date,
+                                       refill_amount=refill_amount or 0.0, refill_day=refill_day or None,
+                                       weekly_spending=weekly_spending or 0.0,
+                                       offsets_everyday=bool(offsets_everyday))
+                account = _bank_account_type(account_name, acc)
             else:
                 return CreateAccount(success=False, message=f"Unsupported account type '{account_type}'. "
-                                     "Use checking, savings, or credit (HELOCs use createHelocAccount).")
+                                     "Use a bank-account kind (checking, savings, ebt, ...) or credit "
+                                     "(HELOCs use createHelocAccount).")
 
             manager.save_to_database()
             return CreateAccount(account=account, success=True, message=f"Account '{account_name}' created")

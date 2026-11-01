@@ -1,7 +1,7 @@
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal" style="max-width:560px">
-      <h3>Edit {{ KIND_LABEL[kind] }}</h3>
+      <h3>Edit {{ kindTitle }}</h3>
       <p class="help">
         {{ bankName }} / {{ account.accountName }}. Bills, payment history, transactions and SimpleFIN links follow a
         rename or a move to another bank. To change the balance use <strong>Update</strong>, which keeps a history.
@@ -26,16 +26,19 @@
           <div class="form-group">
             <label>Type</label>
             <select v-model="form.accountType">
-              <option value="checking">Checking</option>
-              <option value="savings">Savings</option>
+              <optgroup v-for="g in KIND_GROUPS" :key="g.group" :label="g.label">
+                <option v-for="k in g.kinds" :key="k.value" :value="k.value">{{ k.label }}</option>
+              </optgroup>
             </select>
           </div>
-          <div class="form-group">
-            <label>APY %</label>
+          <div v-if="kindInfo(form.accountType).earns || (num(form.interestRate) ?? 0) > 0" class="form-group">
+            <label>{{ rateLabel(form.accountType) }}</label>
             <input v-model.number="form.interestRate" type="number" step="0.01" min="0" />
           </div>
         </div>
-        <div class="form-group">
+        <p class="help" style="margin-top:-0.4rem">{{ kindInfo(form.accountType).hint }}</p>
+        <AccountExtrasFields v-model="extras" :type="form.accountType" />
+        <div v-if="kindInfo(form.accountType).earns" class="form-group">
           <label>Interest day (1-31, blank = end of month)</label>
           <input v-model.number="form.interestAccrualDate" type="number" min="1" max="31" />
         </div>
@@ -175,19 +178,22 @@ import { computed, reactive, ref } from 'vue'
 import { useMutation } from '@vue/apollo-composable'
 import { UPDATE_ACCOUNT } from '../graphql/queries'
 import { runMutation } from '../utils/mutation'
-import type { Bank, BankAccount, CreditAccount, HELOCAccount, MortgageAccount, MutationPayload } from '../types'
+import type { AccountType, Bank, BankAccount, CreditAccount, HELOCAccount, MortgageAccount, MutationPayload } from '../types'
+import { KIND_GROUPS, isBankKind, kindInfo, rateLabel } from '../utils/accountKinds'
+import AccountExtrasFields, { type AccountExtras } from './AccountExtrasFields.vue'
 
-export type AccountKind = 'checking' | 'savings' | 'credit' | 'mortgage' | 'heloc'
+export type AccountKind = AccountType | 'credit' | 'mortgage' | 'heloc'
 export type AnyAccount = BankAccount | CreditAccount | MortgageAccount | HELOCAccount
 
 const props = defineProps<{ kind: AccountKind; bankName: string; account: AnyAccount; banks: Bank[] }>()
 const emit = defineEmits<{ close: []; saved: [name: string] }>()
 
-const KIND_LABEL: Record<AccountKind, string> = {
+const KIND_LABEL: Record<string, string> = {
   checking: 'Checking Account', savings: 'Savings Account', credit: 'Credit Card', mortgage: 'Mortgage', heloc: 'HELOC',
 }
+const kindTitle = computed(() => KIND_LABEL[props.kind] ?? `${kindInfo(props.kind).label} account`)
 
-const isBank = computed(() => props.kind === 'checking' || props.kind === 'savings')
+const isBank = computed(() => isBankKind(props.kind))
 const a = props.account as Partial<BankAccount & CreditAccount & MortgageAccount & HELOCAccount>
 const years = (months?: number | null) => (months ? Math.round((months / 12) * 100) / 100 : null)
 
@@ -218,6 +224,11 @@ const form = reactive({
   sourceAccount: a.preferredSourceAccount ?? '',
 })
 
+const extras = ref<AccountExtras>({
+  refillAmount: a.refillAmount || null, refillDay: a.refillDay ?? null,
+  weeklySpending: a.weeklySpending || null, offsetsEveryday: !!a.offsetsEveryday,
+})
+
 const sourceAccounts = computed(() => props.banks.find(b => b.name === form.sourceBank)?.bankAccounts ?? [])
 
 /** Empty inputs give '' — treat as "not set". */
@@ -229,6 +240,10 @@ const problem = computed(() => {
   if (!form.name.trim()) return 'Enter a name.'
   if ((num(form.interestRate) ?? 0) < 0) return "The interest rate can't be negative."
   if (isBank.value && badDay(form.interestAccrualDate)) return 'The interest day must be between 1 and 31.'
+  if (isBank.value && badDay(extras.value.refillDay)) return 'The refill day must be between 1 and 31.'
+  if (isBank.value && ((num(extras.value.refillAmount) ?? 0) < 0 || (num(extras.value.weeklySpending) ?? 0) < 0)) {
+    return "Amounts can't be negative."
+  }
   if (props.kind === 'credit' || props.kind === 'heloc') {
     if (!((num(form.creditLimit) ?? 0) > 0)) return 'The credit limit must be greater than 0.'
   }
@@ -266,6 +281,10 @@ async function save() {
   if (isBank.value) {
     v.newAccountType = form.accountType
     v.interestAccrualDate = day(form.interestAccrualDate) ?? 0
+    Object.assign(v, {
+      refillAmount: num(extras.value.refillAmount) ?? 0, refillDay: day(extras.value.refillDay) ?? 0,
+      weeklySpending: num(extras.value.weeklySpending) ?? 0, offsetsEveryday: extras.value.offsetsEveryday,
+    })
   } else if (props.kind === 'credit') {
     Object.assign(v, { creditLimit: num(form.creditLimit), paymentDueDate: day(form.paymentDueDate),
       statementDate: day(form.statementDate) ?? 0, status: form.status })

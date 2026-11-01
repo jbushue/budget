@@ -261,6 +261,12 @@ class ToolsQuery(graphene.ObjectType):
     monthly_projection = graphene.List(MonthSummaryType, days=graphene.Int())
     database_info = graphene.Field(DatabaseInfoType)
     report_kinds = graphene.List(ReportKindType)
+    debt_boost = graphene.JSONString(days=graphene.Int(), strategy=graphene.String(), monthly=graphene.Float(),
+                                     description="Most you can safely put toward debt each month, and what it saves")
+    due_date_moves = graphene.JSONString(days=graphene.Int(),
+                                         description="Bills whose due date would be better right after a payday")
+    purchase_planner = graphene.JSONString(amount=graphene.Float(), days=graphene.Int(),
+                                           description="How much you can spend each day ahead; when a purchase fits")
 
     def resolve_mortgage_details(self, info, bank_name, account_name, extra_monthly=0.0):
         m = _manager(info)
@@ -303,3 +309,28 @@ class ToolsQuery(graphene.ObjectType):
     def resolve_report_kinds(self, info):
         from models.report_export import REPORTS
         return [{"key": k, "description": v} for k, v in REPORTS.items()]
+
+    def resolve_debt_boost(self, info, days=180, strategy="avalanche", monthly=None):
+        from models import optimizer_plus
+        m = _manager(info)
+        if not m:
+            return None
+        try:
+            return optimizer_plus.debt_boost(m, max(30, min(days or 180, 730)), strategy or "avalanche", monthly)
+        except ValueError as e:
+            raise Exception(str(e))
+
+    def resolve_due_date_moves(self, info, days=100):
+        from models import optimizer_plus
+        m = _manager(info)
+        return optimizer_plus.due_date_moves(m, max(62, min(days or 100, 180))) if m else None
+
+    def resolve_purchase_planner(self, info, amount=0.0, days=60):
+        from models import optimizer_plus
+        m = _manager(info)
+        if not m:
+            return None
+        try:
+            return optimizer_plus.purchase_planner(m, amount or 0.0, max(14, min(days or 60, 365)))
+        except ValueError as e:
+            raise Exception(str(e))

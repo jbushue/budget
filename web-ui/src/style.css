@@ -514,6 +514,8 @@ textarea:focus {
 .badge-warning { background: var(--warning-light); color: var(--warning-text); border-color: transparent; }
 .badge-danger  { background: var(--danger-light); color: var(--danger-text); border-color: transparent; }
 .badge-info    { background: var(--primary-light); color: var(--info-text); border-color: transparent; }
+.badge-violet  { background: rgba(139, 92, 246, 0.14); color: #7c3aed; border-color: transparent; }
+[data-theme="dark"] .badge-violet { color: #c4b5fd; }
 
 /* ── View headers ─────────────────────────────────────────────────── */
 .view-header {

@@ -76,7 +76,17 @@
         <button class="btn btn-outline" @click="togglePreview">{{ preview ? 'Hide preview' : 'Preview digest' }}</button>
         <span v-if="message" :class="ok ? 'positive' : 'negative'" style="font-size:0.85rem">{{ message }}</span>
       </div>
-      <pre v-if="preview" class="preview">{{ preview }}</pre>
+      <div v-if="preview" class="preview-wrap">
+        <div class="preview-bar">
+          <span class="muted">This is what today's email looks like</span>
+          <div class="segmented" role="radiogroup" aria-label="Preview format">
+            <button role="radio" :aria-checked="previewMode === 'html'" :class="{ active: previewMode === 'html' }" @click="previewMode = 'html'">Email</button>
+            <button role="radio" :aria-checked="previewMode === 'text'" :class="{ active: previewMode === 'text' }" @click="previewMode = 'text'">Plain text</button>
+          </div>
+        </div>
+        <iframe v-if="previewMode === 'html' && previewHtml" class="preview-frame" sandbox="" :srcdoc="previewHtml" title="Digest email preview" />
+        <pre v-else class="preview">{{ preview }}</pre>
+      </div>
     </template>
   </div>
 </template>
@@ -109,6 +119,8 @@ const sending = ref(false)
 const message = ref('')
 const ok = ref(true)
 const preview = ref('')
+const previewHtml = ref('')
+const previewMode = ref<'html' | 'text'>('html')
 const permission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
 
 watch(result, r => {
@@ -186,7 +198,8 @@ async function togglePreview() {
     preview.value = ''
     return
   }
-  const res = await resolveClient().query<{ digestPreview: string }>({ query: GET_DIGEST_PREVIEW, fetchPolicy: 'network-only' })
+  const res = await resolveClient().query<{ digestPreview: string; digestHtml: string }>({ query: GET_DIGEST_PREVIEW, fetchPolicy: 'network-only' })
+  previewHtml.value = res.data?.digestHtml || ''
   preview.value = res.data?.digestPreview || ''
 }
 </script>
@@ -197,5 +210,8 @@ async function togglePreview() {
 .checks { display: flex; flex-direction: column; gap: 0.4rem; justify-content: center; }
 .checks label, .inline { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; font-weight: normal; text-transform: none; letter-spacing: normal; color: var(--text); }
 .inline { margin-bottom: 0.6rem; }
+.preview-wrap { margin-top: 0.9rem; }
+.preview-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.8rem; margin-bottom: 0.5rem; }
+.preview-frame { width: 100%; height: 720px; border: 1px solid var(--border); border-radius: 10px; background: #f1f5f9; display: block; }
 .preview { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-size: 0.78rem; white-space: pre-wrap; margin-top: 0.75rem; }
 </style>

@@ -75,7 +75,7 @@ class BankModel(Base):
 
 
 class BankAccountModel(Base):
-    """Represents a traditional bank account (checking/savings)."""
+    """A cash-type account: checking, savings, EBT, HSA, brokerage, ... (models.types.ACCOUNT_KINDS)."""
     __tablename__ = "bank_accounts"
 
     id = Column(Integer, primary_key=True)
@@ -85,6 +85,10 @@ class BankAccountModel(Base):
     balance = Column(Float, nullable=False, default=0.0)
     interest_rate = Column(Float, nullable=False, default=0.0)  # APR as percentage
     interest_accrual_date = Column(Integer, nullable=True)  # Day of month (1-31)
+    refill_amount = Column(Float, nullable=False, default=0.0)   # added each month (EBT benefits, HSA)
+    refill_day = Column(Integer, nullable=True)
+    weekly_spending = Column(Float, nullable=False, default=0.0)  # spent from it each week
+    offsets_everyday = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -778,12 +782,54 @@ def _run_migrations():
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {kind}"))
 
+    # Migration: more kinds of bank account (EBT, HSA, ...) and their refill/spending settings
+    if "bank_accounts" in inspector.get_table_names():
+        _widen_bank_account_types()
+        columns = [col["name"] for col in inspector.get_columns("bank_accounts")]
+        with engine.begin() as conn:
+            for name, kind in (("refill_amount", "FLOAT NOT NULL DEFAULT 0.0"), ("refill_day", "INTEGER"),
+                               ("weekly_spending", "FLOAT NOT NULL DEFAULT 0.0"),
+                               ("offsets_everyday", "BOOLEAN NOT NULL DEFAULT 0")):
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE bank_accounts ADD COLUMN {name} {kind}"))
+
     # Migration: flag accounts still using a generated password
     if "users" in inspector.get_table_names():
         columns = [col["name"] for col in inspector.get_columns("users")]
         if "must_change_password" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0"))
+
+
+def _widen_bank_account_types():
+    """
+    Databases made by older SQLAlchemy versions may have a CHECK constraint
+    that only allows CHECKING/SAVINGS/MORTGAGE. SQLite can't drop a
+    constraint, so copy the table into one without it (ids are kept, so
+    transactions still point at the right accounts).
+    """
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='bank_accounts'")).scalar()
+        if not sql or "CHECK" not in sql.upper() or "'EBT'" in sql:
+            return
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(bank_accounts)"))]
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        conn.execute(text("DROP TABLE IF EXISTS bank_accounts_new"))
+        conn.execute(text(
+            "CREATE TABLE bank_accounts_new (id INTEGER NOT NULL PRIMARY KEY, "
+            "bank_id INTEGER NOT NULL REFERENCES banks(id), account_name VARCHAR(100) NOT NULL, "
+            "account_type VARCHAR(20) NOT NULL, balance FLOAT NOT NULL, interest_rate FLOAT NOT NULL, "
+            "interest_accrual_date INTEGER, refill_amount FLOAT NOT NULL DEFAULT 0.0, refill_day INTEGER, "
+            "weekly_spending FLOAT NOT NULL DEFAULT 0.0, offsets_everyday BOOLEAN NOT NULL DEFAULT 0, "
+            "created_at DATETIME, updated_at DATETIME)"))
+        keep = ", ".join(c for c in cols if c in (
+            "id", "bank_id", "account_name", "account_type", "balance", "interest_rate", "interest_accrual_date",
+            "refill_amount", "refill_day", "weekly_spending", "offsets_everyday", "created_at", "updated_at"))
+        conn.execute(text(f"INSERT INTO bank_accounts_new ({keep}) SELECT {keep} FROM bank_accounts"))
+        conn.execute(text("DROP TABLE bank_accounts"))
+        conn.execute(text("ALTER TABLE bank_accounts_new RENAME TO bank_accounts"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
 
 
 def get_session():
