@@ -29,6 +29,7 @@
 import { ref, onMounted } from 'vue'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { listSessions, revokeOtherSessions, revokeSession, type DeviceSession, type Result } from '../utils/auth'
+import { ask } from '../utils/dialog'
 
 const sessions = ref<DeviceSession[]>([])
 const loading = ref(true)
@@ -58,7 +59,7 @@ async function signOut(s: DeviceSession) {
 }
 
 async function signOutOthers() {
-  if (confirm('Sign out everywhere except this device?')) done(await revokeOtherSessions())
+  if (await ask('Sign out everywhere except this device?', { title: 'Sign out other devices', confirmText: 'Sign them out' })) done(await revokeOtherSessions())
 }
 </script>
 

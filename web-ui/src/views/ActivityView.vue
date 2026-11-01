@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Activity</h2>
+      <div class="view-title">
+        <h2>Activity</h2>
+        <p class="view-sub">Every change made in the app, newest first.</p>
+      </div>
       <select v-model="person" class="person" aria-label="Show activity by">
         <option value="">Everyone</option>
         <option v-for="p in people" :key="p" :value="p">{{ p }}</option>

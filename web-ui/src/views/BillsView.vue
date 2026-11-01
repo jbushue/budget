@@ -1,10 +1,13 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Bills &amp; Payments</h2>
+      <div class="view-title">
+        <h2>Bills</h2>
+        <p class="view-sub">Everything you pay on a schedule, and what's due this period.</p>
+      </div>
       <div style="display:flex;gap:0.5rem">
-        <button class="btn btn-outline btn-sm" @click="autoReset()">🔄 Auto-Reset</button>
-        <button class="btn btn-primary btn-sm" @click="openCreate()">+ Add Bill</button>
+        <button class="btn btn-outline" title="Start a new period for bills whose period has ended" @click="autoReset()"><Icon name="refresh" :size="15" /> Auto-reset</button>
+        <button class="btn btn-primary" @click="openCreate()"><Icon name="plus" :size="16" /> Add bill</button>
       </div>
     </div>
 
@@ -12,23 +15,37 @@
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else>
-      <RecurringSuggestions style="margin-bottom:1.5rem" @added="refetch()" />
+      <!-- Monthly summary -->
+      <div class="grid grid-3" style="margin-bottom:1.5rem">
+        <div class="stat-card">
+          <div class="stat-value">{{ currency(totalMonthly) }}</div>
+          <div class="stat-label">Bills per month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ paidCount }} / {{ unifiedRows.length }}</div>
+          <div class="stat-label">Paid this period</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ currency(totalMonthly * 12) }}</div>
+          <div class="stat-label">Bills per year</div>
+        </div>
+      </div>
 
       <!-- Filter chips -->
       <div class="chip-group" style="margin-bottom:1rem">
-        <span class="chip" :class="{ selected: filter === 'all' }" @click="filter = 'all'">All ({{ unifiedRows.length }})</span>
-        <span class="chip" :class="{ selected: filter === 'fixed' }" @click="filter = 'fixed'">Fixed</span>
-        <span class="chip" :class="{ selected: filter === 'floating' }" @click="filter = 'floating'">Variable</span>
-        <span class="chip" :class="{ selected: filter === 'credit' }" @click="filter = 'credit'">💳 Credit</span>
-        <span class="chip" :class="{ selected: filter === 'group' }" @click="filter = 'group'">🎓 Groups</span>
-        <span class="chip" :class="{ selected: filter === 'mortgage' }" @click="filter = 'mortgage'">🏠 Mortgage</span>
-        <span class="chip" :class="{ selected: filter === 'heloc' }" @click="filter = 'heloc'">🏦 HELOC</span>
-        <span class="chip" :class="{ selected: filter === 'unpaid' }" @click="filter = 'unpaid'">Unpaid</span>
-        <span class="chip" :class="{ selected: filter === 'paid' }" @click="filter = 'paid'">Paid</span>
+        <button class="chip" :class="{ selected: filter === 'all' }" @click="filter = 'all'">All ({{ unifiedRows.length }})</button>
+        <button class="chip" :class="{ selected: filter === 'fixed' }" @click="filter = 'fixed'">Fixed</button>
+        <button class="chip" :class="{ selected: filter === 'floating' }" @click="filter = 'floating'">Variable</button>
+        <button class="chip" :class="{ selected: filter === 'credit' }" @click="filter = 'credit'">Credit</button>
+        <button class="chip" :class="{ selected: filter === 'group' }" @click="filter = 'group'">Groups</button>
+        <button class="chip" :class="{ selected: filter === 'mortgage' }" @click="filter = 'mortgage'">Mortgage</button>
+        <button class="chip" :class="{ selected: filter === 'heloc' }" @click="filter = 'heloc'">HELOC</button>
+        <button class="chip" :class="{ selected: filter === 'unpaid' }" @click="filter = 'unpaid'">Unpaid</button>
+        <button class="chip" :class="{ selected: filter === 'paid' }" @click="filter = 'paid'">Paid</button>
       </div>
 
       <div v-if="filtered.length === 0" class="empty-state">
-        <div class="icon">📋</div>
+        <div class="icon"><Icon name="bills" :size="26" /></div>
         <p>No bills found. Add your first bill above.</p>
       </div>
 
@@ -41,25 +58,25 @@
                 <th>Name</th>
                 <th>Type</th>
                 <th>Frequency</th>
-                <th>Due Day</th>
+                <th>Due day</th>
                 <th style="text-align:right">Amount</th>
                 <th>Details</th>
                 <th>Source</th>
-                <th style="text-align:right">Actions</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in filtered" :key="row.key" :style="row.isPaid ? 'opacity:0.65' : ''">
                 <!-- Status -->
                 <td>
-                  <span v-if="row.isPaid" class="badge badge-success">PAID</span>
-                  <span v-else class="badge badge-warning">DUE</span>
+                  <span v-if="row.isPaid" class="badge badge-success">Paid</span>
+                  <span v-else class="badge badge-warning">Due</span>
                   <div v-if="row.isPaid && row.lastPaymentInfo" style="font-size:0.7rem;color:var(--text-muted)">
                     {{ row.lastPaymentInfo }}
                   </div>
                 </td>
                 <!-- Name -->
-                <td style="font-weight:500">{{ row.name }}</td>
+                <td style="font-weight:500">{{ billName(row.name) }}</td>
                 <!-- Type badge -->
                 <td>
                   <span class="badge" :class="row.typeBadgeClass">{{ row.typeLabel }}</span>
@@ -122,12 +139,14 @@
                   <!-- Bill actions -->
                   <template v-if="row.kind === 'bill'">
                     <template v-if="!row.isPaid">
-                      <button v-if="row.billData?.billType === 'floating'" class="btn btn-outline btn-sm" @click="openSetActual(row.billData!)" style="margin-right:0.25rem" title="Set actual amount">$</button>
+                      <button v-if="row.billData?.billType === 'floating'" class="btn btn-outline btn-sm" @click="openSetActual(row.billData!)" style="margin-right:0.25rem" title="Enter this period's actual amount">Set amount</button>
                       <button class="btn btn-success btn-sm" @click="openMarkPaid(row.billData!)" style="margin-right:0.25rem" title="Mark as paid">Pay</button>
                     </template>
                     <button v-else class="btn btn-outline btn-sm" @click="resetBill(row.billData!.billName)" style="margin-right:0.25rem" title="Reset for new period">Reset</button>
-                    <button class="btn btn-outline btn-sm" @click="openEdit(row.billData!)" style="margin-right:0.25rem">Edit</button>
-                    <button class="btn btn-danger btn-sm" @click="deleteBill(row.billData!.billName)">Del</button>
+                    <RowMenu :items="[
+                      { label: 'Edit bill', icon: 'pencil', action: () => openEdit(row.billData!) },
+                      { label: 'Delete bill', icon: 'trash', danger: true, divider: true, action: () => deleteBill(row.billData!.billName) },
+                    ]" />
                   </template>
                   <!-- Credit actions -->
                   <template v-else-if="row.kind === 'credit'">
@@ -143,7 +162,7 @@
                     <template v-if="!row.isPaid">
                       <button v-if="row.groupData" class="btn btn-success btn-sm" @click="openGroupPay(row.groupData)" style="margin-right:0.25rem">Pay</button>
                     </template>
-                    <router-link to="/bill-groups" class="btn btn-outline btn-sm">Details →</router-link>
+                    <router-link to="/bill-groups" class="btn btn-ghost btn-sm">Details</router-link>
                   </template>
                   <!-- Mortgage / HELOC actions (linked "[Auto] ... Payment" bill) -->
                   <template v-else-if="(row.kind === 'mortgage' || row.kind === 'heloc') && row.billData">
@@ -155,7 +174,7 @@
             </tbody>
             <tfoot>
               <tr style="font-weight:600">
-                <td colspan="5">Total ({{ filtered.length }} items)</td>
+                <td colspan="5">Total · {{ filtered.length }} bills</td>
                 <td style="text-align:right">{{ currency(filteredTotal) }}</td>
                 <td colspan="3"></td>
               </tr>
@@ -164,21 +183,8 @@
         </div>
       </div>
 
-      <!-- Monthly summary -->
-      <div class="grid grid-3" style="margin-top:1.5rem">
-        <div class="card stat-card">
-          <div class="stat-value">{{ currency(totalMonthly) }}</div>
-          <div class="stat-label">Est. Monthly Obligations</div>
-        </div>
-        <div class="card stat-card">
-          <div class="stat-value">{{ paidCount }} / {{ unifiedRows.length }}</div>
-          <div class="stat-label">Paid This Period</div>
-        </div>
-        <div class="card stat-card">
-          <div class="stat-value">{{ currency(totalMonthly * 12) }}</div>
-          <div class="stat-label">Est. Annual Obligations</div>
-        </div>
-      </div>
+      <RecurringSuggestions style="margin-top:1.5rem" @added="refetch()" />
+
     </template>
 
     <!-- Create / Edit Bill Modal -->
@@ -186,11 +192,11 @@
       <div class="modal">
         <h3>{{ editMode ? 'Edit Bill' : 'Add Bill' }}</h3>
         <div class="form-group">
-          <label>Bill Name</label>
+          <label>Bill name</label>
           <input v-model="form.billName" placeholder="e.g. Electric Bill" :disabled="editMode" />
         </div>
         <div v-if="!editMode" class="form-group">
-          <label>Bill Type</label>
+          <label>Bill type</label>
           <select v-model="form.billType">
             <option value="fixed">Fixed</option>
             <option value="floating">Variable</option>
@@ -202,16 +208,16 @@
         </div>
         <div v-if="form.billType === 'floating'" style="display:flex;gap:0.75rem">
           <div class="form-group" style="flex:1">
-            <label>Min Amount</label>
+            <label>Min amount</label>
             <input v-model.number="form.minAmount" type="number" step="0.01" />
           </div>
           <div class="form-group" style="flex:1">
-            <label>Max Amount</label>
+            <label>Max amount</label>
             <input v-model.number="form.maxAmount" type="number" step="0.01" />
           </div>
         </div>
         <div class="form-group">
-          <label>Due Day (1-31)</label>
+          <label>Due day (1-31)</label>
           <input v-model.number="form.dueDate" type="number" min="1" max="31" />
         </div>
         <div class="form-group">
@@ -227,14 +233,14 @@
           </select>
         </div>
         <div v-if="form.frequency === 'yearly' || form.frequency === 'semi_annual'" class="form-group">
-          <label>Due Month (1-12)</label>
+          <label>Due month (1-12)</label>
           <select v-model.number="form.dueMonth">
             <option :value="null">Same as current month</option>
             <option v-for="m in 12" :key="m" :value="m">{{ monthName(m) }}</option>
           </select>
         </div>
         <div v-if="usesStartDate(form.frequency)" class="form-group">
-          <label>Start / First Due Date (optional)</label>
+          <label>Start / first due date (optional)</label>
           <input v-model="form.startDate" type="date" />
         </div>
         <div class="form-group">
@@ -242,14 +248,14 @@
           <input v-model="form.lateFee" type="number" min="0" step="1" placeholder="Use the default from Settings" />
         </div>
         <div class="form-group">
-          <label>Preferred Source Bank (optional)</label>
+          <label>Preferred source bank (optional)</label>
           <select v-model="form.preferredSourceBank">
             <option value="">Auto (no preference)</option>
             <option v-for="b in banks" :key="b.name" :value="b.name">{{ b.name }}</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Preferred Source Account (optional)</label>
+          <label>Preferred source account (optional)</label>
           <select v-model="form.preferredSourceAccount" :disabled="!form.preferredSourceBank">
             <option value="">Auto (no preference)</option>
             <option v-for="acc in accountsForBank(form.preferredSourceBank)" :key="acc.name" :value="acc.name">{{ acc.name }} ({{ acc.label }})</option>
@@ -267,39 +273,39 @@
     <!-- Mark Paid Modal -->
     <div v-if="showPayModal" class="modal-overlay" @click.self="showPayModal = false">
       <div class="modal">
-        <h3>Mark "{{ payForm.billName }}" as Paid</h3>
+        <h3>Mark “{{ billName(payForm.billName) }}” paid</h3>
         <p v-if="payingBill" style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
           Amount due: {{ currency(payingBill.effectiveAmount) }}
           <template v-if="payingBill.carryoverBalance > 0"> (includes {{ currency(payingBill.carryoverBalance) }} carryover)</template>
         </p>
         <div class="form-group">
-          <label>Amount Paid</label>
+          <label>Amount paid</label>
           <input v-model.number="payForm.amountPaid" type="number" step="0.01" />
           <div v-if="payingBill && payForm.amountPaid < payingBill.effectiveAmount" style="font-size:0.75rem;color:var(--warning);margin-top:0.25rem">
             {{ currency(payingBill.effectiveAmount - payForm.amountPaid) }} will carry over to next period
           </div>
         </div>
         <div class="form-group">
-          <label>Source Bank</label>
+          <label>Source bank</label>
           <select v-model="payForm.sourceBank">
             <option value="">Select bank...</option>
             <option v-for="b in banks" :key="b.name" :value="b.name">{{ b.name }}</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Source Account</label>
+          <label>Source account</label>
           <select v-model="payForm.sourceAccount" :disabled="!payForm.sourceBank">
             <option value="">Select account...</option>
             <option v-for="acc in accountsForBank(payForm.sourceBank)" :key="acc.name" :value="acc.name">{{ acc.name }} ({{ acc.label }})</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Payment Date</label>
+          <label>Payment date</label>
           <input v-model="payForm.paymentDate" type="date" />
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markPaid">Mark Paid</button>
+          <button class="btn btn-success" @click="markPaid">Mark paid</button>
         </div>
       </div>
     </div>
@@ -307,17 +313,17 @@
     <!-- Set Actual Amount Modal -->
     <div v-if="showActualModal" class="modal-overlay" @click.self="showActualModal = false">
       <div class="modal">
-        <h3>Set Actual Amount for "{{ actualForm.billName }}"</h3>
+        <h3>Set this period’s amount for “{{ billName(actualForm.billName) }}”</h3>
         <p v-if="actualForm.min && actualForm.max" style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
           Range: {{ currency(actualForm.min) }} - {{ currency(actualForm.max) }}
         </p>
         <div class="form-group">
-          <label>Actual Amount</label>
+          <label>Actual amount</label>
           <input v-model.number="actualForm.amount" type="number" step="0.01" />
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showActualModal = false">Cancel</button>
-          <button class="btn btn-primary" @click="setActualAmount">Set Amount</button>
+          <button class="btn btn-primary" @click="setActualAmount">Set amount</button>
         </div>
       </div>
     </div>
@@ -330,30 +336,30 @@
           Balance: {{ currency(creditPayForm.balance) }} · Min Payment: {{ currency(creditPayForm.minPayment) }}
         </p>
         <div class="form-group">
-          <label>Amount Paid</label>
+          <label>Amount paid</label>
           <input v-model.number="creditPayForm.amountPaid" type="number" step="0.01" />
         </div>
         <div class="form-group">
-          <label>Source Bank</label>
+          <label>Source bank</label>
           <select v-model="creditPayForm.sourceBank">
             <option value="">Select bank...</option>
             <option v-for="b in banks" :key="b.name" :value="b.name">{{ b.name }}</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Source Account</label>
+          <label>Source account</label>
           <select v-model="creditPayForm.sourceAccount" :disabled="!creditPayForm.sourceBank">
             <option value="">Select account...</option>
             <option v-for="acc in accountsForBank(creditPayForm.sourceBank)" :key="acc.name" :value="acc.name">{{ acc.name }} ({{ acc.label }})</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Payment Date</label>
+          <label>Payment date</label>
           <input v-model="creditPayForm.paymentDate" type="date" />
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showCreditPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markCreditPaid">Mark Paid</button>
+          <button class="btn btn-success" @click="markCreditPaid">Mark paid</button>
         </div>
       </div>
     </div>
@@ -366,30 +372,30 @@
           Scheduled payment: {{ currency(groupPayForm.totalPayment) }}
         </p>
         <div class="form-group">
-          <label>Amount Paid</label>
+          <label>Amount paid</label>
           <input v-model.number="groupPayForm.amountPaid" type="number" step="0.01" />
         </div>
         <div class="form-group">
-          <label>Source Bank</label>
+          <label>Source bank</label>
           <select v-model="groupPayForm.sourceBank">
             <option value="">Select bank...</option>
             <option v-for="b in banks" :key="b.name" :value="b.name">{{ b.name }}</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Source Account</label>
+          <label>Source account</label>
           <select v-model="groupPayForm.sourceAccount" :disabled="!groupPayForm.sourceBank">
             <option value="">Select account...</option>
             <option v-for="acc in accountsForBank(groupPayForm.sourceBank, false)" :key="acc.name" :value="acc.name">{{ acc.name }} ({{ acc.label }})</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Payment Date</label>
+          <label>Payment date</label>
           <input v-model="groupPayForm.paymentDate" type="date" />
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showGroupPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markGroupPaid" :disabled="!groupPayForm.amountPaid || groupPayForm.amountPaid <= 0">Mark Paid</button>
+          <button class="btn btn-success" @click="markGroupPaid" :disabled="!groupPayForm.amountPaid || groupPayForm.amountPaid <= 0">Mark paid</button>
         </div>
       </div>
     </div>
@@ -397,6 +403,8 @@
 </template>
 
 <script setup lang="ts">
+import RowMenu from '../components/RowMenu.vue'
+import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {
@@ -408,10 +416,11 @@ import {
   AUTO_RESET_PERIODS,
   MARK_BILL_GROUP_PAID,
 } from '../graphql/queries'
-import { currency, pct, fmtDate, frequencyLabel, billTypeLabel, todayISO } from '../utils/format'
+import { currency, pct, fmtDate, frequencyLabel, billTypeLabel, todayISO, billName } from '../utils/format'
 import { runMutation } from '../utils/mutation'
 import RecurringSuggestions from '../components/RecurringSuggestions.vue'
 import type { BillItem, Bank, CreditPaymentDue, BillGroup, MortgageAccount, HELOCAccount, MutationPayload } from '../types'
+import { ask, notify } from '../utils/dialog'
 
 // ── Unified Row Type ──
 interface UnifiedRow {
@@ -535,7 +544,7 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
         key: `credit-${b.id}`,
         kind: 'credit',
         name: `${b.linkedBankName} · ${b.linkedAccountName}`,
-        typeLabel: '💳 Credit',
+        typeLabel: 'Credit card',
         typeBadgeClass: 'badge-danger',
         frequencyLabel: 'Monthly',
         dueDay: b.dueDate,
@@ -556,7 +565,7 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
         key: `mortgage-${b.id}`,
         kind: 'mortgage',
         name: `${b.linkedBankName} · ${b.linkedAccountName}`,
-        typeLabel: '🏠 Mortgage',
+        typeLabel: 'Mortgage',
         typeBadgeClass: 'badge-info',
         frequencyLabel: 'Monthly',
         dueDay: b.dueDate,
@@ -575,7 +584,7 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
         key: `heloc-${b.id}`,
         kind: 'heloc',
         name: `${b.linkedBankName} · ${b.linkedAccountName}`,
-        typeLabel: '🏦 HELOC',
+        typeLabel: 'HELOC',
         typeBadgeClass: 'badge-warning',
         frequencyLabel: 'Monthly',
         dueDay: b.dueDate,
@@ -593,8 +602,8 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
     rows.push({
       key: `group-${g.groupName}`,
       kind: 'group',
-      name: `${groupTypeIcon(g.groupType)} ${g.groupName}`,
-      typeLabel: '🎓 Group',
+      name: g.groupName,
+      typeLabel: 'Loan group',
       typeBadgeClass: 'badge-info',
       frequencyLabel: frequencyLabel(g.frequency),
       dueDay: g.dueDate,
@@ -652,10 +661,6 @@ const totalMonthly = computed(() => {
 })
 
 // ── Helpers ──
-function groupTypeIcon(t: string): string {
-  const map: Record<string, string> = { student_loan: '🎓', bundled_bill: '📦', consolidated_loan: '🏦', other: '📋' }
-  return map[t] || '📋'
-}
 
 function creditUtilPct(cp: CreditPaymentDue): number {
   return cp.creditLimit > 0 ? (cp.balance / cp.creditLimit) * 100 : 0
@@ -749,7 +754,7 @@ async function saveBill() {
   const f = form.value
   const isFloating = f.billType === 'floating'
   if (isFloating && f.minAmount != null && f.maxAmount != null && f.minAmount > f.maxAmount) {
-    alert('Error: Min amount cannot be greater than max amount')
+    notify('The minimum amount can’t be more than the maximum', 'error')
     return
   }
   const yearlyish = f.frequency === 'yearly' || f.frequency === 'semi_annual'
@@ -786,7 +791,7 @@ async function saveBill() {
 }
 
 async function deleteBill(name: string) {
-  if (!confirm(`Delete bill "${name}"?`)) return
+  if (!(await ask(`Delete the bill "${name}"? Its payment history goes with it.`, { title: 'Delete bill', danger: true }))) return
   const ok = await runMutation(() => doDelete({ variables: { billName: name }}), 'deleteBill', { failMessage: 'Failed to delete bill' })
   if (ok) refetch()
 }

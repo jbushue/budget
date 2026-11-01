@@ -1,16 +1,21 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Transactions</h2>
+      <div class="view-title">
+        <h2>Transactions</h2>
+        <p class="view-sub">Search, categorize and split what you've spent.</p>
+      </div>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-        <button v-if="sfinConnected" class="btn btn-outline btn-sm" :disabled="syncing" @click="syncSimplefin">
-          {{ syncing ? 'Downloading...' : '⟳ Download from SimpleFIN' }}
+        <button v-if="sfinConnected" class="btn btn-outline" :disabled="syncing" @click="syncSimplefin">
+          <Icon name="refresh" :size="15" />
+          {{ syncing ? 'Syncing...' : 'Sync' }}
         </button>
-        <button class="btn btn-outline btn-sm" @click="openImport">⬆ Import CSV</button>
-        <button class="btn btn-outline btn-sm" :disabled="exporting" title="Download the transactions matching the filters" @click="exportCsv">
-          {{ exporting ? 'Exporting...' : '⬇ Export CSV' }}
+        <button class="btn btn-outline" @click="openImport"><Icon name="upload" :size="15" /> Import</button>
+        <button class="btn btn-outline" :disabled="exporting" title="Download the transactions matching the filters as CSV" @click="exportCsv">
+          <Icon name="download" :size="15" />
+          {{ exporting ? 'Exporting...' : 'Export' }}
         </button>
-        <button class="btn btn-primary btn-sm" @click="openAdd">+ Add</button>
+        <button class="btn btn-primary" @click="openAdd"><Icon name="plus" :size="16" /> Add</button>
       </div>
     </div>
 
@@ -20,7 +25,7 @@
       <input v-model="filters.text" placeholder="Search description or notes..." style="flex:2;min-width:180px" />
       <select v-model="filters.category" style="flex:1;min-width:150px">
         <option value="">All categories</option>
-        <option value="__none__">⚠ Uncategorized</option>
+        <option value="__none__">Uncategorized</option>
         <option v-for="c in categories" :key="c.name" :value="c.name">{{ c.name }}</option>
       </select>
       <select v-model="filters.account" style="flex:1;min-width:150px">
@@ -46,7 +51,7 @@
     <div v-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <div v-else-if="!loading && page && page.total === 0 && !hasFilters" class="empty-state">
-      <div class="icon">🧾</div>
+      <div class="icon"><Icon name="transactions" :size="26" /></div>
       <p>No transactions yet.</p>
       <p style="font-size:0.85rem">
         {{ sfinConnected ? 'Download them from SimpleFIN, import' : 'Import' }} a CSV file from your bank's website,
@@ -87,7 +92,7 @@
                   </span>
                   <span v-if="t.notes">{{ t.notes }}</span>
                   <button v-for="tag in t.tags" :key="tag" class="tag" title="Show only this tag" @click="filters.tag = tag">#{{ tag }}</button>
-                  <span v-if="t.source !== 'manual'" class="src">{{ t.source === 'simplefin' ? 'SimpleFIN' : 'CSV' }}</span>
+                  <span v-if="t.source === 'simplefin'" class="src" title="Downloaded from SimpleFIN"><Icon name="refresh" :size="11" /></span>
                 </div>
               </td>
               <td><span class="sub">{{ t.bankName ? `${t.bankName} / ${t.accountName}` : '—' }}</span></td>
@@ -120,12 +125,11 @@
       </div>
     </div>
 
-    <RecurringSuggestions ref="recurringBox" style="margin-top:1.5rem" />
 
     <!-- Add -->
     <div v-if="showAdd" class="modal-overlay" @click.self="showAdd = false">
       <div class="modal">
-        <h3>Add Transaction</h3>
+        <h3>Add transaction</h3>
         <div class="grid grid-2">
           <div class="form-group"><label>Date</label><input v-model="addForm.date" type="date" /></div>
           <div class="form-group">
@@ -197,7 +201,7 @@
           <button class="icon-btn" title="Remove part" @click="details.parts.splice(i, 1)">✕</button>
         </div>
         <div class="split-foot">
-          <button class="btn btn-outline btn-sm" @click="addPart">+ Add part</button>
+          <button class="btn btn-outline btn-sm" @click="addPart"><Icon name="plus" :size="16" /> Add part</button>
           <span v-if="details.parts.length" :class="Math.abs(splitLeft) < 0.005 ? 'positive' : 'negative'">
             {{ Math.abs(splitLeft) < 0.005 ? '✓ Adds up' : splitLeft > 0 ? `${currency(splitLeft)} left to assign` : `${currency(-splitLeft)} too much` }}
           </span>
@@ -282,6 +286,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, reactive, computed, watch } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import { GET_ALL_BANKS, GET_SIMPLEFIN_STATUS } from '../graphql/queries'
@@ -293,12 +298,12 @@ import {
 import { apolloClient } from '../graphql/client'
 import { UNMATCH_TRANSACTION } from '../graphql/goals'
 import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
-import RecurringSuggestions from '../components/RecurringSuggestions.vue'
 import { runMutation } from '../utils/mutation'
 import { currency, fmtDateShort } from '../utils/format'
 import type {
   Bank, Category, CsvPreview, ImportResult, LedgerTransaction, MutationPayload, TagCount, TransactionPage,
 } from '../types'
+import { ask, notify } from '../utils/dialog'
 
 const PAGE = 100
 
@@ -376,7 +381,7 @@ async function exportCsv() {
     a.click()
     URL.revokeObjectURL(a.href)
   } catch (e) {
-    alert('Error: ' + (e instanceof Error ? e.message : String(e)))
+    notify(e instanceof Error ? e.message : String(e), 'error')
   } finally {
     exporting.value = false
   }
@@ -453,7 +458,7 @@ async function saveDetails() {
 
 async function removeSplit() {
   const d = details.value
-  if (!d || !confirm('Remove the split? The transaction goes back to one category (its largest part).')) return
+  if (!d || !(await ask('The transaction goes back to one category (its largest part).', { title: 'Remove split', confirmText: 'Remove split', danger: true }))) return
   const res = await runMutation(() => setSplitsM({ variables: { id: d.txn.id, splits: [] } }), 'setTransactionSplits')
   if (res) {
     details.value = null
@@ -480,15 +485,13 @@ async function setCategory(t: LedgerTransaction, category: string) {
 
 const { mutate: unmatchM } = useMutation<{ unmatchTransaction: MutationPayload }>(UNMATCH_TRANSACTION)
 const matchBox = ref<InstanceType<typeof BillMatchSuggestions> | null>(null)
-const recurringBox = ref<InstanceType<typeof RecurringSuggestions> | null>(null)
 
 function refreshSuggestions() {
   matchBox.value?.refetch()
-  recurringBox.value?.refetch()
 }
 
 async function unmatch(t: LedgerTransaction) {
-  if (!confirm(`Remove the ${t.matchedBill} payment recorded from this transaction?`)) return
+  if (!(await ask(`Remove the ${t.matchedBill} payment recorded from this transaction?`, { title: 'Not this bill', confirmText: 'Remove', danger: true }))) return
   const res = await runMutation(() => unmatchM({ variables: { transactionId: t.id } }), 'unmatchTransaction')
   if (res) {
     refetch()
@@ -497,7 +500,7 @@ async function unmatch(t: LedgerTransaction) {
 }
 
 async function remove(t: LedgerTransaction) {
-  if (!confirm(`Delete "${t.description}" (${currency(t.amount)})?`)) return
+  if (!(await ask(`Delete "${t.description}" (${currency(t.amount)})?`, { title: 'Delete transaction', danger: true }))) return
   const res = await runMutation(() => deleteTxn({ variables: { id: t.id } }), 'deleteLedgerTransaction')
   if (res) refetch()
 }
@@ -625,16 +628,16 @@ async function importResult(run: () => Promise<ImportResult | null | undefined>)
   try {
     const r = await run()
     if (!r || !r.success) {
-      alert('Error: ' + (r?.message || 'Import failed'))
+      notify(r?.message || 'Import failed', 'error')
       return null
     }
     let msg = r.message || 'Done'
     if (r.matchedBills) msg += `\n${r.matchedBills} bill payments recognized and marked paid.`
     if (r.errors?.length) msg += `\n${r.errors.length} rows skipped: ${r.errors.slice(0, 3).join('; ')}`
-    alert(msg)
+    notify(msg)
     return r
   } catch (e) {
-    alert('Error: ' + (e instanceof Error ? e.message : String(e)))
+    notify(e instanceof Error ? e.message : String(e), 'error')
     return null
   }
 }
@@ -653,7 +656,7 @@ async function importResult(run: () => Promise<ImportResult | null | undefined>)
   .filters input[type="date"] { flex: 1 1 140px; }
 }
 .sub { font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
-.src { font-size: 0.7rem; opacity: 0.7; }
+.src { display: inline-flex; vertical-align: middle; color: var(--text-light); margin-left: 0.25rem; }
 td select { padding: 0.25rem 0.4rem; font-size: 0.82rem; width: 100%; margin: 0; }
 select.uncat { border-color: var(--warning); }
 .icon-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.85rem; }

@@ -5,6 +5,7 @@ import { router } from './router'
 import App from './App.vue'
 import { startTableLabels } from './utils/stackTables'
 import { startTheme } from './utils/theme'
+import '@fontsource-variable/inter'
 import './style.css'
 
 startTheme()

@@ -1,27 +1,30 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>🔮 What-If Scenarios</h2>
+      <div class="view-title">
+        <h2>What-if</h2>
+        <p class="view-sub">Try a change before you make it and see how it plays out.</p>
+      </div>
     </div>
 
     <div class="grid grid-2">
       <!-- Scenario builder -->
       <div class="card">
-        <div class="card-header"><span class="card-title">Build a Scenario</span></div>
+        <div class="card-header"><span class="card-title">Build a scenario</span></div>
 
         <!-- Quick presets -->
         <div style="margin-bottom:1rem">
           <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.5rem;color:var(--text-muted)">Quick Presets</div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-            <button class="btn btn-outline btn-sm" @click="startPreset('lose_job')">Job Loss</button>
-            <button class="btn btn-outline btn-sm" @click="startPreset('raise')">10% Raise</button>
-            <button class="btn btn-outline btn-sm" @click="applyPreset('new_bill')">New $200 Bill</button>
-            <button class="btn btn-outline btn-sm" @click="applyPreset('cut_bills')">Cut Bills 20%</button>
+            <button class="btn btn-outline btn-sm" @click="startPreset('lose_job')">Job loss</button>
+            <button class="btn btn-outline btn-sm" @click="startPreset('raise')">10% raise</button>
+            <button class="btn btn-outline btn-sm" @click="applyPreset('new_bill')">New $200 bill</button>
+            <button class="btn btn-outline btn-sm" @click="applyPreset('cut_bills')">Cut bills 20%</button>
           </div>
           <!-- Inline income picker for Job Loss / Raise presets -->
           <div v-if="presetPending" style="margin-top:0.75rem;padding:0.75rem;border:1px solid var(--primary);border-radius:var(--radius);background:var(--bg-card)">
             <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.5rem">
-              {{ presetPending === 'lose_job' ? '💼 Job Loss — select income source' : '📈 10% Raise — select income source' }}
+              {{ presetPending === 'lose_job' ? 'Job loss — choose the income source' : '10% raise — choose the income source' }}
             </div>
             <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
               <button v-for="inc in availableIncome" :key="inc.sourceName"
@@ -37,7 +40,7 @@
         <!-- Projection days -->
         <div style="margin-bottom:1rem">
           <div class="form-group" style="margin:0;max-width:160px">
-            <label style="font-size:0.7rem">Projection Period</label>
+            <label style="font-size:0.7rem">Projection period</label>
             <select v-model.number="scenarioDays">
               <option :value="30">30 days</option>
               <option :value="60">60 days</option>
@@ -61,7 +64,7 @@
               <input v-model.number="newBill.amount" type="number" />
             </div>
             <div class="form-group" style="margin:0;width:80px">
-              <label style="font-size:0.7rem">Due Day</label>
+              <label style="font-size:0.7rem">Due day</label>
               <input v-model.number="newBill.dueDate" type="number" min="1" max="31" />
             </div>
             <button class="btn btn-primary btn-sm" @click="addBill" :disabled="!newBill.name || !newBill.amount">+</button>
@@ -76,7 +79,7 @@
               <option value="">Select a payment to remove...</option>
               <optgroup v-for="grp in removableGroups" :key="grp.label" :label="grp.label">
                 <option v-for="p in grp.items" :key="p.key" :value="p.key">
-                  {{ p.icon }} {{ p.label }} ({{ p.detail }})
+                  {{ p.label }} ({{ p.detail }})
                 </option>
               </optgroup>
             </select>
@@ -98,7 +101,7 @@
               </select>
             </div>
             <div class="form-group" style="margin:0;width:120px">
-              <label style="font-size:0.7rem">New Amount</label>
+              <label style="font-size:0.7rem">New amount</label>
               <input v-model.number="incAdj.amount" type="number" step="100" />
             </div>
             <button class="btn btn-primary btn-sm" @click="adjustIncome" :disabled="!incAdj.name">Set</button>
@@ -131,7 +134,7 @@
             <button class="btn btn-outline btn-sm" @click="modifications.remove_bills.splice(i,1)" style="padding:0 0.35rem;font-size:0.65rem">×</button>
           </div>
           <div v-for="(adj, i) in modifications.adjust_income" :key="'inc'+i" style="font-size:0.8rem;display:flex;justify-content:space-between;padding:0.25rem 0;color:var(--primary)">
-            <span>📝 {{ adj.source_name }} → {{ adj.new_amount < 0 ? `+${Math.abs(adj.new_amount)}% raise` : (adj.new_amount === 0 ? '$0 (job loss)' : currency(adj.new_amount)) }}</span>
+            <span>{{ adj.source_name }} → {{ adj.new_amount < 0 ? `+${Math.abs(adj.new_amount)}% raise` : (adj.new_amount === 0 ? '$0 (job loss)' : currency(adj.new_amount)) }}</span>
             <button class="btn btn-outline btn-sm" @click="modifications.adjust_income.splice(i,1)" style="padding:0 0.35rem;font-size:0.65rem">×</button>
           </div>
           <div v-for="(name, i) in modifications.remove_income" :key="'rminc'+i" style="font-size:0.8rem;display:flex;justify-content:space-between;padding:0.25rem 0;color:var(--danger)">
@@ -154,7 +157,7 @@
           Scenario failed: {{ scenarioError }}
         </div>
         <div v-if="scenarioResult" class="card" style="margin-bottom:1rem">
-          <div class="card-header"><span class="card-title">Scenario Results ({{ scenarioDays }}-day projection)</span></div>
+          <div class="card-header"><span class="card-title">Scenario results ({{ scenarioDays }}-day projection)</span></div>
           <!-- Plain-language verdict -->
           <div v-if="scenarioResult.changes?.length" :style="`margin:0.5rem 0 1rem;padding:0.75rem 1rem;border-radius:var(--radius);border-left:4px solid ${verdictColor};background:var(--surface-alt)`">
             <div style="font-weight:600;margin-bottom:0.35rem">{{ verdictTitle }}</div>
@@ -185,13 +188,13 @@
           <div v-if="newLatePayments.length" style="margin-top:0.75rem;font-size:0.85rem">
             <div style="font-weight:600;color:var(--danger);margin-bottom:0.25rem">Payments that would be late or missed in this scenario:</div>
             <ul style="margin:0;padding-left:1.1rem">
-              <li v-for="(p, i) in newLatePayments" :key="i">{{ fmtDateShort(p.date) }}: {{ p.name }} ({{ currency(p.amount) }})</li>
+              <li v-for="(p, i) in newLatePayments" :key="i">{{ fmtDateShort(p.date) }}: {{ billName(p.name) }} ({{ currency(p.amount) }})</li>
             </ul>
           </div>
         </div>
 
         <div v-if="scenarioResult" class="card">
-          <div class="card-header"><span class="card-title">Baseline vs Scenario</span></div>
+          <div class="card-header"><span class="card-title">Baseline vs scenario</span></div>
           <div style="height:350px">
             <Line :data="scenarioChartData" :options="scenarioChartOptions" />
           </div>
@@ -199,7 +202,7 @@
 
         <div v-else class="card">
           <div class="empty-state">
-            <div class="icon">🔮</div>
+            <div class="icon"><Icon name="sparkles" :size="26" /></div>
             <p v-if="scenarioEmpty">The scenario returned no results. Check your modifications and try again.</p>
             <p v-else>Build a scenario and click "Run Scenario" to see the impact.</p>
           </div>
@@ -210,6 +213,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, reactive, computed } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
@@ -224,7 +228,7 @@ import {
   Legend,
 } from 'chart.js'
 import { GET_WHAT_IF_SCENARIO, GET_ALL_BILLS, GET_ALL_INCOME, GET_ALL_BANKS, GET_ALL_BILL_GROUPS } from '../graphql/queries'
-import { currency, fmtDateShort } from '../utils/format'
+import { currency, fmtDateShort, billName } from '../utils/format'
 import { apolloClient } from '../graphql/client'
 import type { BillItem, IncomeItem, Bank, BillGroup, WhatIfResult, OutcomeSummary } from '../types'
 
@@ -330,7 +334,7 @@ const removableGroups = computed(() => {
 
 function getRemovableLabel(key: string): string {
   const p = allRemovablePayments.value.find(r => r.key === key)
-  if (p) return `${p.icon} ${p.label}`
+  if (p) return p.label
   if (key.startsWith('__')) return 'Cut all bills 20%'
   return key
 }
@@ -540,11 +544,11 @@ const verdictColor = computed(() => {
 const verdictTitle = computed(() => {
   const r = scenarioResult.value
   if (!r?.scenario || !r.baseline) return ''
-  if (newLatePayments.value.length) return `⚠️ ${newLatePayments.value.length} bill(s) couldn't be paid on time in this scenario`
-  if ((r.scenario.lowestChecking ?? 0) < 0) return '⚠️ Checking would be overdrawn in this scenario'
+  if (newLatePayments.value.length) return `${newLatePayments.value.length} bill(s) couldn't be paid on time in this scenario`
+  if ((r.scenario.lowestChecking ?? 0) < 0) return 'Checking would be overdrawn in this scenario'
   const d = overall(r.scenario) - overall(r.baseline)
   if (Math.abs(d) < 0.01) return 'No meaningful change'
-  return d > 0 ? `✅ You'd be ${currency(d)} better off` : `Every bill still gets paid, but you'd be ${currency(-d)} worse off`
+  return d > 0 ? `You'd be ${currency(d)} better off` : `Every bill still gets paid, but you'd be ${currency(-d)} worse off`
 })
 
 const scenarioChartData = computed(() => {

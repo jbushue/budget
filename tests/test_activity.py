@@ -129,3 +129,11 @@ class TestSessions:
         monkeypatch.undo()
         seen = next(s for s in auth.list_sessions(1, tok) if s["current"])["last_seen"]
         assert seen.startswith(later.date().isoformat()) and seen[11:16] == later.strftime("%H:%M")
+
+    def test_unsent_variables_are_not_logged(self, client):
+        setup_admin(client)
+        client.post("/graphql", json={"query": 'mutation { createBill(billName: "Water", amount: 40, dueDate: 5) { success } }'})
+        q = "mutation M($b: String!, $a: Float, $f: String) { updateBill(billName: $b, amount: $a, frequency: $f) { success } }"
+        client.post("/graphql", json={"query": q, "variables": {"b": "Water", "f": "monthly"}, "operationName": "M"})
+        rows = [r for r in history(client) if "Water" in r["detail"]]
+        assert rows and not any("Undefined" in r["detail"] for r in rows)

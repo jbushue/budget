@@ -1,7 +1,7 @@
 <template>
-  <div class="card" style="margin-bottom:1.5rem">
+  <div class="card">
     <div class="card-header">
-      <span class="card-title">🔒 Your account</span>
+      <span class="card-title">Your account</span>
       <button class="btn btn-outline btn-sm" @click="logout()">Sign out</button>
     </div>
     <p class="help">

@@ -1,12 +1,15 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>📉 Debt Payoff Estimator</h2>
+      <div class="view-title">
+        <h2>Debt payoff</h2>
+        <p class="view-sub">Compare payoff strategies and see when you'll be debt-free.</p>
+      </div>
     </div>
 
     <div class="card" style="margin-bottom:1.5rem">
       <div class="form-group" style="max-width:300px">
-        <label>Extra Monthly Payment</label>
+        <label>Extra monthly payment</label>
         <div style="display:flex;gap:0.5rem;align-items:center">
           <input v-model.number="extraMonthly" type="range" min="0" max="2000" step="25" style="flex:1" />
           <span style="font-weight:600;min-width:70px;text-align:right">{{ currency(extraMonthly) }}</span>
@@ -19,7 +22,7 @@
     </div>
     <div v-else-if="loading && !comparison" class="loading">Calculating payoff strategies...</div>
     <div v-else-if="debtFree" class="empty-state">
-      <div class="icon">🎉</div>
+      <div class="icon"><Icon name="party" :size="26" /></div>
       <p>No debts to pay off! You're debt free.</p>
     </div>
 
@@ -32,7 +35,7 @@
           <template v-if="s.data.paysOff === false">
             <div class="stat-value negative">Never</div>
             <div style="margin-top:0.5rem;font-size:0.8rem;color:var(--danger);font-weight:600">
-              ⚠️ Never pays off at current payments &mdash; {{ currency(s.data.remainingBalance ?? 0) }} remaining after {{ s.data.monthsToPayoff }} months
+              Never pays off at current payments &mdash; {{ currency(s.data.remainingBalance ?? 0) }} remaining after {{ s.data.monthsToPayoff }} months
             </div>
           </template>
           <template v-else>
@@ -51,7 +54,7 @@
             <div style="font-weight:600;margin-bottom:0.25rem">Payoff Order:</div>
             <ol style="margin:0;padding-left:1.25rem">
               <li v-for="(name, i) in s.data.payoffOrder" :key="i">
-                <span v-if="name.startsWith('Group:')" style="color:var(--primary)">📦 {{ name.replace('Group:', '') }}</span>
+                <span v-if="name.startsWith('Group:')" style="color:var(--primary)">{{ name.replace('Group:', '') }}</span>
                 <span v-else>{{ name.replace(':', ' / ') }}</span>
               </li>
             </ol>
@@ -61,7 +64,7 @@
 
       <!-- Payoff chart -->
       <div class="card">
-        <div class="card-header"><span class="card-title">Remaining Debt Over Time</span></div>
+        <div class="card-header"><span class="card-title">Remaining debt over time</span></div>
         <div style="height:350px">
           <Line :data="chartData" :options="chartOptions" />
         </div>
@@ -71,6 +74,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
@@ -113,9 +117,9 @@ const debtFree = computed(() => !!result.value && result.value.debtPayoffCompari
 const strategies = computed(() => {
   if (!comparison.value) return []
   return [
-    { key: 'minimum', label: '💤 Minimum Only', color: 'var(--text-muted)', data: comparison.value.minimum },
-    { key: 'avalanche', label: '🏔️ Avalanche', color: 'var(--primary)', data: comparison.value.avalanche },
-    { key: 'snowball', label: '⛄ Snowball', color: 'var(--success)', data: comparison.value.snowball },
+    { key: 'minimum', label: 'Minimum only', color: 'var(--text-muted)', data: comparison.value.minimum },
+    { key: 'avalanche', label: 'Avalanche', color: 'var(--primary)', data: comparison.value.avalanche },
+    { key: 'snowball', label: 'Snowball', color: 'var(--success)', data: comparison.value.snowball },
   ]
 })
 

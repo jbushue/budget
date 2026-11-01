@@ -1,6 +1,6 @@
 <template>
-  <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header"><span class="card-title">🔔 Alerts, matching &amp; email</span></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Alerts, matching &amp; email</span></div>
     <div v-if="!form" class="loading">Loading settings...</div>
     <template v-else>
       <div class="grid grid-2">

@@ -41,7 +41,7 @@
       </table>
     </div>
     <button v-if="list.length > shown.length" class="btn btn-outline btn-sm more" @click="showAll = true">
-      Show all {{ list.length }}
+      show all {{ list.length }}
     </button>
     <p v-if="!list.length && !loading" class="help">No backups on the server yet.</p>
     <p v-if="message" :class="ok ? 'positive' : 'negative'" class="msg">{{ message }}</p>
@@ -56,6 +56,7 @@ import { UPDATE_SETTINGS } from '../graphql/queries'
 import { authState, checkAuth } from '../utils/auth'
 import { fmtDate } from '../utils/format'
 import type { MutationPayload } from '../types'
+import { ask } from '../utils/dialog'
 
 interface Backup { name: string; kind: string; size: number; created: string }
 
@@ -131,13 +132,13 @@ async function saveSettings() {
 
 const backupNow = () => run('POST', '/files/backups')
 
-function remove(b: Backup) {
-  if (confirm(`Delete the backup ${b.name}?`)) run('DELETE', `/files/backups/${encodeURIComponent(b.name)}`)
+async function remove(b: Backup) {
+  if (await ask(`Delete the backup ${b.name}?`, { title: 'Delete backup', danger: true })) run('DELETE', `/files/backups/${encodeURIComponent(b.name)}`)
 }
 
 async function restore(b: Backup) {
-  if (!confirm(`Replace ALL current data with the backup from ${fmtDateTime(b.created)}?\n\n`
-    + 'A copy of the current data is saved first. User accounts come from the backup too, so you may need to sign in again.')) return
+  if (!(await ask(`Replace ALL current data with the backup from ${fmtDateTime(b.created)}?\n\n`
+    + 'A copy of the current data is saved first. User accounts come from the backup too, so you may need to sign in again.', { title: 'Restore backup', confirmText: 'Replace data', danger: true }))) return
   const data = await run('POST', `/files/backups/${encodeURIComponent(b.name)}/restore`)
   if (data) {
     await checkAuth()

@@ -1,6 +1,6 @@
 <template>
-  <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header"><span class="card-title">👥 Users</span></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Users</span></div>
     <p class="help">
       People join with a one-time invite link that you create here. Admins can invite people, manage accounts,
       and back up or restore the database.
@@ -83,6 +83,7 @@ import {
   type Invite, type Result, type User,
 } from '../utils/auth'
 import { fmtDate } from '../utils/format'
+import { ask } from '../utils/dialog'
 
 const users = ref<User[]>([])
 const invites = ref<Invite[]>([])
@@ -141,7 +142,7 @@ async function invite() {
 }
 
 async function reset(u: User) {
-  if (!confirm(`Make a password reset link for ${u.username}? They'll be signed out on all their devices.`)) return
+  if (!(await ask(`Make a password reset link for ${u.username}? They'll be signed out on all their devices.`, { title: 'Reset password', confirmText: 'Make link' }))) return
   const res = await run(createResetCode(u.id))
   if (res.success) {
     await showLink(`Password reset link for ${u.username}`, res.code as string | undefined,
@@ -153,8 +154,8 @@ function toggleAdmin(u: User) {
   run(setAdmin(u.id, !u.is_admin), u.is_admin ? `${u.username} is no longer an admin` : `${u.username} is now an admin`)
 }
 
-function remove(u: User) {
-  if (confirm(`Delete ${u.username}'s account? The budget itself isn't affected.`)) {
+async function remove(u: User) {
+  if (await ask(`Delete ${u.username}'s account? The budget itself isn't affected.`, { title: 'Delete user', danger: true })) {
     run(deleteUser(u.id), `Deleted ${u.username}`)
   }
 }

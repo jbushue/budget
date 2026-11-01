@@ -1,8 +1,11 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>🎓 Bill Groups</h2>
-      <button class="btn btn-primary btn-sm" @click="openCreateGroup()">+ New Group</button>
+      <div class="view-title">
+        <h2>Loan groups</h2>
+        <p class="view-sub">Several loans paid with one combined payment.</p>
+      </div>
+      <button class="btn btn-primary" @click="openCreateGroup()"><Icon name="plus" :size="16" /> New group</button>
     </div>
 
     <div v-if="loading" class="loading">Loading bill groups...</div>
@@ -10,7 +13,7 @@
 
     <template v-else>
       <div v-if="groups.length === 0" class="empty-state">
-        <div class="icon">🎓</div>
+        <div class="icon"><Icon name="loans" :size="26" /></div>
         <p>No bill groups yet.</p>
         <p style="font-size:0.85rem;margin-top:0.5rem">
           Create a group to bundle multiple loan accounts into a single payment &mdash;
@@ -22,17 +25,17 @@
       <div v-for="g in groups" :key="g.groupName" class="card" style="margin-bottom:1.25rem">
         <div class="card-header" style="border-bottom:2px solid var(--bg)">
           <div>
-            <span class="card-title" style="font-size:1.05rem">{{ groupTypeIcon(g.groupType) }} {{ g.groupName }}</span>
+            <span class="card-title" style="font-size:1.05rem">{{ g.groupName }}</span>
             <span class="badge badge-info" style="margin-left:0.5rem">{{ frequencyLabel(g.frequency) }}</span>
-            <span v-if="g.isPaidThisPeriod" class="badge badge-success" style="margin-left:0.35rem">PAID</span>
-            <span v-else class="badge badge-warning" style="margin-left:0.35rem">DUE</span>
+            <span v-if="g.isPaidThisPeriod" class="badge badge-success" style="margin-left:0.35rem">Paid</span>
+            <span v-else class="badge badge-warning" style="margin-left:0.35rem">Due</span>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:0.4rem;align-items:center">
             <template v-if="!g.isPaidThisPeriod">
-              <button class="btn btn-success btn-sm" @click="openPayGroup(g)">Mark Paid</button>
+              <button class="btn btn-success btn-sm" @click="openPayGroup(g)">Mark paid</button>
             </template>
             <button class="btn btn-outline btn-sm" @click="openEditGroup(g)">Edit</button>
-            <button class="btn btn-outline btn-sm" @click="openAddMember(g)">+ Member</button>
+            <button class="btn btn-outline btn-sm" @click="openAddMember(g)"><Icon name="plus" :size="16" /> Member</button>
             <button class="btn btn-danger btn-sm" @click="deleteGroup(g.groupName)">Delete</button>
           </div>
         </div>
@@ -41,11 +44,11 @@
         <div class="grid grid-4" style="margin-bottom:1rem">
           <div class="stat-card" style="padding:0.75rem;text-align:center">
             <div class="stat-value" style="font-size:1.25rem">{{ currency(g.totalPayment) }}</div>
-            <div class="stat-label">Monthly Payment</div>
+            <div class="stat-label">Monthly payment</div>
           </div>
           <div class="stat-card" style="padding:0.75rem;text-align:center">
             <div class="stat-value negative" style="font-size:1.25rem">{{ currency(g.totalBalance) }}</div>
-            <div class="stat-label">Total Balance</div>
+            <div class="stat-label">Total balance</div>
           </div>
           <div class="stat-card" style="padding:0.75rem;text-align:center">
             <div class="stat-value" style="font-size:1.25rem">{{ g.memberCount }}</div>
@@ -53,7 +56,7 @@
           </div>
           <div class="stat-card" style="padding:0.75rem;text-align:center">
             <div class="stat-value" style="font-size:1.25rem">Day {{ g.dueDate }}</div>
-            <div class="stat-label">Due Date</div>
+            <div class="stat-label">Due date</div>
           </div>
         </div>
 
@@ -72,7 +75,7 @@
                 <th style="text-align:right">Balance</th>
                 <th>Allocation</th>
                 <th style="text-align:right">Est. Payment</th>
-                <th style="text-align:right">Actions</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -107,7 +110,7 @@
           </table>
         </div>
         <div v-else style="color:var(--text-muted);font-size:0.85rem;padding:1rem 0">
-          No member accounts yet. Click "+ Member" to add credit/loan accounts.
+          No accounts in this group yet. Add the cards or loans it pays.
         </div>
       </div>
     </template>
@@ -117,15 +120,15 @@
       <div class="modal">
         <h3>{{ editingGroup ? 'Edit Bill Group' : 'Create Bill Group' }}</h3>
         <div class="form-group">
-          <label>Group Name</label>
+          <label>Group name</label>
           <input v-model="groupForm.groupName" placeholder='e.g. "Federal Student Loans"' :disabled="!!editingGroup" />
         </div>
         <div class="form-group">
-          <label>Total Monthly Payment</label>
+          <label>Total monthly payment</label>
           <input v-model.number="groupForm.totalPayment" type="number" step="0.01" />
         </div>
         <div class="form-group">
-          <label>Due Day (1-31)</label>
+          <label>Due day (1-31)</label>
           <input v-model.number="groupForm.dueDate" type="number" min="1" max="31" />
         </div>
         <div class="form-group">
@@ -137,23 +140,23 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Group Type</label>
+          <label>Group type</label>
           <select v-model="groupForm.groupType">
-            <option value="student_loan">Student Loan</option>
-            <option value="bundled_bill">Bundled Bill</option>
-            <option value="consolidated_loan">Consolidated Loan</option>
+            <option value="student_loan">Student loan</option>
+            <option value="bundled_bill">Bundled bill</option>
+            <option value="consolidated_loan">Consolidated loan</option>
             <option value="other">Other</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Payment Source Bank</label>
+          <label>Payment source bank</label>
           <select v-model="groupForm.preferredSourceBank">
             <option value="">Auto (no preference)</option>
             <option v-for="b in banks" :key="b.name" :value="b.name">{{ b.name }}</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Payment Source Account</label>
+          <label>Payment source account</label>
           <select v-model="groupForm.preferredSourceAccount" :disabled="!groupForm.preferredSourceBank">
             <option value="">Auto (no preference)</option>
             <option v-for="acc in bankAccountsFor(groupForm.preferredSourceBank)" :key="acc.name" :value="acc.name">
@@ -173,7 +176,7 @@
     <!-- Add Member Modal -->
     <div v-if="showMemberModal" class="modal-overlay" @click.self="showMemberModal = false">
       <div class="modal">
-        <h3>Add Account to "{{ memberForm.groupName }}"</h3>
+        <h3>Add account to "{{ memberForm.groupName }}"</h3>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
           Select a credit / loan account to include in this bundled payment.
         </p>
@@ -185,7 +188,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Credit / Loan Account</label>
+          <label>Credit / loan account</label>
           <select v-model="memberForm.accountName" :disabled="!memberForm.bankName">
             <option value="">Select account...</option>
             <option
@@ -198,7 +201,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Allocation Method</label>
+          <label>Allocation method</label>
           <select v-model="memberForm.allocationMethod">
             <option value="proportional">Proportional (by balance)</option>
             <option value="equal">Equal split</option>
@@ -206,13 +209,13 @@
           </select>
         </div>
         <div v-if="memberForm.allocationMethod === 'fixed'" class="form-group">
-          <label>Fixed Amount Per Period</label>
+          <label>Fixed amount per period</label>
           <input v-model.number="memberForm.fixedAmount" type="number" step="0.01" />
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showMemberModal = false">Cancel</button>
           <button class="btn btn-primary" @click="addMember" :disabled="!memberForm.bankName || !memberForm.accountName">
-            Add to Group
+            Add to group
           </button>
         </div>
       </div>
@@ -226,18 +229,18 @@
           Scheduled payment: {{ currency(payForm.totalPayment) }} &mdash; distributed across member accounts.
         </p>
         <div class="form-group">
-          <label>Amount Paid</label>
+          <label>Amount paid</label>
           <input v-model.number="payForm.amountPaid" type="number" step="0.01" />
         </div>
         <div class="form-group">
-          <label>Source Bank</label>
+          <label>Source bank</label>
           <select v-model="payForm.sourceBank">
             <option value="">Select bank...</option>
             <option v-for="b in banks" :key="b.name" :value="b.name">{{ b.name }}</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Source Account</label>
+          <label>Source account</label>
           <select v-model="payForm.sourceAccount" :disabled="!payForm.sourceBank">
             <option value="">Select account...</option>
             <option v-for="acc in bankAccountsFor(payForm.sourceBank)" :key="acc.name" :value="acc.name">
@@ -246,12 +249,12 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Payment Date</label>
+          <label>Payment date</label>
           <input v-model="payForm.paymentDate" type="date" />
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markGroupPaid" :disabled="!payForm.amountPaid || payForm.amountPaid <= 0">Mark Paid</button>
+          <button class="btn btn-success" @click="markGroupPaid" :disabled="!payForm.amountPaid || payForm.amountPaid <= 0">Mark paid</button>
         </div>
       </div>
     </div>
@@ -259,6 +262,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {
@@ -270,6 +274,7 @@ import {
 import { currency, pct, frequencyLabel, todayISO } from '../utils/format'
 import { runMutation } from '../utils/mutation'
 import type { BillGroup, BillGroupMember, Bank, CreditAccount, MutationPayload } from '../types'
+import { ask } from '../utils/dialog'
 
 // ── Data ──
 const { result, loading, error, refetch } = useQuery<{ allBillGroups: BillGroup[] }>(GET_ALL_BILL_GROUPS)
@@ -292,15 +297,6 @@ function creditAccountsFor(bankName: string): CreditAccount[] {
   return bank?.creditAccounts ?? []
 }
 
-function groupTypeIcon(t: string): string {
-  const map: Record<string, string> = {
-    student_loan: '🎓',
-    bundled_bill: '📦',
-    consolidated_loan: '🏦',
-    other: '📋',
-  }
-  return map[t] || '📋'
-}
 
 function allocationLabel(method: string): string {
   const map: Record<string, string> = {
@@ -429,7 +425,7 @@ async function saveGroup() {
 }
 
 async function deleteGroup(name: string) {
-  if (!confirm(`Delete bill group "${name}" and unlink all member accounts?`)) return
+  if (!(await ask(`Delete loan group "${name}"? Its member accounts are unlinked, not deleted.`, { title: 'Delete loan group', danger: true }))) return
   const ok = await runMutation(() => doDeleteGroup({ variables: { groupName: name }}), 'deleteBillGroup', { failMessage: 'Failed to delete group' })
   if (ok) refetch()
 }
@@ -460,7 +456,7 @@ async function addMember() {
 }
 
 async function removeMember(groupName: string, bankName: string, accountName: string) {
-  if (!confirm(`Remove "${accountName}" from this group?`)) return
+  if (!(await ask(`Remove "${accountName}" from this group?`, { title: 'Remove from group', confirmText: 'Remove', danger: true }))) return
   const ok = await runMutation(
     () => doRemoveMember({ variables: { groupName, bankName, accountName }}),
     'removeBillGroupMember', { failMessage: 'Failed to remove member' },

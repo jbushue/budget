@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Timeline & Projection</h2>
+      <div class="view-title">
+        <h2>Timeline</h2>
+        <p class="view-sub">Every bill and paycheck ahead, and your projected balances.</p>
+      </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
         <select v-model.number="days" style="width:auto">
           <option :value="30">30 days</option>
@@ -10,7 +13,7 @@
           <option :value="180">6 months</option>
           <option :value="365">1 year</option>
         </select>
-        <button class="btn btn-outline btn-sm" @click="refetch()">Refresh</button>
+        <button class="btn btn-outline" @click="refetch()"><Icon name="refresh" :size="15" /> Refresh</button>
       </div>
     </div>
 
@@ -22,19 +25,19 @@
       <div class="grid grid-4" style="margin-bottom:1.5rem">
         <div class="card stat-card">
           <div class="stat-value positive">{{ currency(proj.totalIncome) }}</div>
-          <div class="stat-label">Total Income</div>
+          <div class="stat-label">Total income</div>
         </div>
         <div class="card stat-card">
           <div class="stat-value negative">{{ currency(proj.totalExpenses) }}</div>
-          <div class="stat-label">Total Expenses</div>
+          <div class="stat-label">Total expenses</div>
         </div>
         <div class="card stat-card">
           <div class="stat-value" :class="proj.netChange >= 0 ? 'positive' : 'negative'">{{ currency(proj.netChange) }}</div>
-          <div class="stat-label">Net Change</div>
+          <div class="stat-label">Net change</div>
         </div>
         <div class="card stat-card">
           <div class="stat-value" :class="proj.netFinalBalance >= 0 ? 'positive' : 'negative'">{{ currency(proj.netFinalBalance) }}</div>
-          <div class="stat-label">Projected Net Worth</div>
+          <div class="stat-label">Projected net worth</div>
           <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.25rem">
             Assets {{ currency(proj.totalFinalBalance) }}
             <span v-if="totalDebt > 0"> · Debt {{ currency(totalDebt) }}</span>
@@ -45,7 +48,7 @@
       <!-- Balance chart -->
       <div class="card" style="margin-bottom:1.5rem">
         <div class="card-header">
-          <span class="card-title">Balance Over Time</span>
+          <span class="card-title">Balance over time</span>
           <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.35rem;cursor:pointer;color:var(--text-muted)">
             <input type="checkbox" v-model="showPerAccount" /> Per-account lines
           </label>
@@ -57,20 +60,20 @@
 
       <!-- Final balances breakdown -->
       <div class="card" style="margin-bottom:1.5rem">
-        <div class="card-header"><span class="card-title">Projected Final Balances</span></div>
+        <div class="card-header"><span class="card-title">Projected final balances</span></div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Account</th>
-                <th style="text-align:right">Projected Balance</th>
+                <th style="text-align:right">Projected balance</th>
               </tr>
             </thead>
             <tbody>
               <!-- Bank accounts (assets) -->
               <tr v-if="Object.keys(parsedBalances).length" class="section-header-row">
                 <td colspan="2" style="font-weight:700;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;padding-top:0.75rem">
-                  🏦 Bank Accounts
+                  Bank Accounts
                 </td>
               </tr>
               <tr v-for="(bal, key) in parsedBalances" :key="'bank-' + key">
@@ -81,7 +84,7 @@
               <template v-if="Object.keys(parsedCreditBalances).length">
                 <tr class="section-header-row">
                   <td colspan="2" style="font-weight:700;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;padding-top:0.75rem">
-                    💳 Credit Cards
+                    Credit Cards
                   </td>
                 </tr>
                 <tr v-for="(bal, key) in parsedCreditBalances" :key="'credit-' + key">
@@ -93,7 +96,7 @@
               <template v-if="Object.keys(parsedMortgageBalances).length">
                 <tr class="section-header-row">
                   <td colspan="2" style="font-weight:700;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;padding-top:0.75rem">
-                    🏠 Mortgages
+                    Mortgages
                   </td>
                 </tr>
                 <tr v-for="(bal, key) in parsedMortgageBalances" :key="'mort-' + key">
@@ -105,7 +108,7 @@
               <template v-if="Object.keys(parsedHelocBalances).length">
                 <tr class="section-header-row">
                   <td colspan="2" style="font-weight:700;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;padding-top:0.75rem">
-                    🏦 HELOCs
+                    HELOCs
                   </td>
                 </tr>
                 <tr v-for="(bal, key) in parsedHelocBalances" :key="'heloc-' + key">
@@ -128,11 +131,11 @@
       <!-- Financial Calendar -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">📅 Financial Calendar</span>
+          <span class="card-title">Financial calendar</span>
           <div style="display:flex;align-items:center;gap:0.5rem">
-            <button class="btn btn-outline btn-sm" @click="prevMonth">&larr;</button>
+            <button class="btn btn-outline btn-sm btn-icon" aria-label="Previous month" @click="prevMonth"><Icon name="chevronLeft" :size="16" /></button>
             <span style="font-weight:700;min-width:140px;text-align:center">{{ calendarMonthLabel }}</span>
-            <button class="btn btn-outline btn-sm" @click="nextMonth">&rarr;</button>
+            <button class="btn btn-outline btn-sm btn-icon" aria-label="Next month" @click="nextMonth"><Icon name="chevronRight" :size="16" /></button>
           </div>
         </div>
 
@@ -177,7 +180,7 @@
         <div v-if="selectedDayData" class="cal-detail">
           <div class="cal-detail-header">
             <h3>{{ formatDetailDate(selectedDate!) }}</h3>
-            <button class="btn btn-outline btn-sm" @click="selectedDate = null">&times; Close</button>
+            <button class="btn btn-outline btn-sm" @click="selectedDate = null">&times; close</button>
           </div>
 
           <!-- Events for the day -->
@@ -190,9 +193,9 @@
                 class="cal-event-item"
                 :class="eventClass(evt)"
               >
-                <div class="cal-event-icon">{{ eventIcon(evt.eventType) }}</div>
+                <div class="cal-event-icon"><Icon :name="eventIcon(evt.eventType)" :size="16" /></div>
                 <div class="cal-event-info">
-                  <div class="cal-event-desc">{{ evt.description }}</div>
+                  <div class="cal-event-desc">{{ billName(evt.description) }}</div>
                   <div class="cal-event-source" v-if="evt.sourceBank || evt.sourceAccount">
                     <template v-if="isTransferType(evt.eventType)">
                       ↔ {{ evt.description }}
@@ -211,7 +214,7 @@
                     </template>
                   </div>
                   <div v-if="evt.status === 'deferred'" class="cal-event-warning">
-                    ⚠️ Insufficient funds — payment deferred
+                    Insufficient funds — payment deferred
                   </div>
                 </div>
                 <div class="cal-event-amount" :class="evt.amount >= 0 ? 'positive' : 'negative'">
@@ -223,7 +226,7 @@
 
           <!-- Account balances at end of day -->
           <div>
-            <h4>Expected Account Balances (End of Day)</h4>
+            <h4>Expected account balances (end of day)</h4>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -241,19 +244,19 @@
                   </tr>
                   <template v-if="Object.keys(selectedDayCreditBalances).length">
                     <tr v-for="(bal, acct) in selectedDayCreditBalances" :key="'c-' + acct">
-                      <td>💳 {{ formatAccountName(acct as string) }}</td>
+                      <td>{{ formatAccountName(acct as string) }}</td>
                       <td style="text-align:right;font-weight:600" class="negative">-{{ currency(bal) }}</td>
                     </tr>
                   </template>
                   <template v-if="Object.keys(selectedDayMortgageBalances).length">
                     <tr v-for="(bal, acct) in selectedDayMortgageBalances" :key="'m-' + acct">
-                      <td>🏠 {{ formatAccountName(acct as string) }}</td>
+                      <td>{{ formatAccountName(acct as string) }}</td>
                       <td style="text-align:right;font-weight:600" class="negative">-{{ currency(bal) }}</td>
                     </tr>
                   </template>
                   <template v-if="Object.keys(selectedDayHelocBalances).length">
                     <tr v-for="(bal, acct) in selectedDayHelocBalances" :key="'h-' + acct">
-                      <td>🏦 {{ formatAccountName(acct as string) }}</td>
+                      <td>{{ formatAccountName(acct as string) }}</td>
                       <td style="text-align:right;font-weight:600" class="negative">-{{ currency(bal) }}</td>
                     </tr>
                   </template>
@@ -279,6 +282,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
@@ -294,7 +298,7 @@ import {
   Legend,
 } from 'chart.js'
 import { GET_PROJECTION } from '../graphql/queries'
-import { currency, todayISO } from '../utils/format'
+import { currency, todayISO, billName } from '../utils/format'
 import type { Projection, CalendarDay } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler, Legend)
@@ -451,7 +455,7 @@ const chartData = computed(() => {
 
     creditKeys.forEach((key, idx) => {
       datasets.push({
-        label: `💳 ${key.replace(':', ' / ')}`,
+        label: key.replace(':', ' / '),
         data: sampled.map(s => {
           const cb = typeof s.creditBalances === 'string' ? JSON.parse(s.creditBalances) : (s.creditBalances || {})
           return -(cb[key] || 0)
@@ -478,7 +482,7 @@ const chartData = computed(() => {
 
     helocKeys.forEach((key, idx) => {
       datasets.push({
-        label: `🏦 ${key.replace(':', ' / ')}`,
+        label: key.replace(':', ' / '),
         data: sampled.map(s => {
           const hb = typeof s.helocBalances === 'string' ? JSON.parse(s.helocBalances) : (s.helocBalances || {})
           return -(hb[key] || 0)
@@ -697,30 +701,30 @@ function isTransferType(type: string): boolean {
 
 function eventIcon(type: string): string {
   const map: Record<string, string> = {
-    INCOME: '💰',
-    BILL_PAYMENT: '📋',
-    BILL_DUE: '📋',
-    BILL_DEFERRED: '⚠️',
-    CREDIT_PAYMENT: '💳',
-    CREDIT_PAYMENT_DUE: '💳',
-    CREDIT_PAYMENT_DEFERRED: '⚠️',
-    MORTGAGE_PAYMENT: '🏠',
-    MORTGAGE_DEFERRED: '⚠️',
-    INTEREST: '📈',
-    BILL_GROUP_PAYMENT: '📦',
-    BILL_GROUP_DEFERRED: '⚠️',
-    BILL_GROUP_ALREADY_PAID: '✅',
-    HELOC_PAYMENT: '🏦',
-    HELOC_PAYMENT_DUE: '🏦',
-    HELOC_PAYMENT_DEFERRED: '⚠️',
-    SAVINGS_SWEEP: '💸',
-    SAVINGS_RECALL: '📥',
-    HELOC_PARK: '🅿️',
-    HELOC_RECALL: '⬆️',
-    EXTRA_CREDIT_PAYMENT: '💳',
-    PROMO_PAYOFF: '🏷️',
+    INCOME: 'banknote',
+    BILL_PAYMENT: 'bills',
+    BILL_DUE: 'bills',
+    BILL_DEFERRED: 'alert',
+    CREDIT_PAYMENT: 'card',
+    CREDIT_PAYMENT_DUE: 'card',
+    CREDIT_PAYMENT_DEFERRED: 'alert',
+    MORTGAGE_PAYMENT: 'home',
+    MORTGAGE_DEFERRED: 'alert',
+    INTEREST: 'trendingUp',
+    BILL_GROUP_PAYMENT: 'loans',
+    BILL_GROUP_DEFERRED: 'alert',
+    BILL_GROUP_ALREADY_PAID: 'checkCircle',
+    HELOC_PAYMENT: 'accounts',
+    HELOC_PAYMENT_DUE: 'accounts',
+    HELOC_PAYMENT_DEFERRED: 'alert',
+    SAVINGS_SWEEP: 'arrowDown',
+    SAVINGS_RECALL: 'arrowUp',
+    HELOC_PARK: 'parking',
+    HELOC_RECALL: 'arrowUp',
+    EXTRA_CREDIT_PAYMENT: 'card',
+    PROMO_PAYOFF: 'tag',
   }
-  return map[type] || '📌'
+  return map[type] || 'pin'
 }
 
 function eventClass(evt: { eventType: string; status: string }) {

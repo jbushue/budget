@@ -1,13 +1,18 @@
 <template>
   <div>
-    <div class="view-header"><h2>Financial Health</h2></div>
+    <div class="view-header">
+      <div class="view-title">
+        <h2>Health check</h2>
+        <p class="view-sub">A quick read on savings, debt, and your safety net.</p>
+      </div>
+    </div>
 
     <div v-if="loading && !health" class="loading">Checking...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else-if="health">
       <div v-if="health.score == null" class="empty-state">
-        <div class="icon">🩺</div>
+        <div class="icon"><Icon name="health" :size="26" /></div>
         <p>Add your accounts, income and bills (and ideally a few months of transactions) to get a health check.</p>
       </div>
 
@@ -34,12 +39,12 @@
           <div v-for="f in health.factors" :key="f.key" class="card factor" :class="f.status">
             <div class="f-head">
               <span class="f-label">{{ f.label }}</span>
-              <span class="badge" :class="badge(f.status)">{{ f.status }}</span>
+              <span class="badge cap" :class="badge(f.status)">{{ f.status }}</span>
             </div>
             <div class="f-value">{{ f.value }}</div>
             <div class="progress-bar"><div class="progress-fill" :style="{ width: f.score + '%', background: ringColor(f.score) }"></div></div>
             <p class="f-detail">{{ f.detail }}</p>
-            <p v-if="f.tip" class="f-tip">💡 {{ f.tip }}</p>
+            <p v-if="f.tip" class="f-tip">{{ f.tip }}</p>
           </div>
         </div>
       </template>
@@ -48,6 +53,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { computed } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { GET_HEALTH_CHECK } from '../graphql/planning'

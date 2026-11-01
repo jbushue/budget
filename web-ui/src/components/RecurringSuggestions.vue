@@ -1,7 +1,7 @@
 <template>
   <div v-if="charges.length" class="card rec-card">
     <div class="card-header">
-      <span class="card-title">🔁 Repeating charges that aren't bills yet</span>
+      <span class="card-title">Repeating charges that aren't bills yet</span>
       <span class="sub">~{{ currency(totalMonthly) }}/month</span>
     </div>
     <p class="hint">
@@ -26,7 +26,7 @@
             <td>{{ fmtDateShort(c.lastDate) }}</td>
             <td>{{ fmtDateShort(c.nextExpected) }}</td>
             <td style="text-align:right;white-space:nowrap">
-              <button class="btn btn-primary btn-sm" :disabled="busy" @click="addAsBill(c)">Add as bill</button>
+              <button class="btn btn-outline btn-sm" :disabled="busy" @click="addAsBill(c)"><Icon name="plus" :size="14" /> Add as bill</button>
               <button class="btn btn-outline btn-sm" style="margin-left:0.35rem" :disabled="busy" @click="dismiss(c)">Dismiss</button>
             </td>
           </tr>
@@ -43,7 +43,9 @@ import { GET_RECURRING_CHARGES, DISMISS_RECURRING_CHARGE } from '../graphql/goal
 import { CREATE_BILL } from '../graphql/queries'
 import { runMutation } from '../utils/mutation'
 import { currency, fmtDateShort } from '../utils/format'
+import Icon from './Icon.vue'
 import type { MutationPayload, RecurringCharge } from '../types'
+import { askValue } from '../utils/dialog'
 
 const emit = defineEmits<{ added: [] }>()
 
@@ -60,7 +62,7 @@ const FREQ: Record<string, string> = { weekly: 'Weekly', biweekly: 'Every 2 week
 function freqLabel(f: string) { return FREQ[f] ?? f }
 
 async function addAsBill(c: RecurringCharge) {
-  const name = prompt('Bill name:', c.name)
+  const name = await askValue('Add as a bill', { message: 'What should the bill be called?', value: c.name, confirmText: 'Add bill' })
   if (!name) return
   busy.value = true
   const next = new Date(c.nextExpected + 'T00:00:00')

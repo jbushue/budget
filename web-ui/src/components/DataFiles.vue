@@ -1,6 +1,6 @@
 <template>
-  <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header"><span class="card-title">💾 Data &amp; backup</span></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Data &amp; backup</span></div>
 
     <h4 class="sub-h">Excel</h4>
     <p class="help">
@@ -8,13 +8,13 @@
       items — anything with the same name is skipped.
     </p>
     <div class="row">
-      <a class="btn btn-outline btn-sm" href="/files/export.xlsx">⬇ Export to Excel</a>
-      <a class="btn btn-outline btn-sm" href="/files/template.xlsx">⬇ Blank template</a>
+      <a class="btn btn-outline btn-sm" href="/files/export.xlsx">Export to Excel</a>
+      <a class="btn btn-outline btn-sm" href="/files/template.xlsx">Blank template</a>
       <label class="btn btn-outline btn-sm file-btn">
-        ⬆ Import from Excel
+        Import from Excel
         <input type="file" accept=".xlsx,.xlsm" @change="upload($event, '/files/import')" />
       </label>
-      <a class="btn btn-outline btn-sm" href="/files/transactions.csv">⬇ Transactions (CSV)</a>
+      <a class="btn btn-outline btn-sm" href="/files/transactions.csv">Transactions (CSV)</a>
     </div>
 
     <template v-if="authState.user?.is_admin">
@@ -24,9 +24,9 @@
         current data with the backup (a copy of the current data is kept in the backups folder first).
       </p>
       <div class="row">
-        <a class="btn btn-success btn-sm" href="/files/backup.db">⬇ Download backup</a>
+        <a class="btn btn-success btn-sm" href="/files/backup.db">Download backup</a>
         <label class="btn btn-danger btn-sm file-btn">
-          ⬆ Restore from backup
+          Restore from backup
           <input type="file" accept=".db,.sqlite,application/octet-stream" @change="restore" />
         </label>
       </div>
@@ -47,6 +47,7 @@ import { ref } from 'vue'
 import { useApolloClient } from '@vue/apollo-composable'
 import { authState, checkAuth } from '../utils/auth'
 import ServerBackups from './ServerBackups.vue'
+import { ask } from '../utils/dialog'
 
 const { resolveClient } = useApolloClient()
 const busy = ref(false)
@@ -91,8 +92,8 @@ async function restore(e: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
-  if (!confirm(`Replace ALL current data with "${file.name}"?\n\nA copy of the current data is kept in the backups folder. `
-    + 'User accounts come from the backup too, so you may need to sign in again.')) return
+  if (!(await ask(`Replace ALL current data with "${file.name}"?\n\nA copy of the current data is kept in the backups folder. `
+    + 'User accounts come from the backup too, so you may need to sign in again.', { title: 'Restore backup', confirmText: 'Replace data', danger: true }))) return
   const data = await send(file, '/files/restore')
   if (data) {
     details.value = data.previous_saved_to ? [`Previous data saved to ${data.previous_saved_to}`] : []

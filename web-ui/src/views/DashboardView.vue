@@ -1,8 +1,11 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Dashboard</h2>
-      <button class="btn btn-outline btn-sm" @click="refreshAll()">Refresh</button>
+      <div class="view-title">
+        <h2>Dashboard</h2>
+        <p class="view-sub">Where your money stands today and what's coming up.</p>
+      </div>
+      <button class="btn btn-outline" @click="refreshAll()"><Icon name="refresh" :size="15" /> Refresh</button>
     </div>
 
     <div v-if="loading" class="loading">Loading financial snapshot...</div>
@@ -12,7 +15,7 @@
       <template v-if="dash">
         <!-- 1. Can my bills be paid? -->
         <div class="card status-banner" :class="`status-${dash.status}`">
-          <div class="status-icon">{{ STATUS_ICON[dash.status] }}</div>
+          <div class="status-icon"><Icon :name="STATUS_ICON[dash.status]" :size="22" :stroke="2.2" /></div>
           <div style="flex:1;min-width:0">
             <div class="status-title">{{ dash.statusTitle }}</div>
             <div class="status-detail">{{ dash.statusDetail }}</div>
@@ -23,7 +26,7 @@
         <div class="grid grid-2" style="margin-bottom:1.5rem;align-items:start">
           <!-- 2. How much can I spend? -->
           <div class="card">
-            <div class="card-header"><span class="card-title">💵 Safe to spend</span></div>
+            <div class="card-header"><span class="card-title">Safe to spend</span></div>
             <div class="safe-amount" :class="dash.safeToSpend > 0 ? 'positive' : 'negative'">{{ currency(dash.safeToSpend) }}</div>
             <div style="font-size:0.9rem;margin-bottom:0.75rem">
               <template v-if="dash.nextPayday">
@@ -37,7 +40,7 @@
               ({{ dash.spendingMode === 'learned' ? 'learned from your transactions' : 'set in Settings' }}).
             </div>
             <div v-else class="hint hint-warn">
-              ⚠️ Everyday spending (groceries, gas, eating out) isn't set, so this assumes you spend nothing besides bills.
+              Everyday spending (groceries, gas, eating out) isn't set, so this assumes you spend nothing besides bills.
               <router-link to="/settings">Set it in Settings</router-link> for an accurate number.
             </div>
             <details style="margin-top:0.75rem;font-size:0.8rem;color:var(--text-muted)">
@@ -58,13 +61,13 @@
           <!-- 3. This pay period's bills -->
           <div class="card">
             <div class="card-header">
-              <span class="card-title">🧾 Bills {{ dash.nextPayday ? `before your ${fmtDateShort(dash.nextPayday)} paycheck` : 'coming up' }}</span>
+              <span class="card-title">Bills {{ dash.nextPayday ? `before your ${fmtDateShort(dash.nextPayday)} paycheck` : 'coming up' }}</span>
             </div>
-            <div v-if="!dash.billsThisPeriod.length" class="empty-state" style="padding:1rem"><p>Nothing due before your next paycheck. 🎉</p></div>
+            <div v-if="!dash.billsThisPeriod.length" class="empty-state" style="padding:1rem"><p>Nothing due before your next paycheck.</p></div>
             <ul v-else class="period-list">
               <li v-for="b in dash.billsThisPeriod" :key="b.billName + b.dueDate" :class="`period-${b.status}`">
                 <div style="flex:1;min-width:0">
-                  <div style="font-weight:500">{{ b.name }}</div>
+                  <div style="font-weight:500">{{ billName(b.name) }}</div>
                   <div style="font-size:0.75rem;color:var(--text-muted)">
                     <template v-if="b.status === 'overdue'">Was due {{ fmtDateShort(b.dueDate) }} ({{ b.daysOverdue }}d ago)</template>
                     <template v-else>Due {{ fmtDateShort(b.dueDate) }}</template>
@@ -79,7 +82,7 @@
               </li>
             </ul>
             <div v-if="dash.upcomingIncome.length" style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem">
-              💰 Next paychecks:
+              Next paychecks:
               <span v-for="(inc, i) in dash.upcomingIncome" :key="i">{{ i ? ', ' : '' }}{{ fmtDateShort(inc.date) }} {{ inc.name }} {{ currency(inc.amount) }}</span>
             </div>
           </div>
@@ -88,8 +91,8 @@
         <!-- Top recommendations -->
         <div v-if="dash.insights.length" class="card" style="margin-bottom:1.5rem">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-            <span class="card-title">🧭 What to do next</span>
-            <router-link to="/optimizer" style="font-size:0.8rem">See the full payment plan →</router-link>
+            <span class="card-title">What to do next</span>
+            <router-link to="/optimizer" class="link-more">Full payment plan <Icon name="chevronRight" :size="14" /></router-link>
           </div>
           <InsightList :items="dash.insights" compact />
         </div>
@@ -100,26 +103,26 @@
 
       <MarkPaidDialog :bill="payBill" @close="payBill = null" @paid="refreshAll" />
 
-      <h3 style="margin:0 0 0.75rem;font-size:1rem;color:var(--text-muted)">Details</h3>
+      <h3 class="section-heading">Details</h3>
       <!-- KPI row -->
       <div class="grid grid-4" style="margin-bottom:1.5rem">
         <div class="card stat-card">
           <div class="stat-value positive">{{ currency(snap.totalAssets) }}</div>
-          <div class="stat-label">Total Assets</div>
+          <div class="stat-label">Total assets</div>
         </div>
         <div class="card stat-card">
           <div class="stat-value negative">{{ currency(snap.totalLiabilities) }}</div>
-          <div class="stat-label">Total Liabilities</div>
+          <div class="stat-label">Total liabilities</div>
         </div>
         <RouterLink to="/net-worth" class="card stat-card kpi-link" title="Assets, debts and net worth over time">
           <div class="stat-value" :class="snap.netWorth >= 0 ? 'positive' : 'negative'">{{ currency(snap.netWorth) }}</div>
-          <div class="stat-label">Net Worth →</div>
+          <div class="stat-label">Net worth</div>
         </RouterLink>
         <RouterLink to="/checkup" class="card stat-card kpi-link" title="Savings rate, emergency fund, debt and more">
           <div class="stat-value neutral">
             {{ health?.score ?? '—' }}<span v-if="health?.grade" class="grade">{{ health.grade }}</span>
           </div>
-          <div class="stat-label">Health Score →</div>
+          <div class="stat-label">Health score</div>
         </RouterLink>
       </div>
 
@@ -127,34 +130,34 @@
       <div class="grid grid-2">
         <!-- Banks -->
         <div class="card">
-          <div class="card-header"><span class="card-title">Banks & Accounts</span></div>
-          <div v-for="bank in snap.banks" :key="bank.name" style="margin-bottom:1rem">
-            <div style="font-weight:600;margin-bottom:0.25rem">{{ bank.name }}</div>
+          <div class="card-header"><span class="card-title">Banks & accounts</span></div>
+          <div v-for="bank in snap.banks" :key="bank.name" class="bank-block">
+            <div class="bank-name">{{ bank.name }}</div>
             <table>
               <tr v-for="acc in bank.bankAccounts" :key="acc.id">
-                <td>{{ acc.accountName }} <span v-if="isSynced(bank.name, acc.accountName)" class="sync-badge" title="Synced via SimpleFIN">🔄</span></td>
-                <td><span class="badge badge-info">{{ acc.accountType }}</span></td>
+                <td>{{ acc.accountName }} <span v-if="isSynced(bank.name, acc.accountName)" class="sync-badge" title="Synced via SimpleFIN"><Icon name="refresh" :size="12" /></span></td>
+                <td><span class="badge">{{ accountTypeLabel(acc.accountType) }}</span></td>
                 <td style="text-align:right;font-weight:600" :class="acc.balance >= 0 ? 'positive' : 'negative'">{{ currency(acc.balance) }}</td>
               </tr>
               <tr v-for="cc in bank.creditAccounts" :key="cc.id">
-                <td>{{ cc.accountName }} <span v-if="isSynced(bank.name, cc.accountName)" class="sync-badge" title="Synced via SimpleFIN">🔄</span></td>
-                <td><span class="badge badge-warning">Credit</span></td>
+                <td>{{ cc.accountName }} <span v-if="isSynced(bank.name, cc.accountName)" class="sync-badge" title="Synced via SimpleFIN"><Icon name="refresh" :size="12" /></span></td>
+                <td><span class="badge">Credit</span></td>
                 <td style="text-align:right;font-weight:600;color:var(--danger)">-{{ currency(cc.balance) }}</td>
               </tr>
               <tr v-for="m in bank.mortgageAccounts" :key="m.id">
-                <td>{{ m.accountName }} <span v-if="isSynced(bank.name, m.accountName)" class="sync-badge" title="Synced via SimpleFIN">🔄</span></td>
-                <td><span class="badge badge-danger">Mortgage</span></td>
+                <td>{{ m.accountName }} <span v-if="isSynced(bank.name, m.accountName)" class="sync-badge" title="Synced via SimpleFIN"><Icon name="refresh" :size="12" /></span></td>
+                <td><span class="badge">Mortgage</span></td>
                 <td style="text-align:right;font-weight:600;color:var(--danger)">{{ currency(m.currentPrincipal) }}</td>
               </tr>
               <tr v-for="h in bank.helocAccounts" :key="h.id">
-                <td>{{ h.accountName }} <span v-if="isSynced(bank.name, h.accountName)" class="sync-badge" title="Synced via SimpleFIN">🔄</span></td>
-                <td><span class="badge badge-warning">HELOC</span></td>
+                <td>{{ h.accountName }} <span v-if="isSynced(bank.name, h.accountName)" class="sync-badge" title="Synced via SimpleFIN"><Icon name="refresh" :size="12" /></span></td>
+                <td><span class="badge">HELOC</span></td>
                 <td style="text-align:right;font-weight:600;color:var(--danger)">-{{ currency(h.balance) }}</td>
               </tr>
             </table>
           </div>
           <div v-if="snap.banks.length === 0" class="empty-state">
-            <div class="icon">🏦</div>
+            <div class="icon"><Icon name="accounts" :size="26" /></div>
             <p>No banks yet. Go to Accounts to add one.</p>
           </div>
         </div>
@@ -163,20 +166,17 @@
         <div>
           <!-- Upcoming bills -->
           <div class="card" style="margin-bottom:1rem">
-            <div class="card-header"><span class="card-title">Upcoming Bills (30 days)</span></div>
+            <div class="card-header"><span class="card-title">Upcoming bills · 30 days</span></div>
             <ul class="event-list" v-if="snap.upcomingBills30Days.length">
               <li v-for="b in snap.upcomingBills30Days" :key="b.id" class="event-item">
                 <div>
                   <div style="font-weight:500;display:flex;align-items:center;gap:0.4rem">
-                    <span v-if="b.isAccountLinked && b.linkedAccountType === 'credit'">💳</span>
-                    <span v-else-if="b.isAccountLinked && b.linkedAccountType === 'mortgage'">🏠</span>
-                    <span v-else-if="b.isAccountLinked && b.linkedAccountType === 'heloc'">🏦</span>
-                    {{ b.billName }}
-                    <span v-if="b.isPaidThisPeriod" class="badge badge-success" style="font-size:0.65rem">✓ Paid</span>
+                    {{ billName(b.billName) }}
+                    <span v-if="b.isPaidThisPeriod" class="badge badge-success">Paid</span>
                   </div>
                   <div style="font-size:0.75rem;color:var(--text-muted)">{{ fmtDate(b.nextDueDate) }}</div>
                 </div>
-                <div style="font-weight:600" :style="b.isPaidThisPeriod ? 'color:var(--text-muted);text-decoration:line-through' : 'color:var(--danger)'">{{ currency(b.effectiveAmount || b.amount) }}</div>
+                <div style="font-weight:600" :style="b.isPaidThisPeriod ? 'color:var(--text-muted);text-decoration:line-through' : ''">{{ currency(b.effectiveAmount || b.amount) }}</div>
               </li>
             </ul>
             <div v-else class="empty-state"><p>No bills due in 30 days</p></div>
@@ -184,14 +184,14 @@
 
           <!-- Upcoming income -->
           <div class="card">
-            <div class="card-header"><span class="card-title">Upcoming Income (30 days)</span></div>
+            <div class="card-header"><span class="card-title">Upcoming income · 30 days</span></div>
             <ul class="event-list" v-if="snap.upcomingIncome30Days.length">
               <li v-for="i in snap.upcomingIncome30Days" :key="i.id" class="event-item">
                 <div>
                   <div style="font-weight:500">{{ i.sourceName }}</div>
                   <div style="font-size:0.75rem;color:var(--text-muted)">{{ fmtDate(i.nextPayDate) }} &middot; {{ frequencyLabel(i.frequency) }}</div>
                 </div>
-                <div style="font-weight:600;color:var(--success)">{{ currency(i.amount) }}</div>
+                <div style="font-weight:600" class="positive">{{ currency(i.amount) }}</div>
               </li>
             </ul>
             <div v-else class="empty-state"><p>No income expected in 30 days</p></div>
@@ -199,20 +199,19 @@
         </div>
       </div>
 
-      <!-- Net Worth History chart -->
-      <div class="card" style="margin-top:1.5rem">
-        <div class="card-header"><span class="card-title">📈 Net Worth Over Time</span></div>
+      <!-- Net Worth History chart (hidden until there are at least two days to compare) -->
+      <div v-if="nwLoading || nwError || (netWorthData && netWorthData.length > 1)" class="card" style="margin-top:1.5rem">
+        <div class="card-header"><span class="card-title">Net worth over time</span></div>
         <div v-if="nwLoading" class="loading">Loading history...</div>
         <div v-else-if="nwError" style="color:var(--danger);font-size:0.85rem;padding:1rem 0">Could not load net worth history: {{ nwError.message }}</div>
         <div v-else-if="netWorthData && netWorthData.length > 1" style="height:250px">
           <Line :data="nwChartData" :options="nwChartOptions" />
         </div>
-        <div v-else class="empty-state"><p>Not enough data yet. Net worth is recorded daily.</p></div>
       </div>
 
       <!-- Projection chart -->
       <div class="card" style="margin-top:1.5rem">
-        <div class="card-header"><span class="card-title">90-Day Balance Projection</span></div>
+        <div class="card-header"><span class="card-title">90-day balance projection</span></div>
         <div v-if="projLoading" class="loading">Calculating projection...</div>
         <div v-else-if="projError" style="color:var(--danger);font-size:0.85rem;padding:1rem 0">Could not load projection: {{ projError.message }}</div>
         <div v-else-if="projData" style="height:300px">
@@ -220,9 +219,9 @@
         </div>
       </div>
 
-      <!-- Recent Bill Payments -->
+      <!-- Recent bill payments -->
       <div class="card" style="margin-top:1.5rem">
-        <div class="card-header"><span class="card-title">💳 Recent Bill Payments</span></div>
+        <div class="card-header"><span class="card-title">Recent bill payments</span></div>
         <div v-if="bphLoading" class="loading">Loading payment history...</div>
         <div v-else-if="bphError" style="color:var(--danger);font-size:0.85rem;padding:1rem 0">Could not load payment history: {{ bphError.message }}</div>
         <div v-else-if="billPayments && billPayments.length" class="table-wrap">
@@ -237,7 +236,7 @@
             </thead>
             <tbody>
               <tr v-for="(p, i) in billPayments.slice(0, 15)" :key="i">
-                <td style="font-weight:500">{{ p.billName }}</td>
+                <td style="font-weight:500">{{ billName(p.billName) }}</td>
                 <td style="text-align:right">{{ currency(p.amountPaid) }}</td>
                 <td style="font-size:0.8rem;color:var(--text-muted)">{{ p.sourceBank }} / {{ p.sourceAccount }}</td>
                 <td style="font-size:0.8rem">{{ fmtDate(p.paymentDate) }}</td>
@@ -252,6 +251,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { computed, ref } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
@@ -278,7 +278,7 @@ import { GET_HEALTH_CHECK } from '../graphql/planning'
 import InsightList from '../components/InsightList.vue'
 import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
 import MarkPaidDialog, { type PayableBill } from '../components/MarkPaidDialog.vue'
-import { currency, fmtDate, fmtDateShort, frequencyLabel, daysFromNow } from '../utils/format'
+import { currency, fmtDate, fmtDateShort, frequencyLabel, daysFromNow, billName, accountTypeLabel } from '../utils/format'
 import type { HealthCheck } from '../types'
 import type { FinancialSnapshot, Projection, SimplefinSyncedAccount, NetWorthSnapshot, BillPaymentHistory, DashboardSummary, PeriodBillStatus } from '../types'
 
@@ -310,7 +310,7 @@ function refreshAll() {
   refetchBph()
 }
 
-const STATUS_ICON: Record<DashboardSummary['status'], string> = { ok: '✅', warning: '⚠️', danger: '🚨' }
+const STATUS_ICON: Record<DashboardSummary['status'], string> = { ok: 'check', warning: 'alert', danger: 'alertCircle' }
 
 const PERIOD_BADGE: Record<PeriodBillStatus, { label: string; cls: string }> = {
   paid: { label: 'Paid', cls: 'badge-success' },
@@ -425,13 +425,24 @@ const chartOptions = {
 </script>
 
 <style scoped>
-.status-banner { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; border-left: 6px solid var(--border); }
-.status-ok { border-left-color: var(--success); background: var(--success-light); }
-.status-warning { border-left-color: var(--warning); background: var(--warning-light); }
-.status-danger { border-left-color: var(--danger); background: var(--danger-light); }
-.status-icon { font-size: 2rem; }
-.status-title { font-size: 1.15rem; font-weight: 700; }
+.status-banner { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; position: relative; overflow: hidden; }
+.status-banner::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--border-strong); }
+.status-ok::before { background: var(--success); }
+.status-warning::before { background: var(--warning); }
+.status-danger::before { background: var(--danger); }
+.status-icon {
+  flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--surface-alt); color: var(--text-muted);
+}
+.status-ok .status-icon { background: var(--success-light); color: var(--success-text); }
+.status-warning .status-icon { background: var(--warning-light); color: var(--warning-text); }
+.status-danger .status-icon { background: var(--danger-light); color: var(--danger-text); }
+.status-title { font-size: 1.1rem; font-weight: 650; letter-spacing: -0.01em; }
 .status-detail { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.15rem; }
+.section-heading { margin: 0.5rem 0 0.75rem; font-size: 0.8rem; font-weight: 600; color: var(--text-light); letter-spacing: 0.02em; }
+.link-more { display: inline-flex; align-items: center; gap: 0.15rem; font-size: 0.82rem; font-weight: 550; text-decoration: none; }
+.bank-block + .bank-block { margin-top: 1rem; }
+.bank-name { font-weight: 600; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem; }
 .safe-amount { font-size: 2.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 0.4rem; }
 .hint { font-size: 0.8rem; color: var(--text-muted); }
 .hint-warn { color: var(--warning-text); background: var(--warning-light); padding: 0.4rem 0.6rem; border-radius: var(--radius); }
@@ -441,19 +452,13 @@ const chartOptions = {
 @media (max-width: 767px) {
   .status-banner { flex-wrap: wrap; gap: 0.6rem 0.85rem; }
   .status-banner > .btn { flex: 1 1 100%; }
-  .status-icon { font-size: 1.6rem; }
   .status-title { font-size: 1.05rem; }
   .safe-amount { font-size: 2.1rem; }
 }
 .period-paid { opacity: 0.6; }
-.period-short, .period-overdue { background: var(--danger-light); margin: 0 -0.5rem; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
-.sync-badge {
-  font-size: 0.7rem;
-  cursor: help;
-  opacity: 0.75;
-  vertical-align: middle;
-}
+.period-short, .period-overdue { background: var(--danger-light); margin: 0 -0.5rem; padding-left: 0.5rem !important; padding-right: 0.5rem !important; border-radius: var(--radius-sm); }
+.sync-badge { display: inline-flex; color: var(--text-light); cursor: help; vertical-align: middle; }
 .kpi-link { color: inherit; text-decoration: none; }
-.kpi-link:hover { box-shadow: 0 0 0 2px var(--primary); }
+.kpi-link:hover { border-color: var(--primary); }
 .grade { font-size: 0.9rem; margin-left: 0.35rem; color: var(--text-muted); font-weight: 600; }
 </style>

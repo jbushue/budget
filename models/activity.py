@@ -116,6 +116,7 @@ def record_mutations(query: str, variables: dict | None, operation_name: str | N
                      user: dict | None) -> int:
     """Log each top-level field of a successful mutation. Returns how many were logged."""
     from graphql import OperationDefinitionNode, OperationType, parse
+    from graphql import Undefined
     from graphql.utilities import value_from_ast_untyped
     if not data:
         return 0
@@ -142,6 +143,7 @@ def record_mutations(query: str, variables: dict | None, operation_name: str | N
                 and payload["result"].get("success") is False:
             continue
         args = {a.name.value: value_from_ast_untyped(a.value, variables or {}) for a in (sel.arguments or [])}
+        args = {k: v for k, v in args.items() if v is not Undefined}  # variables the client didn't send
         log(humanize(name), describe(args), user)
         logged += 1
     return logged

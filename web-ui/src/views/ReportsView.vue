@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Reports</h2>
+      <div class="view-title">
+        <h2>Reports</h2>
+        <p class="view-sub">Where your money went, month by month.</p>
+      </div>
       <div class="chip-group" style="margin:0">
         <button v-for="n in [3, 6, 12]" :key="n" class="chip" :class="{ selected: months === n }" @click="months = n">{{ n }} months</button>
       </div>
@@ -12,7 +15,7 @@
 
     <template v-else-if="report">
       <div v-if="!hasTransactions" class="empty-state">
-        <div class="icon">📈</div>
+        <div class="icon"><Icon name="chart" :size="26" /></div>
         <p>Spending reports are built from your transactions.
           <RouterLink to="/transactions">Import or download transactions</RouterLink> to see them here.</p>
       </div>
@@ -87,7 +90,7 @@
         </div>
       </template>
 
-      <div class="card">
+      <div v-if="netWorth.length > 1" class="card">
         <div class="card-header"><span class="card-title">Net worth</span></div>
         <div v-if="netWorth.length < 2" class="sub">Net worth is recorded once a day when the app starts — check back after a few days.</div>
         <template v-else>
@@ -106,6 +109,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Bar, Doughnut, Line } from 'vue-chartjs'

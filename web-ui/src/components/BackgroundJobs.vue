@@ -1,7 +1,7 @@
 <template>
-  <div class="card" style="margin-bottom:1.5rem">
+  <div class="card">
     <div class="card-header">
-      <span class="card-title">⏱ Background jobs</span>
+      <span class="card-title">Background jobs</span>
       <button class="btn btn-outline btn-sm" @click="refetch()">Refresh</button>
     </div>
     <p class="help">

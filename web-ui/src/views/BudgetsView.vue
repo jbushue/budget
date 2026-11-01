@@ -1,11 +1,14 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Budgets</h2>
+      <div class="view-title">
+        <h2>Budgets</h2>
+        <p class="view-sub">Spending limits by category, tracked against your transactions.</p>
+      </div>
       <div class="month-nav">
-        <button class="btn btn-outline btn-sm" aria-label="Previous month" @click="shiftMonth(-1)">‹</button>
+        <button class="btn btn-outline btn-sm" aria-label="Previous month" @click="shiftMonth(-1)"><Icon name="chevronLeft" :size="16" /></button>
         <input v-model="month" type="month" />
-        <button class="btn btn-outline btn-sm" :disabled="isCurrentMonth" @click="shiftMonth(1)">›</button>
+        <button class="btn btn-outline btn-sm" :disabled="isCurrentMonth" aria-label="Next month" @click="shiftMonth(1)"><Icon name="chevronRight" :size="16" /></button>
       </div>
     </div>
 
@@ -130,7 +133,7 @@
     <div class="card">
       <div class="card-header">
         <span class="card-title">Categories</span>
-        <button class="btn btn-primary btn-sm" @click="openCategory()">+ Category</button>
+        <button class="btn btn-primary btn-sm" @click="openCategory()"><Icon name="plus" :size="16" /> Category</button>
       </div>
       <p class="hint">
         <strong>Everyday</strong> categories are the spending that isn't set up as a bill (groceries, gas, eating out).
@@ -228,6 +231,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, reactive, computed } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {
@@ -241,6 +245,7 @@ import { currency } from '../utils/format'
 import type {
   BudgetLine, BudgetStatus, Category, CategoryRule, MonthlyPlan, MutationPayload, SuggestedBudget,
 } from '../types'
+import { ask, askValue, notify } from '../utils/dialog'
 
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -306,7 +311,7 @@ function refreshAll() {
 const applying = ref(false)
 
 async function applySuggestions(list: SuggestedBudget[]) {
-  if (list.length > 1 && !confirm(`Set ${list.length} budgets to the suggested amounts?`)) return
+  if (list.length > 1 && !(await ask(`Set ${list.length} budgets to the suggested amounts?`, { title: 'Use suggested budgets', confirmText: 'Set budgets' }))) return
   applying.value = true
   try {
     for (const sb of list) {
@@ -328,11 +333,13 @@ const { mutate: deleteRuleM } = useMutation<{ deleteCategoryRule: MutationPayloa
 const { mutate: recatM } = useMutation<{ recategorizeTransactions: MutationPayload }>(RECATEGORIZE_TRANSACTIONS)
 
 async function editBudget(name: string, current: number | null) {
-  const input = prompt(`Monthly budget for ${name} (blank or 0 to remove):`, current ? String(current) : '')
+  const input = await askValue(`Monthly budget for ${name}`, {
+    message: 'Leave blank or enter 0 to remove the budget.', value: current ? String(current) : '', inputType: 'number',
+  })
   if (input === null) return
   const value = parseFloat(input.replace(/[$,]/g, ''))
   if (input.trim() && (isNaN(value) || value < 0)) {
-    alert('Enter a dollar amount')
+    notify('Enter a dollar amount', 'error')
     return
   }
   const res = await runMutation(() => setBudget({ variables: { name, monthlyBudget: value || null } }), 'setCategoryBudget')
@@ -366,7 +373,7 @@ async function saveCategory() {
 }
 
 async function removeCategory(c: Category) {
-  if (!confirm(`Delete "${c.name}"? Its transactions become uncategorized and its rules are removed.`)) return
+  if (!(await ask(`Delete "${c.name}"? Its transactions become uncategorized and its rules are removed.`, { title: 'Delete category', danger: true }))) return
   const res = await runMutation(() => deleteCat({ variables: { name: c.name } }), 'deleteCategory')
   if (res) refreshAll()
 }

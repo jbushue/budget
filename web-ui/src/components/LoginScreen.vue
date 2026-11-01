@@ -1,7 +1,7 @@
 <template>
   <div class="login-wrap">
     <div class="card login-card">
-      <h1 class="logo">💰 Budget</h1>
+      <h1 class="logo">Budget</h1>
 
       <!-- No accounts yet, opened somewhere other than the computer running the app -->
       <template v-if="mode === 'blocked'">

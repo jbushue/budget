@@ -1,10 +1,13 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Accounts</h2>
+      <div class="view-title">
+        <h2>Accounts</h2>
+        <p class="view-sub">Your banks, cards and loans, and what each one holds or owes.</p>
+      </div>
       <div style="display:flex;gap:0.5rem">
-        <button class="btn btn-primary btn-sm" @click="showBankModal = true">+ Bank</button>
-        <button class="btn btn-outline btn-sm" @click="showAccountModal = true">+ Account</button>
+        <button class="btn btn-outline" @click="showBankModal = true"><Icon name="plus" :size="16" /> Bank</button>
+        <button class="btn btn-primary" @click="showAccountModal = true"><Icon name="plus" :size="16" /> Account</button>
       </div>
     </div>
 
@@ -13,23 +16,29 @@
 
     <template v-else>
       <div v-if="banks.length === 0" class="empty-state">
-        <div class="icon">🏦</div>
-        <p>No banks yet. Click "+ Bank" to get started.</p>
+        <div class="icon"><Icon name="accounts" :size="26" /></div>
+        <p>No banks yet. Add a bank to get started.</p>
       </div>
 
-      <div v-for="bank in banks" :key="bank.name" class="card" style="margin-bottom:1.5rem">
+      <div v-for="bank in banks" :key="bank.name" class="card bank-card">
         <div class="card-header">
-          <span class="card-title">{{ bank.name }} <span class="badge badge-info">{{ bank.bankType }}</span></span>
-          <div style="display:flex;align-items:center;gap:0.75rem">
-            <span style="font-weight:600" :class="bank.totalBalance >= 0 ? 'positive' : 'negative'">{{ currency(bank.totalBalance) }}</span>
-            <button class="btn btn-outline btn-sm" @click="openEditBank(bank)">Edit</button>
-            <button class="btn btn-danger btn-sm" @click="deleteBank(bank.name)">Delete Bank</button>
+          <div class="bank-title">
+            <span class="bank-mark"><Icon name="accounts" :size="17" /></span>
+            <span class="card-title">{{ bank.name }}</span>
+            <span class="badge">{{ BANK_TYPES[bank.bankType] ?? bank.bankType }}</span>
+          </div>
+          <div class="row-actions">
+            <span v-if="bank.bankAccounts.length" class="bank-total" title="Cash in this bank's checking and savings">{{ currency(bank.totalBalance) }}</span>
+            <RowMenu label="Bank actions" :items="[
+              { label: 'Edit bank', icon: 'pencil', action: () => openEditBank(bank) },
+              { label: 'Delete bank', icon: 'trash', danger: true, divider: true, action: () => deleteBank(bank.name) },
+            ]" />
           </div>
         </div>
 
         <!-- Bank accounts -->
         <div v-if="bank.bankAccounts.length" style="margin-bottom:1rem">
-          <h4>Bank Accounts</h4>
+          <h4>Checking &amp; savings</h4>
           <div class="table-wrap">
             <table>
               <thead>
@@ -37,9 +46,9 @@
                   <th>Account</th>
                   <th>Type</th>
                   <th>APY</th>
-                  <th>Interest Day</th>
+                  <th>Interest day</th>
                   <th style="text-align:right">Balance</th>
-                  <th style="text-align:right">Actions</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -47,19 +56,23 @@
                   <td>
                     {{ acc.accountName }}
                     <span v-if="isSynced(bank.name, acc.accountName)" class="sync-indicator" :title="syncTooltip(bank.name, acc.accountName)">
-                      🔄 <span class="sync-label">SimpleFIN</span>
+                      <span class="sync-label">SimpleFIN</span>
                     </span>
                   </td>
-                  <td><span class="badge" :class="acc.accountType === 'savings' ? 'badge-success' : 'badge-info'">{{ acc.accountType }}</span></td>
+                  <td><span class="badge" :class="acc.accountType === 'savings' ? 'badge-success' : 'badge-info'">{{ accountTypeLabel(acc.accountType) }}</span></td>
                   <td>{{ pct(acc.interestRate) }}</td>
                   <td>{{ acc.interestAccrualDate ?? (acc.interestRate > 0 ? 'Month end' : '-') }}</td>
                   <td style="text-align:right;font-weight:600" :class="acc.balance >= 0 ? 'positive' : 'negative'">{{ currency(acc.balance) }}</td>
                   <td style="text-align:right;white-space:nowrap">
-                    <button v-if="isSynced(bank.name, acc.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, acc.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
-                    <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, acc.accountName, 'bank')" style="margin-right:0.25rem" title="View history">Hist</button>
-                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, acc.accountType as AccountKind, acc)" style="margin-right:0.25rem">Edit</button>
-                    <button class="btn btn-outline btn-sm" @click="openUpdateBalance(bank.name, acc.accountName, acc.balance)" style="margin-right:0.25rem">Update</button>
-                    <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, acc.accountName, 'bank')">Del</button>
+                    <div class="row-actions">
+                      <button class="btn btn-outline btn-sm" @click="openUpdateBalance(bank.name, acc.accountName, acc.balance)">Update</button>
+                      <RowMenu :items="[
+                        { label: 'Edit details', icon: 'pencil', action: () => openEdit(bank.name, acc.accountType as AccountKind, acc) },
+                        { label: 'Balance history', icon: 'history', action: () => openHistory(bank.name, acc.accountName, 'bank') },
+                        { label: 'SimpleFIN transactions', icon: 'transactions', hidden: !isSynced(bank.name, acc.accountName), action: () => openTransactions(bank.name, acc.accountName) },
+                        { label: 'Delete account', icon: 'trash', danger: true, divider: true, action: () => deleteAccount(bank.name, acc.accountName, 'bank') },
+                      ]" />
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -69,7 +82,7 @@
 
         <!-- Credit accounts -->
         <div v-if="bank.creditAccounts.length">
-          <h4>Credit Accounts</h4>
+          <h4>Cards &amp; loans</h4>
           <div class="table-wrap">
             <table>
               <thead>
@@ -77,25 +90,24 @@
                   <th>Account</th>
                   <th>Status</th>
                   <th>APR</th>
-                  <th>Due Day</th>
+                  <th>Due day</th>
                   <th style="text-align:right">Balance</th>
                   <th style="text-align:right">Limit</th>
                   <th>Utilization</th>
-                  <th style="text-align:right">Actions</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="cc in bank.creditAccounts" :key="cc.id">
                   <td>
                     {{ cc.accountName }}
-                    <span v-if="cc.promoOffers && cc.promoOffers.length" class="promo-badge" :title="cc.promoOffers.length + ' promo offer(s)'">
-                      🏷️ {{ cc.promoOffers.length }}
+                    <span v-if="cc.promoOffers && cc.promoOffers.length" class="promo-badge" :title="cc.promoOffers.length + ' promo offer(s)'"><Icon name="tag" :size="11" /> {{ cc.promoOffers.length }}
                     </span>
                     <span v-if="isSynced(bank.name, cc.accountName)" class="sync-indicator" :title="syncTooltip(bank.name, cc.accountName)">
-                      🔄 <span class="sync-label">SimpleFIN</span>
+                      <span class="sync-label">SimpleFIN</span>
                     </span>
                   </td>
-                  <td><span class="badge" :class="statusBadge(cc.status)">{{ cc.status }}</span></td>
+                  <td><span class="badge cap" :class="statusBadge(cc.status)">{{ cc.status }}</span></td>
                   <td>{{ pct(cc.interestRate) }}</td>
                   <td>{{ cc.paymentDueDate ?? '-' }}</td>
                   <td style="text-align:right;font-weight:600;color:var(--danger)">{{ currency(cc.balance) }}</td>
@@ -107,13 +119,17 @@
                     <div style="font-size:0.7rem;color:var(--text-muted);text-align:center">{{ utilPct(cc).toFixed(0) }}%</div>
                   </td>
                   <td style="text-align:right;white-space:nowrap">
-                    <button v-if="isSynced(bank.name, cc.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, cc.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
-                    <button class="btn btn-outline btn-sm" @click="openPromos(bank.name, cc)" style="margin-right:0.25rem" title="Manage promo offers">Promos</button>
-                    <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, cc.accountName, 'credit')" style="margin-right:0.25rem" title="View history">Hist</button>
-                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, 'credit', cc)" style="margin-right:0.25rem">Edit</button>
-                    <button class="btn btn-outline btn-sm" @click="openUpdateCredit(bank.name, cc.accountName, cc.balance)" style="margin-right:0.25rem">Update</button>
-                    <button class="btn btn-outline btn-sm" @click="openConvertToHELOC(bank.name, cc)" style="margin-right:0.25rem" title="Convert to HELOC">→ HELOC</button>
-                    <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, cc.accountName, 'credit')">Del</button>
+                    <div class="row-actions">
+                      <button class="btn btn-outline btn-sm" @click="openUpdateCredit(bank.name, cc.accountName, cc.balance)">Update</button>
+                      <RowMenu :items="[
+                        { label: 'Edit details', icon: 'pencil', action: () => openEdit(bank.name, 'credit', cc) },
+                        { label: 'Balance history', icon: 'history', action: () => openHistory(bank.name, cc.accountName, 'credit') },
+                        { label: 'SimpleFIN transactions', icon: 'transactions', hidden: !isSynced(bank.name, cc.accountName), action: () => openTransactions(bank.name, cc.accountName) },
+                        { label: 'Promo offers', icon: 'tag', action: () => openPromos(bank.name, cc) },
+                        { label: 'Convert to HELOC', icon: 'home', action: () => openConvertToHELOC(bank.name, cc) },
+                        { label: 'Delete account', icon: 'trash', danger: true, divider: true, action: () => deleteAccount(bank.name, cc.accountName, 'credit') },
+                      ]" />
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -123,7 +139,7 @@
 
         <!-- Mortgage accounts -->
         <div v-if="bank.mortgageAccounts && bank.mortgageAccounts.length" style="margin-top:1rem">
-          <h4>Mortgage Accounts</h4>
+          <h4>Mortgages</h4>
           <div class="table-wrap">
             <table>
               <thead>
@@ -131,12 +147,12 @@
                   <th>Account</th>
                   <th>Status</th>
                   <th>APR</th>
-                  <th>Due Day</th>
+                  <th>Due day</th>
                   <th style="text-align:right">Principal</th>
-                  <th style="text-align:right">Monthly Payment</th>
+                  <th style="text-align:right">Monthly payment</th>
                   <th style="text-align:right">P &amp; I</th>
                   <th style="text-align:right">Escrow</th>
-                  <th style="text-align:right">Actions</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -144,10 +160,10 @@
                   <td style="font-weight:500">
                     {{ m.accountName }}
                     <span v-if="isSynced(bank.name, m.accountName)" class="sync-indicator" :title="syncTooltip(bank.name, m.accountName)">
-                      🔄 <span class="sync-label">SimpleFIN</span>
+                      <span class="sync-label">SimpleFIN</span>
                     </span>
                   </td>
-                  <td><span class="badge" :class="m.status === 'active' ? 'badge-success' : 'badge-warning'">{{ m.status }}</span></td>
+                  <td><span class="badge cap" :class="m.status === 'active' ? 'badge-success' : 'badge-warning'">{{ m.status }}</span></td>
                   <td>{{ pct(m.interestRate) }}</td>
                   <td>{{ m.paymentDueDate }}</td>
                   <td style="text-align:right;font-weight:600;color:var(--danger)">{{ currency(m.currentPrincipal) }}</td>
@@ -158,11 +174,15 @@
                   </td>
                   <td style="text-align:right">{{ currency(m.escrowMonthly) }}</td>
                   <td style="text-align:right;white-space:nowrap">
-                    <button v-if="isSynced(bank.name, m.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, m.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
-                    <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, m.accountName, 'mortgage')" style="margin-right:0.25rem" title="View history">Hist</button>
-                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, 'mortgage', m)" style="margin-right:0.25rem">Edit</button>
-                    <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, m.accountName, m.currentPrincipal, 'mortgage')" style="margin-right:0.25rem">Update</button>
-                    <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, m.accountName, 'mortgage')">Del</button>
+                    <div class="row-actions">
+                      <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, m.accountName, m.currentPrincipal, 'mortgage')">Update</button>
+                      <RowMenu :items="[
+                        { label: 'Edit details', icon: 'pencil', action: () => openEdit(bank.name, 'mortgage', m) },
+                        { label: 'Balance history', icon: 'history', action: () => openHistory(bank.name, m.accountName, 'mortgage') },
+                        { label: 'SimpleFIN transactions', icon: 'transactions', hidden: !isSynced(bank.name, m.accountName), action: () => openTransactions(bank.name, m.accountName) },
+                        { label: 'Delete account', icon: 'trash', danger: true, divider: true, action: () => deleteAccount(bank.name, m.accountName, 'mortgage') },
+                      ]" />
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -172,7 +192,7 @@
 
         <!-- HELOC accounts -->
         <div v-if="bank.helocAccounts && bank.helocAccounts.length" style="margin-top:1rem">
-          <h4>HELOC Accounts</h4>
+          <h4>Home equity lines</h4>
           <div class="table-wrap">
             <table>
               <thead>
@@ -180,13 +200,13 @@
                   <th>Account</th>
                   <th>Phase</th>
                   <th>APR</th>
-                  <th>Due Day</th>
+                  <th>Due day</th>
                   <th style="text-align:right">Balance</th>
                   <th style="text-align:right">Limit</th>
                   <th style="text-align:right">Available</th>
-                  <th style="text-align:right">Min Payment</th>
-                  <th>Draw Ends</th>
-                  <th style="text-align:right">Actions</th>
+                  <th style="text-align:right">Min payment</th>
+                  <th>Draw ends</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -194,11 +214,11 @@
                   <td style="font-weight:500">
                     {{ h.accountName }}
                     <span v-if="isSynced(bank.name, h.accountName)" class="sync-indicator" :title="syncTooltip(bank.name, h.accountName)">
-                      🔄 <span class="sync-label">SimpleFIN</span>
+                      <span class="sync-label">SimpleFIN</span>
                     </span>
                   </td>
                   <td>
-                    <span class="badge" :class="h.currentPhase === 'draw' ? 'badge-info' : h.currentPhase === 'repayment' ? 'badge-warning' : 'badge-success'">
+                    <span class="badge cap" :class="h.currentPhase === 'draw' ? 'badge-info' : h.currentPhase === 'repayment' ? 'badge-warning' : 'badge-success'">
                       {{ h.currentPhase }}
                     </span>
                   </td>
@@ -215,13 +235,17 @@
                       {{ h.currentPhase === 'draw' ? 'interest only' : 'P+I' }}
                     </div>
                   </td>
-                  <td style="font-size:0.8rem">{{ h.drawEndDate }}</td>
+                  <td>{{ fmtDate(h.drawEndDate) }}</td>
                   <td style="text-align:right;white-space:nowrap">
-                    <button v-if="isSynced(bank.name, h.accountName)" class="btn btn-outline btn-sm" @click="openTransactions(bank.name, h.accountName)" style="margin-right:0.25rem" title="View SimpleFIN transactions">Txns</button>
-                    <button class="btn btn-outline btn-sm" @click="openHistory(bank.name, h.accountName, 'heloc')" style="margin-right:0.25rem" title="View history">Hist</button>
-                    <button class="btn btn-outline btn-sm" @click="openEdit(bank.name, 'heloc', h)" style="margin-right:0.25rem">Edit</button>
-                    <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, h.accountName, h.balance, 'heloc')" style="margin-right:0.25rem">Update</button>
-                    <button class="btn btn-danger btn-sm" @click="deleteAccount(bank.name, h.accountName, 'heloc')">Del</button>
+                    <div class="row-actions">
+                      <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, h.accountName, h.balance, 'heloc')">Update</button>
+                      <RowMenu :items="[
+                        { label: 'Edit details', icon: 'pencil', action: () => openEdit(bank.name, 'heloc', h) },
+                        { label: 'Balance history', icon: 'history', action: () => openHistory(bank.name, h.accountName, 'heloc') },
+                        { label: 'SimpleFIN transactions', icon: 'transactions', hidden: !isSynced(bank.name, h.accountName), action: () => openTransactions(bank.name, h.accountName) },
+                        { label: 'Delete account', icon: 'trash', danger: true, divider: true, action: () => deleteAccount(bank.name, h.accountName, 'heloc') },
+                      ]" />
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -238,20 +262,20 @@
     <!-- Edit Bank Modal -->
     <div v-if="bankEdit" class="modal-overlay" @click.self="bankEdit = null">
       <div class="modal">
-        <h3>Edit Bank</h3>
+        <h3>Edit bank</h3>
         <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.9rem">
           Renaming keeps every account, bill and transaction connected.
         </p>
         <div class="form-group">
-          <label>Bank Name</label>
+          <label>Bank name</label>
           <input v-model="bankEdit.name" />
         </div>
         <div class="form-group">
           <label>Type</label>
           <select v-model="bankEdit.type">
             <option value="traditional">Traditional</option>
-            <option value="credit_issuer">Credit Issuer</option>
-            <option value="mortgage_lender">Mortgage Lender</option>
+            <option value="credit_issuer">Credit issuer</option>
+            <option value="mortgage_lender">Mortgage lender</option>
           </select>
         </div>
         <div class="modal-actions">
@@ -264,17 +288,17 @@
     <!-- Create Bank Modal -->
     <div v-if="showBankModal" class="modal-overlay" @click.self="showBankModal = false">
       <div class="modal">
-        <h3>Create Bank</h3>
+        <h3>Create bank</h3>
         <div class="form-group">
-          <label>Bank Name</label>
+          <label>Bank name</label>
           <input v-model="newBank.name" placeholder="e.g. Chase Bank" />
         </div>
         <div class="form-group">
           <label>Type</label>
           <select v-model="newBank.type">
             <option value="traditional">Traditional</option>
-            <option value="credit_issuer">Credit Issuer</option>
-            <option value="mortgage_lender">Mortgage Lender</option>
+            <option value="credit_issuer">Credit issuer</option>
+            <option value="mortgage_lender">Mortgage lender</option>
           </select>
         </div>
         <div class="modal-actions">
@@ -287,7 +311,7 @@
     <!-- Create Account Modal -->
     <div v-if="showAccountModal" class="modal-overlay" @click.self="showAccountModal = false">
       <div class="modal">
-        <h3>Create Account</h3>
+        <h3>Create account</h3>
         <div class="form-group">
           <label>Bank</label>
           <select v-model="newAccount.bankName">
@@ -295,21 +319,21 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Account Name</label>
+          <label>Account name</label>
           <input v-model="newAccount.name" placeholder="e.g. Primary Checking" />
         </div>
         <div class="form-group">
-          <label>Account Type</label>
+          <label>Account type</label>
           <select v-model="newAccount.type">
             <option value="checking">Checking</option>
             <option value="savings">Savings</option>
-            <option value="credit">Credit Card</option>
+            <option value="credit">Credit card</option>
             <option value="heloc">HELOC</option>
             <option value="mortgage">Mortgage</option>
           </select>
         </div>
         <div v-if="newAccount.type === 'mortgage'" class="form-group">
-          <label>Original Loan Amount</label>
+          <label>Original loan amount</label>
           <input v-model.number="newAccount.originalPrincipal" type="number" step="0.01" min="0" />
           <small v-if="!(Number(newAccount.originalPrincipal) > 0)" style="color:var(--danger)">Original loan amount must be greater than 0.</small>
         </div>
@@ -322,64 +346,64 @@
           <input v-model.number="newAccount.interestRate" type="number" step="0.01" />
         </div>
         <div v-if="newAccount.type === 'credit' || newAccount.type === 'heloc'" class="form-group">
-          <label>Credit Limit</label>
+          <label>Credit limit</label>
           <input v-model.number="newAccount.creditLimit" type="number" step="0.01" min="0" />
           <small v-if="!(Number(newAccount.creditLimit) > 0)" style="color:var(--danger)">Credit limit must be greater than 0.</small>
         </div>
         <!-- Credit-card-specific fields -->
         <template v-if="newAccount.type === 'credit'">
           <div class="form-group">
-            <label>Payment Due Day (1-31, optional)</label>
+            <label>Payment due day (1-31, optional)</label>
             <input v-model.number="newAccount.paymentDueDate" type="number" min="1" max="31" />
           </div>
           <div class="form-group">
-            <label>Statement Day (1-31, optional)</label>
+            <label>Statement day (1-31, optional)</label>
             <input v-model.number="newAccount.statementDate" type="number" min="1" max="31" />
           </div>
         </template>
         <!-- Checking / savings: interest posting day -->
         <div v-if="newAccount.type === 'checking' || newAccount.type === 'savings'" class="form-group">
-          <label>Interest Day (1-31, optional)</label>
+          <label>Interest day (1-31, optional)</label>
           <input v-model.number="newAccount.interestAccrualDate" type="number" min="1" max="31" />
           <small style="color:var(--text-muted)">Day of the month interest posts.</small>
         </div>
         <!-- HELOC-specific fields -->
         <template v-if="newAccount.type === 'heloc'">
           <div class="form-group">
-            <label>Draw Period (years)</label>
+            <label>Draw period (years)</label>
             <input v-model.number="newAccount.drawPeriodYears" type="number" min="1" max="30" step="1" />
             <small style="color:var(--text-muted)">Period during which you can borrow; minimums are interest-only.</small>
           </div>
           <div class="form-group">
-            <label>Total Term (years)</label>
+            <label>Total term (years)</label>
             <input v-model.number="newAccount.totalTermYears" type="number" min="2" max="40" step="1" />
             <small style="color:var(--text-muted)">Total payback period including draw period.</small>
           </div>
           <div class="form-group">
-            <label>HELOC Start Date</label>
+            <label>HELOC start date</label>
             <input v-model="newAccount.startDate" type="date" />
           </div>
           <div class="form-group">
-            <label>Payment Due Day (1-31)</label>
+            <label>Payment due day (1-31)</label>
             <input v-model.number="newAccount.paymentDueDate" type="number" min="1" max="31" />
           </div>
         </template>
         <!-- Mortgage-specific fields -->
         <template v-if="newAccount.type === 'mortgage'">
           <div class="form-group">
-            <label>Loan Term (years)</label>
+            <label>Loan term (years)</label>
             <input v-model.number="newAccount.loanTermYears" type="number" min="1" max="50" step="1" />
           </div>
           <div class="form-group">
-            <label>Loan Start Date (optional)</label>
+            <label>Loan start date (optional)</label>
             <input v-model="newAccount.startDate" type="date" />
           </div>
           <div class="form-group">
-            <label>Payment Due Day (1-31)</label>
+            <label>Payment due day (1-31)</label>
             <input v-model.number="newAccount.paymentDueDate" type="number" min="1" max="31" />
           </div>
           <div class="form-group">
-            <label>Monthly Escrow (optional)</label>
+            <label>Monthly escrow (optional)</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
               <input v-model.number="newAccount.escrowPropertyTax" type="number" step="0.01" min="0" placeholder="Property tax" title="Property tax" />
               <input v-model.number="newAccount.escrowInsurance" type="number" step="0.01" min="0" placeholder="Homeowners insurance" title="Homeowners insurance" />
@@ -389,12 +413,12 @@
             </div>
           </div>
           <div class="form-group">
-            <label>Home Market Value (optional)</label>
+            <label>Home market value (optional)</label>
             <input v-model.number="newAccount.marketValue" type="number" step="0.01" min="0" />
             <small style="color:var(--text-muted)">Used to show equity.</small>
           </div>
           <div class="form-group">
-            <label>Pay From (optional)</label>
+            <label>Pay from (optional)</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
               <select v-model="newAccount.sourceBank">
                 <option value="">Auto (no preference)</option>
@@ -421,10 +445,10 @@
     <!-- Update Balance Modal -->
     <div v-if="showBalanceModal" class="modal-overlay" @click.self="showBalanceModal = false">
       <div class="modal">
-        <h3>Update Balance</h3>
+        <h3>Update balance</h3>
         <p style="margin-bottom:0.75rem;color:var(--text-muted)">{{ updateTarget.bankName }} / {{ updateTarget.accountName }}</p>
         <div class="form-group">
-          <label>New Balance</label>
+          <label>New balance</label>
           <input v-model.number="updateTarget.newBalance" type="number" step="0.01" />
         </div>
         <div class="modal-actions">
@@ -437,10 +461,10 @@
     <!-- Update Credit Balance Modal -->
     <div v-if="showCreditModal" class="modal-overlay" @click.self="showCreditModal = false">
       <div class="modal">
-        <h3>Update Credit Balance</h3>
+        <h3>Update credit balance</h3>
         <p style="margin-bottom:0.75rem;color:var(--text-muted)">{{ creditTarget.bankName }} / {{ creditTarget.accountName }}</p>
         <div class="form-group">
-          <label>New Balance Owed</label>
+          <label>New balance owed</label>
           <input v-model.number="creditTarget.newBalance" type="number" step="0.01" />
         </div>
         <div class="modal-actions">
@@ -453,7 +477,7 @@
     <!-- Balance History Modal -->
     <div v-if="showHistoryModal" class="modal-overlay" @click.self="showHistoryModal = false">
       <div class="modal" style="max-width:600px">
-        <h3>Balance History: {{ historyTarget.accountName }}</h3>
+        <h3>Balance history: {{ historyTarget.accountName }}</h3>
         <div v-if="historyLoading" class="loading">Loading history...</div>
         <div v-else-if="historyEntries.length === 0" class="empty-state" style="padding:1rem">
           <p>No history recorded yet. Update the balance to start tracking.</p>
@@ -497,22 +521,22 @@
           Balance of <strong>{{ currency(convertTarget.balance) }}</strong> and interest rate of <strong>{{ pct(convertTarget.interestRate) }}</strong> will be preserved.
         </p>
         <div class="form-group">
-          <label>Draw Period (years)</label>
+          <label>Draw period (years)</label>
           <input v-model.number="convertTarget.drawYears" type="number" min="1" max="30" step="1" />
           <small style="color:var(--text-muted)">Period during which you can borrow; minimums are interest-only.</small>
         </div>
         <div class="form-group">
-          <label>Total Term (years)</label>
+          <label>Total term (years)</label>
           <input v-model.number="convertTarget.totalYears" type="number" min="2" max="40" step="1" />
           <small style="color:var(--text-muted)">Total payback period including draw period.</small>
         </div>
         <div class="form-group">
-          <label>HELOC Start Date</label>
+          <label>HELOC start date</label>
           <input v-model="convertTarget.startDate" type="date" />
           <small style="color:var(--text-muted)">When the HELOC was originally opened.</small>
         </div>
         <div class="form-group">
-          <label>New Account Name (optional)</label>
+          <label>New account name (optional)</label>
           <input v-model="convertTarget.newName" placeholder="Leave blank to keep same name" />
         </div>
         <div class="modal-actions">
@@ -544,7 +568,7 @@
     <!-- SimpleFIN Transactions Modal (read-only) -->
     <div v-if="showTransactionsModal" class="modal-overlay" @click.self="showTransactionsModal = false">
       <div class="modal" style="max-width:700px">
-        <h3>Recent Transactions</h3>
+        <h3>Recent transactions</h3>
         <p style="margin-bottom:0.75rem;color:var(--text-muted)">
           {{ txnTarget.bankName }} / {{ txnTarget.accountName }}
           <span class="badge badge-info" style="margin-left:0.5rem">SimpleFIN · Read Only</span>
@@ -587,8 +611,8 @@
     <div v-if="showPromosModal" class="modal-overlay" @click.self="showPromosModal = false">
       <div class="modal" style="max-width:750px">
         <div class="card-header" style="margin-bottom:1rem">
-          <h3 style="margin:0">Promo Offers</h3>
-          <button class="btn btn-primary btn-sm" @click="openAddPromo()">+ Add Promo</button>
+          <h3 style="margin:0">Promo offers</h3>
+          <button class="btn btn-primary btn-sm" @click="openAddPromo()"><Icon name="plus" :size="16" /> Add offer</button>
         </div>
         <p style="margin-bottom:0.75rem;color:var(--text-muted)">
           {{ promoTarget.bankName }} / {{ promoTarget.accountName }}
@@ -600,18 +624,18 @@
         </p>
 
         <div v-if="promoTarget.promos.length === 0" class="empty-state" style="padding:1rem">
-          <p>No promo offers. Click "+ Add Promo" to add a special financing offer.</p>
+          <p>No promo offers yet. Add one to track a special financing rate.</p>
         </div>
         <div v-else class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Promo Name</th>
+                <th>Promo name</th>
                 <th>Months</th>
-                <th style="text-align:right">Promo Balance</th>
+                <th style="text-align:right">Promo balance</th>
                 <th>Status</th>
                 <th>Expires</th>
-                <th style="text-align:right">Actions</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -641,27 +665,27 @@
         <div v-if="showAddPromo" class="card" style="margin-top:1rem;padding:1rem;background:var(--bg-card)">
           <h4 style="margin-bottom:0.75rem">{{ editingPromo ? 'Edit Promo Offer' : 'Add Promo Offer' }}</h4>
           <div class="form-group">
-            <label>Promo Name</label>
+            <label>Promo name</label>
             <input v-model="newPromo.promoName" placeholder="e.g. 0% APR 12 months" />
           </div>
           <div class="form-group">
-            <label>Months Interest-Free</label>
+            <label>Months interest-free</label>
             <input v-model.number="newPromo.monthsInterestFree" type="number" min="1" />
           </div>
           <div class="form-group">
-            <label>Purchase Limit (optional)</label>
+            <label>Purchase limit (optional)</label>
             <input v-model.number="newPromo.purchaseLimit" type="number" step="0.01" placeholder="Leave blank for unlimited" />
           </div>
           <div class="form-group">
-            <label>Promo Balance (portion of existing balance on this promo)</label>
+            <label>Promo balance (portion of existing balance on this promo)</label>
             <input v-model.number="newPromo.promoBalance" type="number" step="0.01" />
           </div>
           <div class="form-group">
-            <label>Start Date</label>
+            <label>Start date</label>
             <input v-model="newPromo.startDate" type="date" />
           </div>
           <div class="form-group">
-            <label>End Date (optional, calculated if blank)</label>
+            <label>End date (optional, calculated if blank)</label>
             <input v-model="newPromo.endDate" type="date" />
           </div>
           <div class="modal-actions">
@@ -680,6 +704,8 @@
 </template>
 
 <script setup lang="ts">
+import RowMenu from '../components/RowMenu.vue'
+import Icon from '../components/Icon.vue'
 import { ref, computed } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {
@@ -696,11 +722,14 @@ import {
   UPDATE_BANK,
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
-import { currency, pct, fmtDate, statusBadge, todayISO } from '../utils/format'
+import { currency, pct, fmtDate, statusBadge, todayISO, accountTypeLabel } from '../utils/format'
 import { runMutation } from '../utils/mutation'
 import EditAccountModal, { type AccountKind, type AnyAccount } from '../components/EditAccountModal.vue'
 import type { Bank, CreditAccount, BalanceHistoryEntry, SimplefinSyncedAccount, SimplefinTransaction, PromoOffer, MutationPayload } from '../types'
+import { ask, notify } from '../utils/dialog'
 
+
+const BANK_TYPES: Record<string, string> = { traditional: 'Bank', credit_issuer: 'Card issuer', mortgage_lender: 'Mortgage lender' }
 const { result, loading, error, refetch } = useQuery<{ allBanks: Bank[] }>(GET_ALL_BANKS)
 const banks = computed(() => result.value?.allBanks ?? [])
 
@@ -771,7 +800,7 @@ async function createBank() {
 // ── Delete bank
 const { mutate: doDeleteBank } = useMutation<{ deleteBank: MutationPayload }>(DELETE_BANK)
 async function deleteBank(name: string) {
-  if (!confirm(`Delete bank "${name}" and all its accounts?`)) return
+  if (!(await ask(`Delete bank "${name}" and all its accounts? This can't be undone.`, { title: 'Delete bank', confirmText: 'Delete bank', danger: true }))) return
   const ok = await runMutation(() => doDeleteBank({ variables: { name }}), 'deleteBank', { failMessage: 'Failed to delete bank' })
   if (ok) refetch()
 }
@@ -846,7 +875,7 @@ const { mutate: doCreateMortgage } = useMutation<{ createMortgageAccount: Mutati
 async function createAccount() {
   const a = newAccount.value
   if (needsCreditLimit.value && !(Number(a.creditLimit) > 0)) {
-    alert('Error: Credit limit must be greater than 0')
+    notify('Credit limit must be greater than 0', 'error')
     return
   }
   let ok
@@ -904,7 +933,7 @@ async function createAccount() {
 // ── Delete account
 const { mutate: doDeleteAccount } = useMutation<{ deleteAccount: MutationPayload }>(DELETE_ACCOUNT)
 async function deleteAccount(bankName: string, accountName: string, accountType: string) {
-  if (!confirm(`Delete account "${accountName}"?`)) return
+  if (!(await ask(`Delete account "${accountName}"? This can't be undone.`, { title: 'Delete account', danger: true }))) return
   const ok = await runMutation(
     () => doDeleteAccount({ variables: { bankName, accountName, accountType }}),
     'deleteAccount', { failMessage: 'Failed to delete account' },
@@ -1159,7 +1188,7 @@ async function updatePromo() {
 
 const { mutate: doRemovePromo } = useMutation<{ removePromoOffer: MutationPayload }>(REMOVE_PROMO_OFFER)
 async function removePromo(promoName: string) {
-  if (!confirm(`Remove promo "${promoName}"? Its balance will return to regular balance.`)) return
+  if (!(await ask(`Remove promo "${promoName}"? Its balance returns to the regular balance.`, { title: 'Remove promo', confirmText: 'Remove', danger: true }))) return
   const ok = await runMutation(() => doRemovePromo({ variables: {
     bankName: promoTarget.value.bankName,
     accountName: promoTarget.value.accountName,
@@ -1211,4 +1240,11 @@ function refreshPromoTarget() {
   margin-left: 0.35rem;
   vertical-align: middle;
 }
+.bank-card + .bank-card { margin-top: 1.25rem; }
+.bank-title { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.bank-mark { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--primary-light); color: var(--primary); flex: 0 0 32px; }
+.bank-total { font-weight: 650; font-variant-numeric: tabular-nums; margin-right: 0.25rem; }
+.row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.35rem; }
+.bank-card h4 { margin-top: 1.25rem; }
+.bank-card .card-header + div h4 { margin-top: 0; }
 </style>

@@ -1,6 +1,6 @@
 <template>
-  <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header"><span class="card-title">🧮 Planning</span></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Planning</span></div>
     <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 1rem">
       These drive the Dashboard's <strong>Safe to spend</strong> number and every projection.
     </p>

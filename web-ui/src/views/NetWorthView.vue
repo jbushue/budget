@@ -1,8 +1,11 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Net Worth</h2>
-      <button class="btn btn-primary btn-sm" @click="openAsset()">+ Asset</button>
+      <div class="view-title">
+        <h2>Net worth</h2>
+        <p class="view-sub">What you own minus what you owe, over time.</p>
+      </div>
+      <button class="btn btn-primary" @click="openAsset()"><Icon name="plus" :size="16" /> Asset</button>
     </div>
 
     <div v-if="loading && !nw" class="loading">Loading...</div>
@@ -43,7 +46,7 @@
           <div class="card-header"><span class="card-title">Debts</span></div>
           <div class="breakdown">
             <div v-for="d in nw.debts" :key="d.kind" class="bd-row"><span>{{ d.kind }}</span><span>{{ currency(d.value) }}</span></div>
-            <div v-if="!nw.debts.length" class="bd-row muted"><span>No debts 🎉</span><span></span></div>
+            <div v-if="!nw.debts.length" class="bd-row muted"><span>No debts</span><span></span></div>
             <div class="bd-row total"><span>Total</span><span>{{ currency(nw.totalDebt) }}</span></div>
           </div>
         </div>
@@ -56,7 +59,7 @@
           Update the value now and then; each change is kept so you can see how it moves. Link a loan to see your equity.
         </p>
         <div v-if="!nw.assets.length && !nw.homes.length" class="empty-state" style="padding:1.25rem">
-          <div class="icon">🚗</div>
+          <div class="icon"><Icon name="car" :size="26" /></div>
           <p>No assets yet. Add your car, 401(k), brokerage account or home to see your full net worth.</p>
         </div>
         <div v-else class="table-wrap">
@@ -161,6 +164,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, reactive, computed } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
@@ -173,6 +177,7 @@ import { apolloClient } from '../graphql/client'
 import { runMutation } from '../utils/mutation'
 import { currency, fmtDate } from '../utils/format'
 import type { Asset, Bank, MutationPayload, NetWorthBreakdown, NetWorthSnapshot } from '../types'
+import { ask } from '../utils/dialog'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler)
 
@@ -230,7 +235,7 @@ async function save() {
 }
 
 async function remove(a: Asset) {
-  if (!confirm(`Delete "${a.name}" and its value history?`)) return
+  if (!(await ask(`Delete "${a.name}" and its value history?`, { title: 'Delete asset', danger: true }))) return
   const res = await runMutation(() => deleteM({ variables: { id: a.id } }), 'deleteAsset')
   if (res) refetch()
 }

@@ -90,3 +90,8 @@ export function todayISO(d: Date = new Date()): string {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
+
+/** Bill names without the "[Auto] " tag the server puts on account-linked payment bills. */
+export function billName(name: string | null | undefined): string {
+  return (name ?? '').replace(/^\[Auto\]\s*/, '')
+}

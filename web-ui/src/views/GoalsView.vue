@@ -1,8 +1,11 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Goals &amp; Sinking Funds</h2>
-      <button class="btn btn-primary btn-sm" @click="openGoal()">+ Goal</button>
+      <div class="view-title">
+        <h2>Goals</h2>
+        <p class="view-sub">Save toward big purchases and yearly expenses a little at a time.</p>
+      </div>
+      <button class="btn btn-primary" @click="openGoal()"><Icon name="plus" :size="16" /> New goal</button>
     </div>
 
     <p class="intro">
@@ -16,7 +19,7 @@
 
     <template v-else>
       <div v-if="suggestions.length" class="card sugg">
-        <div class="card-header"><span class="card-title">💡 Bills that need saving up for</span></div>
+        <div class="card-header"><span class="card-title">Bills that need saving up for</span></div>
         <p class="hint">These bills aren't paid monthly. A sinking fund spreads them out so they don't hit all at once.</p>
         <div v-for="s in suggestions" :key="s.billName" class="sugg-row">
           <div>
@@ -28,8 +31,8 @@
       </div>
 
       <div v-if="!goals.length" class="empty-state">
-        <div class="icon">🎯</div>
-        <p>No goals yet. Click "+ Goal" to start one — an emergency fund, a trip, holiday gifts...</p>
+        <div class="icon"><Icon name="goals" :size="26" /></div>
+        <p>No goals yet. Start one — an emergency fund, a trip, holiday gifts...</p>
       </div>
 
       <div class="grid grid-2">
@@ -60,7 +63,7 @@
             <template v-else>{{ currency(g.remaining) }} to go</template>
           </div>
           <div class="goal-actions">
-            <button class="btn btn-success btn-sm" @click="contribute(g, 1)">+ Set aside</button>
+            <button class="btn btn-success btn-sm" @click="contribute(g, 1)">Set aside</button>
             <button class="btn btn-outline btn-sm" :disabled="!g.savedAmount" @click="contribute(g, -1)">− Use</button>
             <button class="btn btn-outline btn-sm" @click="openGoal(g)">Edit</button>
             <button class="btn btn-danger btn-sm" @click="remove(g)">Delete</button>
@@ -97,6 +100,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, reactive, computed } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import { GET_ALL_BANKS } from '../graphql/queries'
@@ -104,6 +108,7 @@ import { GET_SAVINGS_GOALS, SAVE_SAVINGS_GOAL, CONTRIBUTE_TO_GOAL, DELETE_SAVING
 import { runMutation } from '../utils/mutation'
 import { currency, fmtDate } from '../utils/format'
 import type { Bank, MutationPayload, SavingsGoal, SinkingFundSuggestion } from '../types'
+import { ask, askValue, notify } from '../utils/dialog'
 
 const { result, loading, error, refetch } = useQuery<{ savingsGoals: SavingsGoal[]; sinkingFundSuggestions: SinkingFundSuggestion[] }>(
   GET_SAVINGS_GOALS, { fetchPolicy: 'cache-and-network' })
@@ -144,12 +149,14 @@ async function save() {
 
 async function contribute(g: SavingsGoal, sign: 1 | -1) {
   const suggested = sign > 0 ? (g.perPaycheckNeeded ?? g.monthlyNeeded ?? g.remaining) : g.savedAmount
-  const input = prompt(sign > 0 ? `How much are you setting aside for ${g.name}?` : `How much did you use from ${g.name}?`,
-    suggested ? suggested.toFixed(2) : '')
+  const input = await askValue(sign > 0 ? `Set aside for ${g.name}` : `Use from ${g.name}`, {
+    message: sign > 0 ? 'How much are you setting aside? (No money moves.)' : 'How much did you use?',
+    value: suggested ? suggested.toFixed(2) : '', inputType: 'number', confirmText: sign > 0 ? 'Set aside' : 'Record',
+  })
   if (input === null) return
   const amount = parseFloat(input.replace(/[$,]/g, ''))
   if (isNaN(amount) || amount <= 0) {
-    alert('Enter a dollar amount')
+    notify('Enter a dollar amount', 'error')
     return
   }
   const res = await runMutation(() => contributeM({ variables: { id: g.id, amount: sign * amount } }), 'contributeToGoal')
@@ -157,7 +164,7 @@ async function contribute(g: SavingsGoal, sign: 1 | -1) {
 }
 
 async function remove(g: SavingsGoal) {
-  if (!confirm(`Delete the goal "${g.name}"? (No money moves.)`)) return
+  if (!(await ask(`Delete the goal "${g.name}"? No money moves.`, { title: 'Delete goal', danger: true }))) return
   const res = await runMutation(() => deleteM({ variables: { id: g.id } }), 'deleteSavingsGoal')
   if (res) refetch()
 }

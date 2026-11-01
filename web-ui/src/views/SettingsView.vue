@@ -1,19 +1,33 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>Settings</h2>
+      <div class="view-title">
+        <h2>Settings</h2>
+        <p class="view-sub">Preferences, alerts, sign-in, bank sync and backups.</p>
+      </div>
     </div>
 
-    <AppearanceSettings />
-    <PlanningSettings />
-    <AlertSettings />
-    <DataFiles />
-    <BackgroundJobs v-if="authState.user?.is_admin" />
-    <SecuritySettings />
+    <div class="tabs" role="tablist">
+      <button v-for="t in TABS" :key="t.key" class="tab" :class="{ active: tab === t.key }" role="tab"
+              :aria-selected="tab === t.key" @click="setTab(t.key)">
+        <Icon :name="t.icon" :size="16" /> {{ t.label }}
+      </button>
+    </div>
+
+    <template v-if="tab === 'general'">
+      <AppearanceSettings />
+      <PlanningSettings />
+    </template>
+    <AlertSettings v-else-if="tab === 'alerts'" />
+    <SecuritySettings v-else-if="tab === 'account'" />
+    <template v-else-if="tab === 'data'">
+      <DataFiles />
+      <BackgroundJobs v-if="authState.user?.is_admin" />
+    </template>
 
     <!-- SimpleFIN Bridge -->
-    <div class="card" style="margin-bottom:1.5rem">
-      <div class="card-header"><span class="card-title">🔗 SimpleFIN Bridge</span></div>
+    <div v-if="tab === 'connections'" class="card">
+      <div class="card-header"><span class="card-title">SimpleFIN bridge</span></div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
         Connect to <a href="https://bridge.simplefin.org/" target="_blank">SimpleFIN Bridge</a>
         to automatically sync account balances from your financial institutions.
@@ -26,7 +40,7 @@
       <template v-else-if="!sfinStatus?.isConnected">
         <div style="display:flex;gap:0.5rem;align-items:flex-end">
           <div class="form-group" style="flex:1;margin-bottom:0">
-            <label>Setup Token</label>
+            <label>Setup token</label>
             <input v-model="sfinSetupToken" placeholder="Paste setup token from SimpleFIN Bridge..." style="font-family:monospace;font-size:0.8rem" />
           </div>
           <button class="btn btn-primary" @click="connectSimplefin" :disabled="!sfinSetupToken.trim() || sfinConnecting">
@@ -55,7 +69,7 @@
 
         <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
           <button class="btn btn-success btn-sm" @click="syncBalances" :disabled="sfinSyncing">
-            {{ sfinSyncing ? 'Syncing...' : '🔄 Sync Balances Now' }}
+            {{ sfinSyncing ? 'Syncing...' : 'Sync balances now' }}
           </button>
           <button class="btn btn-outline btn-sm" @click="fetchSfinAccounts" :disabled="sfinFetching">
             {{ sfinFetching ? 'Fetching...' : 'Refresh Accounts' }}
@@ -86,7 +100,7 @@
 
         <!-- Account mapping table -->
         <div v-if="sfinAccounts.length > 0">
-          <h4 style="margin-bottom:0.5rem">Account Mapping</h4>
+          <h4 style="margin-bottom:0.5rem">Account mapping</h4>
           <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem">
             Map each SimpleFIN account to a local bank account. Only mapped accounts will be synced.
           </p>
@@ -95,12 +109,12 @@
               <thead>
                 <tr>
                   <th>Institution</th>
-                  <th>SimpleFIN Account</th>
+                  <th>SimpleFIN account</th>
                   <th style="text-align:right">Balance</th>
-                  <th>→ Local Bank</th>
-                  <th>→ Local Account</th>
+                  <th>→ Local bank</th>
+                  <th>→ Local account</th>
                   <th>Type</th>
-                  <th>Actions</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -109,14 +123,14 @@
                   <td style="font-size:0.85rem">{{ acc.orgName }}</td>
                   <td style="font-weight:500">
                     {{ acc.name }}
-                    <span v-if="acc.mappedBankName" class="badge badge-success" style="font-size:0.65rem;margin-left:0.25rem">MAPPED</span>
+                    <span v-if="acc.mappedBankName" class="badge badge-success" style="margin-left:0.25rem">Mapped</span>
                   </td>
                   <td style="text-align:right;font-weight:600" :style="{ color: acc.balance >= 0 ? 'var(--success)' : 'var(--danger)' }">
                     {{ currency(acc.balance) }}
                   </td>
                   <td>
                     <select v-model="mappingForm[acc.id].bankName" style="font-size:0.8rem" @change="mappingForm[acc.id].accountName = ''">
-                      <option value="">-- Select Bank --</option>
+                      <option value="">-- Select bank --</option>
                       <option v-for="b in banks" :key="b.name" :value="b.name">{{ b.name }}</option>
                     </select>
                   </td>
@@ -124,7 +138,7 @@
                     <select v-model="mappingForm[acc.id].accountName" style="font-size:0.8rem"
                             :disabled="!mappingForm[acc.id].bankName"
                             @change="onAccountSelected(acc.id)">
-                      <option value="">-- Select Account --</option>
+                      <option value="">-- Select account --</option>
                       <option v-for="la in allAccountsForBank(mappingForm[acc.id].bankName)" :key="la.fullName" :value="la.name">
                         {{ la.name }} ({{ la.type }})
                       </option>
@@ -163,17 +177,17 @@
     </div>
 
     <!-- Database management -->
-    <div class="card" style="margin-bottom:1.5rem">
+    <div v-if="tab === 'data'" class="card">
       <div class="card-header"><span class="card-title">Database</span></div>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
-        Save or load your financial data from the SQLite database on the server.
+        Changes are saved automatically. Use these only if the data on the server was changed outside the app.
       </p>
-      <div style="display:flex;flex-wrap:wrap;gap:0.75rem">
-        <button class="btn btn-success" @click="saveDb" :disabled="saving">
-          {{ saving ? 'Saving...' : 'Save to Database' }}
+      <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
+        <button class="btn btn-outline" @click="loadDb" :disabled="loadingDb">
+          {{ loadingDb ? 'Reloading...' : 'Reload from database' }}
         </button>
-        <button class="btn btn-primary" @click="loadDb" :disabled="loadingDb">
-          {{ loadingDb ? 'Loading...' : 'Load from Database' }}
+        <button class="btn btn-outline" @click="saveDb" :disabled="saving">
+          {{ saving ? 'Saving...' : 'Save everything now' }}
         </button>
       </div>
       <div v-if="dbMessage" style="margin-top:0.75rem;font-size:0.85rem" :class="dbSuccess ? 'positive' : 'negative'">
@@ -181,27 +195,20 @@
       </div>
     </div>
 
-    <!-- API Status -->
-    <div class="card" style="margin-bottom:1.5rem">
-      <div class="card-header"><span class="card-title">API Connection</span></div>
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <div :style="{ width:'10px', height:'10px', borderRadius:'50%', background: healthOk ? 'var(--success)' : 'var(--danger)' }"></div>
-        <span style="font-size:0.85rem">{{ healthOk ? 'Connected' : 'Disconnected' }}</span>
+    <!-- Server status -->
+    <div v-if="tab === 'data'" class="card">
+      <div class="card-header">
+        <span class="card-title">Server</span>
+        <button class="btn btn-outline btn-sm" @click="checkHealth">Check status</button>
       </div>
-      <div v-if="healthData" style="font-size:0.8rem;color:var(--text-muted)">
-        Banks: {{ healthData.banks }} &middot; Bills: {{ healthData.bills }} &middot; Income: {{ healthData.income_sources }}
+      <div class="status-row">
+        <span class="status-dot" :class="healthOk ? 'ok' : 'down'"></span>
+        <strong>{{ healthOk ? 'Connected' : 'Not reachable' }}</strong>
+        <span v-if="healthData" class="muted">· {{ healthData.banks }} banks, {{ healthData.bills }} bills, {{ healthData.income_sources }} income sources</span>
       </div>
-      <button class="btn btn-outline btn-sm" style="margin-top:0.5rem" @click="checkHealth">Check Status</button>
-    </div>
-
-    <!-- Connection info -->
-    <div class="card">
-      <div class="card-header"><span class="card-title">About</span></div>
-      <div style="font-size:0.85rem;color:var(--text-muted)">
-        <p><strong>API Endpoint:</strong> {{ graphqlUrl }}</p>
-        <p><strong>GraphQL Playground:</strong> <a :href="graphqlUrl" target="_blank" rel="noopener">Open Playground</a></p>
-        <p style="margin-top:0.5rem">Personal Finance Management System</p>
-      </div>
+      <p class="muted" style="font-size:0.85rem;margin-top:0.5rem">
+        API: <code>{{ graphqlUrl }}</code> · <a :href="graphqlUrl" target="_blank" rel="noopener">Open GraphQL playground</a>
+      </p>
     </div>
   </div>
 </template>
@@ -227,6 +234,26 @@ import SimplefinAutoSync from '../components/SimplefinAutoSync.vue'
 import BackgroundJobs from '../components/BackgroundJobs.vue'
 import { currency, fmtDate } from '../utils/format'
 import type { Bank, SimplefinStatus, SimplefinAccount, MutationPayload } from '../types'
+import { ask } from '../utils/dialog'
+import Icon from '../components/Icon.vue'
+import { useRoute, useRouter } from 'vue-router'
+
+const TABS = [
+  { key: 'general', label: 'General', icon: 'settings' },
+  { key: 'alerts', label: 'Alerts', icon: 'bell' },
+  { key: 'account', label: 'Account & users', icon: 'user' },
+  { key: 'connections', label: 'Bank sync', icon: 'refresh' },
+  { key: 'data', label: 'Data & backup', icon: 'download' },
+]
+const route = useRoute()
+const router = useRouter()
+const tab = computed(() => {
+  const q = String(route.query.tab || '')
+  return TABS.some(t => t.key === q) ? q : 'general'
+})
+function setTab(key: string) {
+  router.replace({ query: { ...route.query, tab: key } })
+}
 
 // The Vite dev server (and production proxy) forwards /graphql to the API server
 const graphqlUrl = `${window.location.origin}/graphql`
@@ -486,7 +513,7 @@ async function syncBalances() {
 const { mutate: doRemoveSfin } = useMutation<{ removeSimplefinConnection: MutationPayload }>(REMOVE_SIMPLEFIN_CONNECTION)
 
 async function disconnectSimplefin() {
-  if (!confirm('Disconnect SimpleFIN Bridge? This will remove all account mappings.')) return
+  if (!(await ask('Disconnect SimpleFIN Bridge? All account mappings are removed.', { title: 'Disconnect SimpleFIN', confirmText: 'Disconnect', danger: true }))) return
   try {
     const res = await doRemoveSfin()
     const d = res?.data?.removeSimplefinConnection
@@ -512,3 +539,9 @@ onMounted(() => {
 })
 </script>
 
+
+<style scoped>
+.status-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.9rem; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px var(--danger-light); }
+.status-dot.ok { background: var(--success); box-shadow: 0 0 0 3px var(--success-light); }
+</style>

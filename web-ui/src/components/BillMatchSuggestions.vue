@@ -1,7 +1,7 @@
 <template>
   <div v-if="matches.length" class="card match-card">
     <div class="card-header">
-      <span class="card-title">🔗 Bill payments found in your transactions</span>
+      <span class="card-title">Bill payments found in your transactions</span>
       <span class="badge badge-warning">{{ matches.length }} to review</span>
     </div>
     <p class="hint">
@@ -12,16 +12,16 @@
       <div class="match-main">
         <div><strong>{{ m.transaction.description }}</strong> · {{ currency(Math.abs(m.transaction.amount)) }} on {{ fmtDateShort(m.transaction.date) }}</div>
         <div class="sub">
-          Looks like <strong>{{ m.billName }}</strong> (due {{ fmtDateShort(m.dueDate) }}) — {{ m.reason }}
+          Looks like <strong>{{ billName(m.billName) }}</strong> (due {{ fmtDateShort(m.dueDate) }}) — {{ m.reason }}
         </div>
       </div>
       <div class="match-actions">
-        <button class="btn btn-success btn-sm" :disabled="busy" @click="confirm(m)">Yes, it's {{ m.billName }}</button>
+        <button class="btn btn-success btn-sm" :disabled="busy" @click="confirm(m)">Yes, it’s {{ billName(m.billName) }}</button>
         <button class="btn btn-outline btn-sm" :disabled="busy" @click="ignore(m)">Not a bill</button>
       </div>
     </div>
     <button v-if="matches.length > limit && !expanded" class="link-btn" @click="expanded = true">
-      Show all {{ matches.length }}
+      show all {{ matches.length }}
     </button>
   </div>
 </template>
@@ -31,7 +31,7 @@ import { ref, computed } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import { GET_BILL_MATCH_SUGGESTIONS, CONFIRM_BILL_MATCH, IGNORE_BILL_MATCH } from '../graphql/goals'
 import { runMutation } from '../utils/mutation'
-import { currency, fmtDateShort } from '../utils/format'
+import { currency, fmtDateShort, billName } from '../utils/format'
 import type { BillMatch, MutationPayload } from '../types'
 
 const props = withDefaults(defineProps<{ limit?: number }>(), { limit: 3 })

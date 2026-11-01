@@ -1,25 +1,26 @@
 <template>
-  <div class="card" style="margin-bottom:1.5rem">
-    <div class="card-header"><span class="card-title">🎨 Appearance</span></div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Appearance</span></div>
     <p class="help">Choose the theme for this device. <em>Match device</em> follows your phone or computer's light / dark setting.</p>
     <div class="theme-options" role="radiogroup" aria-label="Theme">
       <button v-for="o in OPTIONS" :key="o.value" type="button" role="radio" class="theme-option"
               :class="{ selected: themeState.choice === o.value }" :aria-checked="themeState.choice === o.value"
               @click="setTheme(o.value)">
         <span class="swatch" :class="o.value"><span></span></span>
-        <span>{{ o.icon }} {{ o.label }}</span>
+        <span class="opt-label"><Icon :name="o.icon" :size="16" /> {{ o.label }}</span>
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import Icon from './Icon.vue'
 import { setTheme, themeState, type ThemeChoice } from '../utils/theme'
 
 const OPTIONS: { value: ThemeChoice; label: string; icon: string }[] = [
-  { value: 'light', label: 'Light', icon: '☀️' },
-  { value: 'dark', label: 'Dark', icon: '🌙' },
-  { value: 'system', label: 'Match device', icon: '💻' },
+  { value: 'light', label: 'Light', icon: 'sun' },
+  { value: 'dark', label: 'Dark', icon: 'moon' },
+  { value: 'system', label: 'Match device', icon: 'monitor' },
 ]
 </script>
 
@@ -47,4 +48,5 @@ const OPTIONS: { value: ThemeChoice; label: string; icon: string }[] = [
   .theme-options { gap: 0.5rem; }
   .theme-option { flex: 1 1 0; min-width: 0; padding: 0.6rem 0.4rem; font-size: 0.8rem; }
 }
+.opt-label { display: inline-flex; align-items: center; gap: 0.4rem; }
 </style>

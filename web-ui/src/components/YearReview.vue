@@ -1,11 +1,11 @@
 <template>
   <div class="card">
     <div class="card-header">
-      <span class="card-title">🗓 Year in review</span>
+      <span class="card-title">Year in review</span>
       <div class="year-nav">
-        <button class="btn btn-outline btn-sm" aria-label="Previous year" @click="year--">‹</button>
+        <button class="btn btn-outline btn-sm" aria-label="Previous year" @click="year--"><Icon name="chevronLeft" :size="15" /></button>
         <strong>{{ year }}</strong>
-        <button class="btn btn-outline btn-sm" aria-label="Next year" :disabled="year >= thisYear" @click="year++">›</button>
+        <button class="btn btn-outline btn-sm" aria-label="Next year" :disabled="year >= thisYear" @click="year++"><Icon name="chevronRight" :size="15" /></button>
       </div>
     </div>
 
@@ -63,6 +63,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import Icon from './Icon.vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Bar } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend, type ChartOptions, type TooltipItem } from 'chart.js'

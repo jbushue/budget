@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="view-header">
-      <h2>⚡ Payment Optimizer</h2>
+      <div class="view-title">
+        <h2>Optimizer</h2>
+        <p class="view-sub">The best day to pay each bill so nothing is late or overdrawn.</p>
+      </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
         <select v-model.number="days" style="width:auto">
           <option :value="30">30 days</option>
@@ -10,7 +13,7 @@
           <option :value="180">6 months</option>
           <option :value="365">1 year</option>
         </select>
-        <button class="btn btn-outline btn-sm" @click="refetchAll()">Analyze</button>
+        <button class="btn btn-outline" @click="refetchAll()"><Icon name="refresh" :size="15" /> Refresh</button>
       </div>
     </div>
 
@@ -29,7 +32,7 @@
       <!-- Due date vs optimized -->
       <div class="card" style="margin-bottom:1.5rem">
         <div class="card-header">
-          <span class="card-title">⚖️ Paying on due dates vs. the optimized plan ({{ ins.days }} days)</span>
+          <span class="card-title">Paying on due dates vs. the optimized plan ({{ ins.days }} days)</span>
         </div>
         <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 0.75rem">
           <strong>On due date</strong>: every bill comes out of its usual account on the day it's due, nothing else moves.
@@ -51,7 +54,7 @@
             <tbody>
               <tr v-for="row in comparisonRows" :key="row.label">
                 <td>
-                  <div style="font-weight:500">{{ row.label }}</div>
+                  <div style="font-weight:500">{{ billName(row.label) }}</div>
                   <div v-if="row.hint" style="font-size:0.72rem;color:var(--text-muted)">{{ row.hint }}</div>
                 </td>
                 <td style="text-align:right">{{ row.fmt(row.base) }}<div v-if="row.baseNote" class="cell-note">{{ row.baseNote }}</div></td>
@@ -65,14 +68,14 @@
 
       <!-- Recommendations -->
       <div class="card" style="margin-bottom:1.5rem">
-        <div class="card-header"><span class="card-title">🧭 Recommendations</span></div>
+        <div class="card-header"><span class="card-title">Recommendations</span></div>
         <InsightList :items="ins.insights" />
       </div>
 
       <!-- When to pay each bill -->
       <div class="card" style="margin-bottom:1.5rem">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
-          <span class="card-title">🗓️ When to pay each bill</span>
+          <span class="card-title">When to pay each bill</span>
           <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.35rem;cursor:pointer">
             <input v-model="attentionOnly" type="checkbox" style="width:auto" /> Only show bills that need attention
           </label>
@@ -100,7 +103,7 @@
               <tr v-for="(r, i) in timingRows" :key="i" :style="r.status === 'late' ? 'background:var(--danger-light)' : ''">
                 <td style="white-space:nowrap;font-size:0.85rem">{{ fmtDateShort(r.dueDate) }}</td>
                 <td style="font-size:0.85rem">
-                  <div style="font-weight:500">{{ r.name }}</div>
+                  <div style="font-weight:500">{{ billName(r.name) }}</div>
                   <div style="font-size:0.72rem;color:var(--text-muted)">
                     {{ KIND_LABELS[r.kind] }}<template v-if="r.sourceAccount"> · from {{ r.sourceAccount }}</template>
                   </div>
@@ -132,7 +135,7 @@
       <!-- Bill groups -->
       <div v-for="g in ins.groups" :key="g.groupName" class="card" style="margin-bottom:1.5rem">
         <div class="card-header">
-          <span class="card-title">📦 {{ g.groupName }}: how the {{ currency(g.payment) }} payment is split</span>
+          <span class="card-title">{{ g.groupName }}: how the {{ currency(g.payment) }} payment is split</span>
         </div>
         <div class="grid grid-2">
           <div class="table-wrap">
@@ -200,7 +203,7 @@
 
       <!-- Promos -->
       <div v-if="ins.promos.length" class="card" style="margin-bottom:1.5rem">
-        <div class="card-header"><span class="card-title">🏷️ 0% promo deadlines</span></div>
+        <div class="card-header"><span class="card-title">0% promo deadlines</span></div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -233,14 +236,14 @@
 
       <!-- Optimizer moves -->
       <div class="card" style="margin-bottom:1.5rem">
-        <div class="card-header"><span class="card-title">🔁 What the optimized plan does</span></div>
+        <div class="card-header"><span class="card-title">What the optimized plan does</span></div>
         <div v-if="ins.optimizerMoves.length === 0" class="empty-state" style="padding:1rem">
           <p>No transfers needed: paying each bill on its due date is already the best plan for this period.</p>
         </div>
         <template v-else>
           <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:1rem">
             <div v-for="grp in moveGroups" :key="grp.type" class="stat-card" style="padding:0.75rem;text-align:left;border:1px solid var(--border);border-radius:var(--radius)">
-              <div style="font-weight:600;font-size:0.9rem">{{ eventIcon(grp.type) }} {{ grp.title }}</div>
+              <div class="move-title"><Icon :name="eventIcon(grp.type)" :size="16" /> {{ grp.title }}</div>
               <div style="font-size:1.15rem;font-weight:700;margin:0.2rem 0">{{ currency(grp.total) }}</div>
               <div style="font-size:0.75rem;color:var(--text-muted)">{{ grp.count }} time(s). {{ grp.why }}</div>
             </div>
@@ -253,7 +256,7 @@
               <tbody>
                 <tr v-for="(m, i) in ins.optimizerMoves" :key="i" :style="{ borderLeft: `3px solid ${eventColor(m.type)}` }">
                   <td style="font-size:0.85rem;white-space:nowrap">{{ fmtDateShort(m.date) }}</td>
-                  <td><span class="badge" :class="eventBadgeClass(m.type)">{{ eventIcon(m.type) }} {{ m.title }}</span></td>
+                  <td><span class="badge" :class="eventBadgeClass(m.type)"><Icon :name="eventIcon(m.type)" :size="13" /> {{ m.title }}</span></td>
                   <td style="font-size:0.85rem">{{ m.description }}</td>
                   <td style="text-align:right;font-weight:600">{{ currency(m.amount) }}</td>
                 </tr>
@@ -266,7 +269,7 @@
       <!-- Technical warnings from the optimizer -->
       <div v-if="plan && plan.violations.length" class="card" style="border-left:4px solid var(--warning)">
         <div class="card-header" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between" @click="violationsOpen = !violationsOpen">
-          <span class="card-title">🔧 Optimizer checks ({{ plan.violations.length }})</span>
+          <span class="card-title">Optimizer checks ({{ plan.violations.length }})</span>
           <span style="font-size:0.75rem;color:var(--text-muted)">{{ violationsOpen ? '▲ Collapse' : '▼ Expand' }}</span>
         </div>
         <ul v-show="violationsOpen" style="list-style:none;margin:0;padding:0">
@@ -283,10 +286,11 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, computed } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { GET_PAYMENT_INSIGHTS, GET_PAYMENT_PLAN } from '../graphql/queries'
-import { currency, fmtDate, fmtDateShort, pct } from '../utils/format'
+import { currency, fmtDate, fmtDateShort, pct, billName } from '../utils/format'
 import InsightList from '../components/InsightList.vue'
 import type { BillTiming, GroupPayoff, OutcomeSummary, PaymentInsights, PaymentPlan } from '../types'
 
@@ -426,11 +430,11 @@ const moveGroups = computed(() => {
 
 function eventIcon(type: string): string {
   const map: Record<string, string> = {
-    SAVINGS_SWEEP: '💸', SAVINGS_RECALL: '📥',
-    HELOC_PARK: '🅿️', HELOC_RECALL: '⬆️',
-    EXTRA_CREDIT_PAYMENT: '💳', PROMO_PAYOFF: '🏷️',
+    SAVINGS_SWEEP: 'arrowDown', SAVINGS_RECALL: 'arrowUp',
+    HELOC_PARK: 'parking', HELOC_RECALL: 'arrowUp',
+    EXTRA_CREDIT_PAYMENT: 'card', PROMO_PAYOFF: 'tag',
   }
-  return map[type] || '📌'
+  return map[type] || 'pin'
 }
 
 function eventColor(type: string): string {
@@ -460,4 +464,5 @@ function eventBadgeClass(type: string): string {
 
 <style scoped>
 .cell-note { font-size: 0.72rem; color: var(--text-muted); }
+.move-title { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; font-size: 0.9rem; }
 </style>

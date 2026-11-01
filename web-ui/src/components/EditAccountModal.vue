@@ -36,7 +36,7 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Interest Day (1-31, blank = end of month)</label>
+          <label>Interest day (1-31, blank = end of month)</label>
           <input v-model.number="form.interestAccrualDate" type="number" min="1" max="31" />
         </div>
       </template>
@@ -49,15 +49,15 @@
             <input v-model.number="form.interestRate" type="number" step="0.01" min="0" />
           </div>
           <div class="form-group">
-            <label>Credit Limit</label>
+            <label>Credit limit</label>
             <input v-model.number="form.creditLimit" type="number" step="0.01" min="0" />
           </div>
           <div class="form-group">
-            <label>Payment Due Day (1-31)</label>
+            <label>Payment due day (1-31)</label>
             <input v-model.number="form.paymentDueDate" type="number" min="1" max="31" />
           </div>
           <div class="form-group">
-            <label>Statement Day (1-31, optional)</label>
+            <label>Statement day (1-31, optional)</label>
             <input v-model.number="form.statementDate" type="number" min="1" max="31" />
           </div>
         </div>
@@ -76,11 +76,11 @@
       <template v-else-if="kind === 'mortgage'">
         <div class="grid2">
           <div class="form-group">
-            <label>Original Loan Amount</label>
+            <label>Original loan amount</label>
             <input v-model.number="form.originalPrincipal" type="number" step="0.01" min="0" />
           </div>
           <div class="form-group">
-            <label>Current Principal Owed</label>
+            <label>Current principal owed</label>
             <input v-model.number="form.currentPrincipal" type="number" step="0.01" min="0" />
           </div>
           <div class="form-group">
@@ -88,20 +88,20 @@
             <input v-model.number="form.interestRate" type="number" step="0.001" min="0" />
           </div>
           <div class="form-group">
-            <label>Loan Term (years)</label>
+            <label>Loan term (years)</label>
             <input v-model.number="form.termYears" type="number" min="1" max="50" step="0.5" />
           </div>
           <div class="form-group">
-            <label>Loan Start Date</label>
+            <label>Loan start date</label>
             <input v-model="form.startDate" type="date" />
           </div>
           <div class="form-group">
-            <label>Payment Due Day (1-31)</label>
+            <label>Payment due day (1-31)</label>
             <input v-model.number="form.paymentDueDate" type="number" min="1" max="31" />
           </div>
         </div>
         <div class="form-group">
-          <label>Monthly Escrow</label>
+          <label>Monthly escrow</label>
           <div class="grid2">
             <label class="sub">Property tax <input v-model.number="form.escrowPropertyTax" type="number" step="0.01" min="0" /></label>
             <label class="sub">Insurance <input v-model.number="form.escrowInsurance" type="number" step="0.01" min="0" /></label>
@@ -111,7 +111,7 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Home Market Value (blank = not set)</label>
+          <label>Home market value (blank = not set)</label>
           <input v-model.number="form.marketValue" type="number" step="0.01" min="0" />
         </div>
       </template>
@@ -124,23 +124,23 @@
             <input v-model.number="form.interestRate" type="number" step="0.01" min="0" />
           </div>
           <div class="form-group">
-            <label>Credit Limit</label>
+            <label>Credit limit</label>
             <input v-model.number="form.creditLimit" type="number" step="0.01" min="0" />
           </div>
           <div class="form-group">
-            <label>Draw Period (years)</label>
+            <label>Draw period (years)</label>
             <input v-model.number="form.drawYears" type="number" min="0.5" step="0.5" />
           </div>
           <div class="form-group">
-            <label>Total Term (years)</label>
+            <label>Total term (years)</label>
             <input v-model.number="form.totalYears" type="number" min="1" step="0.5" />
           </div>
           <div class="form-group">
-            <label>Start Date</label>
+            <label>Start date</label>
             <input v-model="form.startDate" type="date" />
           </div>
           <div class="form-group">
-            <label>Payment Due Day (1-31)</label>
+            <label>Payment due day (1-31)</label>
             <input v-model.number="form.paymentDueDate" type="number" min="1" max="31" />
           </div>
         </div>
@@ -148,7 +148,7 @@
 
       <!-- Pay-from account (loans) -->
       <div v-if="kind === 'mortgage' || kind === 'heloc'" class="form-group">
-        <label>Pay From</label>
+        <label>Pay from</label>
         <div class="grid2">
           <select v-model="form.sourceBank" @change="form.sourceAccount = ''">
             <option value="">Auto (no preference)</option>

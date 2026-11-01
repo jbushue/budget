@@ -1,13 +1,18 @@
 <template>
   <div>
-    <div class="view-header"><h2>Subscriptions &amp; Recurring</h2></div>
+    <div class="view-header">
+      <div class="view-title">
+        <h2>Subscriptions</h2>
+        <p class="view-sub">Recurring charges found in your transactions.</p>
+      </div>
+    </div>
 
     <div v-if="loading && !subs" class="loading">Loading...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else-if="subs">
       <div v-if="!subs.items.length" class="empty-state">
-        <div class="icon">🔁</div>
+        <div class="icon"><Icon name="repeat" :size="26" /></div>
         <p>No recurring charges found yet. They're picked up from your bills and from charges that repeat in your
           <RouterLink to="/transactions">transactions</RouterLink>.</p>
       </div>
@@ -32,7 +37,7 @@
         </div>
 
         <div v-if="increases.length" class="card warn-card">
-          <strong>⚠ {{ increases.length === 1 ? 'A charge went up' : 'Some charges went up' }}</strong>
+          <strong>{{ increases.length === 1 ? 'A charge went up' : 'Some charges went up' }}</strong>
           <ul>
             <li v-for="i in increases" :key="i.name">
               {{ i.name }}: {{ currency(i.usualAmount) }} → <strong>{{ currency(i.amount) }}</strong>
@@ -90,6 +95,7 @@
 </template>
 
 <script setup lang="ts">
+import Icon from '../components/Icon.vue'
 import { ref, computed } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { GET_SUBSCRIPTIONS } from '../graphql/planning'
