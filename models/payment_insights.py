@@ -244,8 +244,11 @@ class PaymentInsightsAnalyzer:
     """Builds the payment insights for a FinanceManager's current state."""
 
     def __init__(self, manager, start_date: date | None = None, days: int = 90,
-                 goal: str = "maximize_discretionary", target_account: str | None = None):
+                 goal: str | None = None, target_account: str | None = None):
         self.manager = manager
+        if not goal and hasattr(manager, "plan_goal"):
+            # The plan the rest of the app follows (Settings / Optimizer "Aim for")
+            goal, target_account = manager.plan_goal()
         self.goal = goal or "maximize_discretionary"
         self.target_account = target_account or None
         self.start = start_date or date.today()
@@ -613,17 +616,34 @@ class PaymentInsightsAnalyzer:
 
     def _promos(self, plan) -> list[dict]:
         out = []
+        snaps = self.optimized["snapshots"] if getattr(self, "optimized", None) else []
         for p in plan.promo_priorities:
-            scheduled = sum(s["amount"] for s in plan.promo_payoff_schedule
-                            if s["promo_name"] == p.promo_name and s["credit_account"] == p.credit_account_name)
+            key = f"{p.bank_name}:{p.credit_account_name}:{p.promo_name}"
             in_window = p.end_date <= self.end
-            shortfall = max(0.0, p.balance_owed - scheduled)
-            months_free = 0
+            months_free, card = 0, None
             for b in self.manager.banks:
                 card = b.credit_accounts.get(p.credit_account_name) if b.name == p.bank_name else None
                 if card:
                     promo = next((x for x in card.active_promos if x.promo_name == p.promo_name), None)
                     months_free = promo.months_interest_free if promo else 0
+                    break
+            # What the plan actually leaves on the promo (card payments give each
+            # promo its share first; the optimizer may pay extra)
+            if in_window:
+                before = [sn for sn in snaps if sn["date"] < p.end_date]
+                left = before[-1]["promo_balances"].get(key, 0.0) if before else p.balance_owed
+                scheduled = p.balance_owed - left
+                shortfall = max(0.0, left)
+            else:
+                left = snaps[-1]["promo_balances"].get(key, p.balance_owed) if snaps else p.balance_owed
+                scheduled = p.balance_owed - left
+                # On pace if what's left can be cleared by the payments still to come
+                pace = p.balance_owed
+                if card is not None:
+                    total = card.payments_left_before(p.end_date, self.start)
+                    remaining = card.payments_left_before(p.end_date, self.end + timedelta(days=1))
+                    pace = p.balance_owed * remaining / max(1, total)
+                shortfall = max(0.0, left - pace - 1.0)
             r = p.interest_rate_after / 1200
             at_risk = p.balance_owed * ((1 + r) ** months_free - 1) if months_free else 0.0
             out.append({
@@ -633,11 +653,12 @@ class PaymentInsightsAnalyzer:
                 "balance": _r(p.balance_owed),
                 "expires": p.end_date.isoformat(),
                 "days_left": p.days_remaining,
-                "monthly_needed": _r(p.required_monthly_payment),
+                "monthly_needed": _r(card.promo_installments(self.start).get(p.promo_name, p.required_monthly_payment)
+                                     if card is not None else p.required_monthly_payment),
                 "scheduled_in_window": _r(scheduled),
-                # Fully scheduled = on track; otherwise only a problem if it expires in the window
-                "on_track": True if shortfall <= 0.01 else (False if in_window else None),
-                "shortfall": _r(shortfall) if in_window else 0.0,
+                "on_track": shortfall <= 0.01,
+                "shortfall": _r(shortfall),
+                "left_at_end": _r(left),
                 "interest_at_risk": _r(at_risk),
                 "apr_after": p.interest_rate_after,
             })

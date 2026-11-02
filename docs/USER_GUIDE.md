@@ -144,6 +144,8 @@ The minimum payment is **2% of the regular (non-promo) balance, or $25, whicheve
 
 ### 0% promotional offers and deferred interest
 
+Every card payment in the plan gives each 0% promo its share first: what's left on the promo divided by the payments remaining before it ends (all of it on the last one). The rest goes to the regular balance. That way a promo is always paid off by the payment before it expires, even when the card also carries a regular balance. When you record a card payment in the app, it's split the same way. (Ask your card issuer to apply the extra to the promo; many let you choose.) The Optimizer's promo table shows whether each promo is on track, and you get an alert if the plan can't pay one off in time.
+
 A promo carves out part of the card's existing balance as interest-free until the promo's end date. Interest is only charged on the **regular** balance. If a promo **expires with a balance remaining**, the app charges **deferred (retroactive) interest** as if the promo never existed — `remaining × ((1 + APR/12)^months − 1)` — and the leftover amount becomes regular, interest-bearing debt. Projections apply this on the simulated expiry date, so you can see the hit coming.
 
 ### "Paid this period" and the billing cycle
@@ -211,6 +213,8 @@ One line, colored by how things look:
 | 🚨 **Checking goes negative** | Everyday spending would overdraw checking before the next paycheck. |
 
 ### 💵 Safe to spend — how much can I spend?
+
+Safe to spend looks **past your next paycheck**: by default 90 days ahead (Settings → Planning → *Look ahead*), following your plan. If a bill or promo payment after payday needs some of the money you have today, because the paychecks before it won't cover it on their own, that money is held back. The card tells you how much is kept and for which bills. Bills the plan can't pay on time anywhere in that window are held back too. Money the plan only parks (savings, a HELOC) still counts as yours, and so do the optimizer's early card payments under *Most cash*. Under *Least interest* or *Pay off a card*, those payments are spoken for.
 
 The extra you can spend **on top of** your usual everyday spending without missing a bill or dipping into your cushion:
 
@@ -722,7 +726,7 @@ Nothing is changed: it's advice. The Timeline and the Dashboard chart already as
 
 ### Choosing the goal
 
-**Aim for** picks what the optimized plan favors (remembered on this device):
+**Aim for** picks the plan **the whole app follows**: the Dashboard (Safe to spend, the bills checklist, the status), the Timeline and its chart, alerts, and the email digest all use it. It's saved on the server (it's also in Settings → Planning as *Plan to follow*), so every device sees the same plan. The Dashboard's Safe to spend card shows which plan it's following.
 
 - **Most cash** (the default) — keep as much money on hand as possible; bills are paid on their due dates unless moving money is worth it.
 - **Least interest** — pay interest-bearing debt as early as makes sense after each paycheck.

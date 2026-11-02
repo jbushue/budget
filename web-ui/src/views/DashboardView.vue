@@ -30,7 +30,12 @@
         <div class="grid grid-2" style="margin-bottom:1.5rem;align-items:start">
           <!-- 2. How much can I spend? -->
           <div class="card">
-            <div class="card-header"><span class="card-title">Safe to spend</span></div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
+              <span class="card-title">Safe to spend</span>
+              <router-link to="/optimizer" class="plan-chip" title="The plan bills, Safe to spend and the timeline follow. Change it on the Optimizer page.">
+                <Icon name="zap" :size="12" /> {{ PLAN_LABELS[dash.planGoal || ''] || 'Most cash' }}{{ dash.planTarget ? `: ${dash.planTarget}` : '' }} plan
+              </router-link>
+            </div>
             <div class="safe-amount" :class="dash.safeToSpend > 0 ? 'positive' : 'negative'">{{ currency(dash.safeToSpend) }}</div>
             <div style="font-size:0.9rem;margin-bottom:0.75rem">
               <template v-if="dash.nextPayday">
@@ -38,6 +43,13 @@
                 ({{ daysUntil(dash.nextPayday) }} day{{ daysUntil(dash.nextPayday) === 1 ? '' : 's' }}).
               </template>
               <template v-else>No upcoming income found — this is what you can spend over the next few weeks.</template>
+            </div>
+            <div v-if="(dash.heldForLater ?? 0) > 0.5" class="held-later">
+              <strong>{{ currency(dash.heldForLater ?? 0) }}</strong> of today's money is kept for bills after your next paycheck
+              <template v-if="heldFor.length">:
+                <span v-for="(h, i) in heldFor" :key="i">{{ i ? ', ' : '' }}{{ billName(h.name) }} {{ currency(h.amount) }} ({{ fmtDateShort(h.date) }})</span>
+              </template>.
+              Your paychecks before then aren't enough to cover them on their own.
             </div>
             <div v-if="dash.everydayWeekly > 0" class="hint">
               On top of your usual {{ currency(dash.everydayWeekly) }}/week everyday spending
@@ -51,14 +63,18 @@
               <summary style="cursor:pointer">How this is worked out</summary>
               <table style="margin-top:0.4rem">
                 <tr><td>Checking today</td><td style="text-align:right">{{ currency(dash.checkingNow) }}</td></tr>
-                <tr><td>Lowest point ({{ fmtDateShort(dash.lowestDate) }}), after bills{{ dash.everydayWeekly > 0 ? ' and everyday spending' : '' }}</td><td style="text-align:right">{{ currency(dash.lowestBalance) }}</td></tr>
+                <tr v-if="(dash.heldForLater ?? 0) > 0.5"><td>Lowest before your second paycheck</td><td style="text-align:right">{{ currency(dash.nearLowest ?? 0) }}</td></tr>
+                <tr v-if="(dash.heldForLater ?? 0) > 0.5"><td>− Kept for bills later (lowest point {{ fmtDateShort(dash.lowestDate) }})</td><td style="text-align:right">{{ currency(dash.heldForLater ?? 0) }}</td></tr>
+                <tr v-else><td>Lowest point ({{ fmtDateShort(dash.lowestDate) }}), after bills{{ dash.everydayWeekly > 0 ? ' and everyday spending' : '' }}</td><td style="text-align:right">{{ currency(dash.lowestBalance) }}</td></tr>
                 <tr><td>− Cushion you keep</td><td style="text-align:right">{{ currency(dash.cushion) }}</td></tr>
                 <tr v-if="dash.overdueTotal"><td>− Overdue bills not marked paid</td><td style="text-align:right">{{ currency(dash.overdueTotal) }}</td></tr>
-                <tr v-if="dash.shortTotal"><td>− Bills that can't be covered</td><td style="text-align:right">{{ currency(dash.shortTotal) }}</td></tr>
+                <tr v-if="dash.shortTotal"><td>− Bills the plan can't pay on time</td><td style="text-align:right">{{ currency(dash.shortTotal) }}</td></tr>
                 <tr v-if="dash.goalReserves"><td>− Set aside for goals</td><td style="text-align:right">{{ currency(dash.goalReserves) }}</td></tr>
                 <tr style="font-weight:600"><td>= Safe to spend</td><td style="text-align:right">{{ currency(dash.safeToSpend) }}</td></tr>
               </table>
-              <p style="margin:0.4rem 0 0">Spending today lowers every later day's balance, so the limit is set by your lowest projected point through {{ fmtDateShort(dash.horizon) }}.</p>
+              <p style="margin:0.4rem 0 0">Spending today lowers every later day's balance, so the limit is set by your lowest
+                projected point over the next {{ dash.lookaheadDays ?? 90 }} days, following your plan (bills, card and promo
+                payments, and the optimizer's moves).</p>
             </details>
           </div>
 
@@ -304,6 +320,14 @@ const health = computed(() => healthResult.value?.healthCheck)
 
 const snap = computed(() => result.value?.snapshot)
 const dash = computed(() => dashResult.value?.dashboardSummary)
+const PLAN_LABELS: Record<string, string> = {
+  maximize_discretionary: 'Most cash', minimize_interest: 'Least interest', payoff_credit_account: 'Pay off',
+}
+const heldFor = computed<{ name: string; date: string; amount: number }[]>(() => {
+  const raw = dash.value?.heldFor
+  if (!raw) return []
+  try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return [] }
+})
 const projData = computed(() => projResult.value?.projection)
 
 const payBill = ref<PayableBill | null>(null)
@@ -452,6 +476,9 @@ const chartOptions = {
 .safe-amount { font-size: 2.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 0.4rem; }
 .hint { font-size: 0.8rem; color: var(--text-muted); }
 .hint-warn { color: var(--warning-text); background: var(--warning-light); padding: 0.4rem 0.6rem; border-radius: var(--radius); }
+.held-later { font-size: 0.82rem; line-height: 1.45; background: var(--primary-light); color: var(--text); padding: 0.5rem 0.7rem; border-radius: var(--radius); margin-bottom: 0.6rem; }
+.plan-chip { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.72rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface-alt); border: 1px solid var(--border); color: var(--text-muted); text-decoration: none; white-space: nowrap; }
+.plan-chip:hover { color: var(--primary); border-color: var(--primary); }
 .period-list { list-style: none; margin: 0; padding: 0; }
 .period-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
 .period-list li:last-child { border-bottom: none; }

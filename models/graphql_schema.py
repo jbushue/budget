@@ -1332,9 +1332,13 @@ class Query(ExtQuery, graphene.ObjectType):
         if not manager:
             return None
         from models.tools import STRATEGIES
-        goal = strategy if strategy in STRATEGIES else "maximize_discretionary"
-        if goal == "payoff_credit_account" and not target_account:
-            goal = "maximize_discretionary"
+        if strategy in STRATEGIES:
+            goal = strategy
+            if goal == "payoff_credit_account" and not target_account:
+                goal = "maximize_discretionary"
+        else:
+            # No strategy given: the plan the whole app follows
+            goal, target_account = manager.plan_goal()
         out = manager.payment_insights(days=max(7, min(days, 365)), goal=goal,
                                        target_account=target_account if goal == "payoff_credit_account" else None)
         comparison = out.pop('comparison')

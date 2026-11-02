@@ -1,3 +1,4 @@
+import pytest
 """
 Editing accounts and banks after they're created: every setting, renames
 and moves, and that everything referring to an account by name follows it
@@ -110,7 +111,9 @@ class TestCards:
             assert (card.credit_limit, card.interest_rate, card.payment_due_date, card.statement_date) == \
                    (9000, 24.99, 20, 14)
             assert card.status.value == "frozen"
-            assert (card.balance, card.regular_balance, card.promo_balance) == (2000, 1500, {"0% BT": 500})
+            # The $50 payment gave the promo its share first ($500 over 12 payments)
+            assert card.balance == 2000 and card.promo_balance == {"0% BT": 458.33}
+            assert card.regular_balance == pytest.approx(1541.67)
             bills = [b for b in m.bills if isinstance(b, AccountLinkedBill)]
             assert [b.bill_name for b in bills] == ["[Auto] Sapphire Payment"]
             # The payment bill kept its own settings, history and paid flag, and follows the new due day

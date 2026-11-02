@@ -31,6 +31,7 @@
       <select v-if="goal === 'payoff_credit_account'" v-model="target" style="width:auto" aria-label="Card to pay off">
         <option v-for="t in targets" :key="t" :value="t">{{ t }}</option>
       </select>
+      <span class="goal-note">{{ savingGoal ? 'Switching...' : 'The whole app follows this plan' }}</span>
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="compareOpen = !compareOpen">
         <Icon name="chart" :size="15" /> {{ compareOpen ? 'Hide comparison' : 'Compare goals' }}
       </button>
@@ -366,16 +367,17 @@
 <script setup lang="ts">
 import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
-import { useQuery } from '@vue/apollo-composable'
+import { useApolloClient, useMutation, useQuery } from '@vue/apollo-composable'
 import { useRoute } from 'vue-router'
-import { GET_PAYMENT_INSIGHTS, GET_PAYMENT_PLAN } from '../graphql/queries'
+import { GET_PAYMENT_INSIGHTS, GET_PAYMENT_PLAN, GET_SETTINGS, UPDATE_SETTINGS } from '../graphql/queries'
+import { runMutation } from '../utils/mutation'
 import { COMPARE_STRATEGIES, GET_STRATEGY_TARGETS } from '../graphql/tools'
 import { currency, fmtDate, fmtDateShort, pct, billName } from '../utils/format'
 import InsightList from '../components/InsightList.vue'
 import DebtBoost from '../components/DebtBoost.vue'
 import DueDateMoves from '../components/DueDateMoves.vue'
 import PurchasePlanner from '../components/PurchasePlanner.vue'
-import type { BillTiming, GroupPayoff, OutcomeSummary, PaymentInsights, PaymentPlan } from '../types'
+import type { AppSettings, BillTiming, GroupPayoff, MutationPayload, OutcomeSummary, PaymentInsights, PaymentPlan } from '../types'
 
 interface Strategy {
   goal: string; label: string; finalCash: number; interestPaid: number; interestEarned: number
@@ -401,29 +403,51 @@ function setTool(key: string) {
 const violationsOpen = ref(false)
 const attentionOnly = ref(false)
 
-// ── Goal (remembered on this device) ──────────────────────────────────
+// ── Goal: the plan the whole app follows (saved in Settings) ──────────
 const GOALS = [
   { key: 'maximize_discretionary', label: 'Most cash', icon: 'banknote', hint: 'Keep as much cash on hand as possible' },
   { key: 'minimize_interest', label: 'Least interest', icon: 'trendingDown', hint: 'Pay interest-bearing debt as early as it makes sense' },
   { key: 'payoff_credit_account', label: 'Pay off a card', icon: 'card', hint: 'Send spare cash to one card after each paycheck' },
 ]
-const GOAL_KEY = 'budget-optimizer-goal'
-const saved = JSON.parse(localStorage.getItem(GOAL_KEY) || '{}')
-const goal = ref<string>(saved.goal || 'maximize_discretionary')
-const target = ref<string>(saved.target || '')
+const goal = ref<string>('maximize_discretionary')
+const target = ref<string>('')
 const compareOpen = ref(false)
+const savingGoal = ref(false)
+
+const { result: settingsResult } = useQuery<{ settings: string | AppSettings }>(GET_SETTINGS)
+watch(settingsResult, r => {
+  if (!r?.settings) return
+  const s = (typeof r.settings === 'string' ? JSON.parse(r.settings) : r.settings) as AppSettings
+  goal.value = s.optimizer_goal || 'maximize_discretionary'
+  if (s.optimizer_target) target.value = s.optimizer_target
+}, { immediate: true })
 
 const { result: targetsResult } = useQuery<{ strategyTargets: string[] }>(GET_STRATEGY_TARGETS)
 const targets = computed(() => targetsResult.value?.strategyTargets ?? [])
 watch(targets, list => {
   if (!list.includes(target.value)) target.value = list[0] ?? ''
-  if (goal.value === 'payoff_credit_account' && !list.length) goal.value = 'maximize_discretionary'
 }, { immediate: true })
-watch([goal, target], () => localStorage.setItem(GOAL_KEY, JSON.stringify({ goal: goal.value, target: target.value })))
 
-function setGoal(key: string) {
+const { mutate: saveSettings } = useMutation<{ updateSettings: MutationPayload }>(UPDATE_SETTINGS)
+const { resolveClient } = useApolloClient()
+
+/** Switch the plan the whole app follows (dashboard, bills, timeline, alerts, digest). */
+async function setGoal(key: string, card?: string) {
+  const prev = { goal: goal.value, target: target.value }
   goal.value = key
+  if (card) target.value = card
+  savingGoal.value = true
+  const ok = await runMutation(() => saveSettings({ variables: { changes: JSON.stringify({
+    optimizer_goal: key, optimizer_target: key === 'payoff_credit_account' ? target.value : '',
+  }) } }), 'updateSettings', { failMessage: 'Could not switch the plan' })
+  savingGoal.value = false
+  if (!ok) { goal.value = prev.goal; target.value = prev.target; return }
+  // Everything that shows the plan has to be recomputed
+  const cache = resolveClient().cache
+  for (const f of ['dashboardSummary', 'projection', 'alerts', 'paymentPlan', 'settings']) cache.evict({ fieldName: f })
+  cache.gc()
 }
+watch(target, (t, old) => { if (old && t !== old && goal.value === 'payoff_credit_account') setGoal(goal.value) })
 
 const insightVars = computed(() => ({
   days: days.value,
@@ -606,6 +630,7 @@ function eventBadgeClass(type: string): string {
 <style scoped>
 .goal-bar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin: -0.5rem 0 1.25rem; }
 .goal-label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+.goal-note { font-size: 0.76rem; color: var(--text-light); }
 .row-current td { background: var(--primary-light); }
 td.best { color: var(--success-text); font-weight: 650; }
 .cell-note { font-size: 0.72rem; color: var(--text-muted); }

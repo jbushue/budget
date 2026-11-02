@@ -421,6 +421,12 @@ export interface PeriodBill {
 }
 
 export interface DashboardSummary {
+  nearLowest?: number
+  heldForLater?: number
+  heldFor?: string | null
+  lookaheadDays?: number
+  planGoal?: string
+  planTarget?: string | null
   otherMoney?: string | null
   status: 'ok' | 'warning' | 'danger'
   statusTitle: string
@@ -447,6 +453,9 @@ export interface DashboardSummary {
 
 /** App settings as returned by the `settings` query (secrets omitted). */
 export interface AppSettings {
+  optimizer_goal: string
+  optimizer_target: string
+  lookahead_days: number
   cushion: number
   spending_mode: 'manual' | 'learned'
   everyday_weekly: number

@@ -254,7 +254,9 @@ class TestHELOC:
         r = TimelineSimulator([b], [], [bill]).project_balances(date(2026, 1, 1), date(2026, 1, 31))
         paid = -cf_of(r, "CREDIT_PAYMENT")[0]["amount"]
         # Promo payoff portion is based on Jan 10 2026, not on today's date
-        expected = round(1200 / ((cc.active_promos[0].end_date - date(2026, 1, 10)).days / 30.0), 2)
+        # (split over the payments left before it expires: 12 from Jan 10)
+        expected = round(1200 / cc.payments_left_before(cc.active_promos[0].end_date, date(2026, 1, 10)), 2)
+        assert expected == 100.0
         assert paid == pytest.approx(expected, abs=0.01)
 
 

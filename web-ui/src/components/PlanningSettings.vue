@@ -13,6 +13,26 @@
           <small class="help">Safe-to-spend never dips into this. A small buffer for surprises.</small>
         </div>
         <div class="form-group">
+          <label>Plan to follow</label>
+          <select v-model="form.optimizer_goal">
+            <option value="maximize_discretionary">Most cash: pay bills on time, keep money on hand</option>
+            <option value="minimize_interest">Least interest: pay costly debt early</option>
+            <option value="payoff_credit_account">Pay off a card: spare cash to one card</option>
+          </select>
+          <small class="help">Bills, Safe to spend, the timeline, alerts and the email all follow this plan.</small>
+        </div>
+        <div v-if="form.optimizer_goal === 'payoff_credit_account'" class="form-group">
+          <label>Card to pay off</label>
+          <select v-model="form.optimizer_target">
+            <option v-for="c in cards" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Look ahead (days)</label>
+          <input v-model.number="form.lookahead_days" type="number" min="30" max="365" step="15" />
+          <small class="help">Safe to spend leaves money for every bill and promo payment this far ahead, not just until payday.</small>
+        </div>
+        <div class="form-group">
           <label>Everyday spending comes from</label>
           <select v-model="form.spending_account">
             <option value="">Main checking account</option>
@@ -64,13 +84,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useMutation, useQuery } from '@vue/apollo-composable'
+import { useApolloClient, useMutation, useQuery } from '@vue/apollo-composable'
 import { GET_ALL_BANKS, GET_SETTINGS, UPDATE_SETTINGS } from '../graphql/queries'
 import { runMutation } from '../utils/mutation'
 import { currency } from '../utils/format'
 import type { AppSettings, Bank, MutationPayload } from '../types'
 
-const FIELDS = ['cushion', 'spending_mode', 'everyday_weekly', 'spending_account',
+const FIELDS = ['cushion', 'optimizer_goal', 'optimizer_target', 'lookahead_days', 'spending_mode', 'everyday_weekly', 'spending_account',
   'card_late_fee', 'default_late_fee', 'overdraft_fee'] as const
 
 const { result, refetch } = useQuery<{ settings: string | AppSettings }>(GET_SETTINGS, { fetchPolicy: 'network-only' })
@@ -92,6 +112,11 @@ const checkingAccounts = computed(() =>
     .filter(a => a.accountType === 'checking')
     .map(a => `${b.name}:${a.accountName}`)))
 
+const cards = computed(() =>
+  (banksResult.value?.allBanks ?? []).flatMap(b => b.creditAccounts.filter(c => c.balance > 0).map(c => c.accountName)))
+
+const { resolveClient } = useApolloClient()
+
 async function save() {
   if (!form.value) return
   saving.value = true
@@ -102,6 +127,10 @@ async function save() {
   if (ok) {
     saved.value = true
     refetch()
+    // Plans and Safe to spend depend on these
+    const cache = resolveClient().cache
+    for (const f of ['dashboardSummary', 'projection', 'alerts', 'paymentPlan', 'paymentInsights']) cache.evict({ fieldName: f })
+    cache.gc()
   }
 }
 </script>

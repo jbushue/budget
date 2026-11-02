@@ -458,12 +458,18 @@ class AccountLinkedBill(Bill):
         # Call the linked account's make_payment
         if amount_paid > 0:
             if self.linked_account_type == 'credit':
-                # Credit accounts handle source withdrawal themselves
-                self.linked_account.make_payment(
-                    amount_paid,
-                    description=f"Bill payment: {self.bill_name}",
-                    transaction_date=payment_date or date.today()
-                )
+                # Each 0% promo gets its share first so it's paid off before it
+                # expires; the rest goes to the regular balance
+                pay = getattr(self.linked_account, "pay_with_promo_plan", None)
+                if pay is not None:
+                    pay(amount_paid, description=f"Bill payment: {self.bill_name}",
+                        transaction_date=payment_date or date.today())
+                else:
+                    self.linked_account.make_payment(
+                        amount_paid,
+                        description=f"Bill payment: {self.bill_name}",
+                        transaction_date=payment_date or date.today()
+                    )
             elif self.linked_account_type == 'mortgage':
                 self.linked_account.make_payment(
                     amount=amount_paid,

@@ -40,6 +40,7 @@ class FinanceManager:
         self.optimization_goal: str = "maximize_discretionary"
         self.target_credit_account: str | None = None
         self.min_hold_days: int = 7  # Min days money stays parked before sweeping
+        self.lookahead_days: int = 90  # how far ahead Safe to spend looks
         self._cached_plan: PaymentPlan | None = None
         self._cached_plan_end: date | None = None
 
@@ -85,6 +86,9 @@ class FinanceManager:
     def apply_settings(self, settings: dict) -> None:
         """Load planning settings (cushion, everyday spending, fees) into the manager."""
         self.cushion = max(0.0, float(settings.get("cushion", 0.0)))
+        self.optimization_goal = settings.get("optimizer_goal") or "maximize_discretionary"
+        self.target_credit_account = settings.get("optimizer_target") or None
+        self.lookahead_days = int(settings.get("lookahead_days") or 90)
         self.fees = {k: float(settings.get(k, 0.0)) for k in ("card_late_fee", "default_late_fee", "overdraft_fee")}
 
         weekly = float(settings.get("everyday_weekly", 0.0))
@@ -434,10 +438,11 @@ class FinanceManager:
             optimizer = PaymentOptimizer(
                 copied_banks, copied_income, copied_bills, copied_groups, **self.sim_options()
             )
+            goal, target = self.plan_goal()
             result, _ = optimizer.run_optimized_simulation(
                 start_date, end_date,
-                optimization_goal=self.optimization_goal,
-                target_credit_account=self.target_credit_account,
+                optimization_goal=goal,
+                target_credit_account=target,
                 min_hold_days=self.min_hold_days,
                 discretionary_buffer=max(300.0, self.cushion),
             )
@@ -527,6 +532,20 @@ class FinanceManager:
 
     # ========== Payment Optimization ==========
 
+    def plan_goal(self) -> tuple[str, str | None]:
+        """
+        (goal, target card) the app's plan follows. "Pay off a card" falls
+        back to "most cash" when its card is gone or already paid off.
+        """
+        goal = self.optimization_goal or "maximize_discretionary"
+        target = self.target_credit_account
+        if goal == "payoff_credit_account":
+            ok = target and any(target in b.credit_accounts and b.credit_accounts[target].balance > 0
+                                for b in self.banks)
+            if not ok:
+                return "maximize_discretionary", None
+        return goal, target if goal == "payoff_credit_account" else None
+
     def set_optimization_strategy(
         self,
         goal: str = "maximize_discretionary",
@@ -557,10 +576,11 @@ class FinanceManager:
                 and self._cached_plan_end == end_date):
             return self._cached_plan
 
+        goal, target = self.plan_goal()
         self._cached_plan = self.optimize_payments(
             end_date=end_date,
-            optimization_goal=self.optimization_goal,
-            target_credit_account=self.target_credit_account
+            optimization_goal=goal,
+            target_credit_account=target
         )
         self._cached_plan_end = end_date
         return self._cached_plan
@@ -591,8 +611,10 @@ class FinanceManager:
         """
         start_date = start_date or date.today()
         end_date = end_date or date.today() + timedelta(days=90)
-        goal = optimization_goal or self.optimization_goal
-        target = target_credit_account or self.target_credit_account
+        if optimization_goal:
+            goal, target = optimization_goal, target_credit_account or self.target_credit_account
+        else:
+            goal, target = self.plan_goal()
 
         copied_banks, copied_income, copied_bills, copied_groups = deepcopy(
             (self.banks, self.income_sources, self.bills, self.bill_groups)
@@ -1101,7 +1123,7 @@ class FinanceManager:
         }
 
     def payment_insights(self, days: int = 90, start_date: date = None,
-                         goal: str = "maximize_discretionary", target_account: str = None) -> dict:
+                         goal: str | None = None, target_account: str = None) -> dict:
         """Plain-language payment recommendations (see models/payment_insights.py)."""
         from models.payment_insights import PaymentInsightsAnalyzer
         return PaymentInsightsAnalyzer(self, start_date=start_date, days=days, goal=goal,

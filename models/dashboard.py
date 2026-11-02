@@ -44,6 +44,39 @@ def _pay_dates(manager, start: date, days: int) -> list[date]:
     return sorted(dates)
 
 
+PARKING = {"SAVINGS_SWEEP": 1, "HELOC_PARK": 1, "SAVINGS_RECALL": -1, "HELOC_RECALL": -1}
+# Early debt payments the optimizer makes with spare cash. Under "most cash"
+# they're optional (spend the money and the plan simply skips them); under
+# the debt-first goals they're the point of the plan.
+OPTIONAL_PAYDOWN = {"EXTRA_CREDIT_PAYMENT": 1, "PROMO_PAYOFF": 1, "EXTRA_DEBT_PAYMENT": 1}
+
+
+def _parked_by_day(cash_flow: list[dict], goal: str = "maximize_discretionary") -> dict:
+    """{date: money the plan moved out of checking that day but that's still yours to use (negative = brought back)}."""
+    kinds = dict(PARKING, **(OPTIONAL_PAYDOWN if goal == "maximize_discretionary" else {}))
+    out: dict = {}
+    for cf in cash_flow:
+        sign = kinds.get(cf.get("type"))
+        if sign:
+            out[cf["date"]] = out.get(cf["date"], 0.0) + sign * abs(cf["amount"])
+    return out
+
+
+def _big_outflows(cash_flow: list[dict], until: date, after: date, limit: int = 3,
+                  goal: str = "maximize_discretionary") -> list[dict]:
+    """The largest payments between ``after`` and ``until`` (what the money is being kept for)."""
+    skip = {"EVERYDAY_SPENDING", "ACCOUNT_SPENDING", *PARKING}
+    if goal == "maximize_discretionary":
+        skip |= set(OPTIONAL_PAYDOWN)
+    pays = [cf for cf in cash_flow
+            if after < cf["date"] <= until and cf.get("amount", 0) < 0
+            and cf.get("type") not in skip
+            and not cf.get("type", "").endswith("ALREADY_PAID")]
+    pays.sort(key=lambda cf: cf["amount"])
+    return [{"name": cf["description"].replace(" (insufficient funds)", ""), "date": cf["date"].isoformat(),
+             "amount": _r(-cf["amount"])} for cf in pays[:limit]]
+
+
 def _next_refill(day: int, today: date) -> date:
     from models.date_utils import is_clamped_day
     d = today
@@ -224,33 +257,47 @@ def build_dashboard(manager, today: date | None = None) -> dict:
     next_payday = paydays[0] if paydays else None
     second_payday = paydays[1] if len(paydays) > 1 else None
     horizon = second_payday or (next_payday + timedelta(days=14) if next_payday else today + timedelta(days=28))
-    days = max(MIN_DAYS, (horizon - today).days + 1)
+    # Look well past the next paycheck: money in checking today may be
+    # needed for a bill (or a promo deadline) weeks away
+    lookahead = int(getattr(manager, "lookahead_days", 90) or 90)
+    days = max(MIN_DAYS, (horizon - today).days + 1, lookahead)
 
+    # The plan the app follows (Settings / Optimizer "Aim for")
     analyzer = PaymentInsightsAnalyzer(manager, start_date=today, days=days)
     insights = analyzer.analyze()
     base = insights["comparison"]["on_due_date"]
     opt = insights["comparison"]["optimized"]
 
-    # ── Safe to spend: lowest checking balance through the horizon ──
+    # ── Safe to spend: lowest checking balance ahead, following the plan ──
+    # Spending a dollar today lowers every later day's balance, so the limit
+    # is the lowest point over the whole look-ahead, not just until payday.
+    # Money the plan only parks (savings sweeps, HELOC parking) still counts
+    # as yours, and so do early debt payments under "most cash"; under the
+    # debt-first goals those payments are spoken for.
     keys = checking_keys(manager.banks)
-    lowest, lowest_date = None, None
-    for snap in analyzer.baseline["snapshots"]:
-        if snap["date"] > horizon:
-            break
-        total = sum(bal for key, bal in snap["balances"].items() if key in keys)
-        if lowest is None or total < lowest:
-            lowest, lowest_date = total, snap["date"]
+    parked_by_day = _parked_by_day(analyzer.optimized["cash_flow"], analyzer.goal)
+    series = []
+    parked = 0.0
+    for snap in analyzer.optimized["snapshots"]:
+        parked += parked_by_day.get(snap["date"], 0.0)
+        series.append((snap["date"], sum(bal for key, bal in snap["balances"].items() if key in keys) + parked))
     checking_now = sum(acc.balance for b in manager.banks for acc in b.get_all_accounts()
                        if acc.account_type.value == "checking")
-    if lowest is None:
-        lowest, lowest_date = checking_now, today
+    if not series:
+        series = [(today, checking_now)]
+    lowest_date, lowest = min(series, key=lambda x: x[1])
+    near = [v for d, v in series if d <= horizon] or [lowest]
+    near_lowest = min(near)
+    # How much of today's money is spoken for by bills after the next paycheck
+    held_for_later = max(0.0, near_lowest - lowest)
+    later_reasons = (_big_outflows(analyzer.optimized["cash_flow"], lowest_date, horizon, goal=analyzer.goal)
+                     if held_for_later > 0.5 else [])
 
     overdue = overdue_bills(manager, today)
     overdue_total = sum(o["amount"] for o in overdue)
-    # Bills that can't be paid on their due date leave their money sitting in
-    # checking in the projection — that money is owed, not spendable.
-    short_total = sum(p["amount"] for p in base["late_payments"]
-                      if date.fromisoformat(p["date"]) <= horizon)
+    # Bills the plan can't pay on time leave their money sitting in checking
+    # in the projection — that money is owed, not spendable.
+    short_total = sum(p["amount"] for p in opt["late_payments"])
     reserves = _goal_reserves(manager)
     cushion = manager.cushion
     safe = max(0.0, lowest - cushion - overdue_total - short_total - reserves)
@@ -280,7 +327,9 @@ def build_dashboard(manager, today: date | None = None) -> dict:
     elif lowest < 0:
         status = "danger"
         title = f"Checking goes negative around {_day(lowest_date)}"
-        detail = "Your everyday spending would overdraw checking before the next paycheck."
+        detail = ("Bills and everyday spending would overdraw checking"
+                  + (" before the next paycheck." if lowest_date <= horizon else
+                     f" — money coming in before then is needed for bills due by {_day(lowest_date)}."))
     elif lowest < cushion:
         status = "warning"
         title = f"All bills covered, but checking gets tight around {_day(lowest_date)}"
@@ -331,6 +380,12 @@ def build_dashboard(manager, today: date | None = None) -> dict:
         "safe_per_day": _r(per_day),
         "lowest_balance": _r(lowest),
         "lowest_date": lowest_date.isoformat() if lowest_date else None,
+        "near_lowest": _r(near_lowest),
+        "held_for_later": _r(held_for_later),
+        "held_for": later_reasons,
+        "lookahead_days": days,
+        "plan_goal": analyzer.goal,
+        "plan_target": analyzer.target_account,
         "checking_now": _r(checking_now),
         "cushion": _r(cushion),
         "overdue_total": _r(overdue_total),
@@ -344,5 +399,6 @@ def build_dashboard(manager, today: date | None = None) -> dict:
         "bills_this_period": checklist,
         "upcoming_income": income,
         "insights": insights["insights"][:3],
+        "promos": insights["promos"],
         "headline": insights["headline"],
     }

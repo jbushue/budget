@@ -689,7 +689,8 @@ class TimelineSimulator:
                 self._balance_tracker[key] = (total + bal, days + 1)
 
             # Create snapshot for this date
-            snapshot = {"date": current_date, "balances": {}, "credit_balances": {}, "mortgage_balances": {}, "heloc_balances": {}}
+            snapshot = {"date": current_date, "balances": {}, "credit_balances": {}, "mortgage_balances": {},
+                        "heloc_balances": {}, "promo_balances": {}}
             for bank in self.banks:
                 for account in bank.get_all_accounts():
                     key = f"{bank.name}:{account.account_name}"
@@ -697,6 +698,8 @@ class TimelineSimulator:
                 for credit in bank.get_all_credit_accounts():
                     key = f"{bank.name}:{credit.account_name}"
                     snapshot["credit_balances"][key] = credit.balance
+                    for promo_name, bal in credit.promo_balance.items():
+                        snapshot["promo_balances"][f"{key}:{promo_name}"] = bal
                 for mortgage in bank.get_all_mortgage_accounts():
                     key = f"{bank.name}:{mortgage.account_name}"
                     snapshot["mortgage_balances"][key] = mortgage.current_principal
@@ -1285,7 +1288,8 @@ class TimelineSimulator:
         if not src_bank or event.from_account not in src_bank.accounts:
             return
         src = src_bank.accounts[event.from_account]
-        left = round(min(event.amount, max(0.0, src.balance)), 2)
+        # never round up past what's actually in the account
+        left = min(round(event.amount, 2), max(0.0, src.balance))
         strategy = event.to_account
         while left > 0.005:
             debts = self._debts()
@@ -1298,7 +1302,7 @@ class TimelineSimulator:
             if not debts:
                 break
             kind, bank, name, acct, balance, _ = debts[0]
-            pay = min(round(min(left, balance), 2), balance)
+            pay = min(round(min(left, balance), 2), balance, src.balance)
             if pay <= 0:
                 break
             src.withdraw(pay, description=f"Extra payment to {name}", transaction_date=current_date)

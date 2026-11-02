@@ -25,7 +25,7 @@ def make_manager(checking=1500.0, card=3000.0, car_day=14):
     bank.credit_accounts["Visa"].balance = card
     bank.credit_accounts["Visa"].regular_balance = card
     income = [IncomeSource("Job", 2600.0, IncomeFrequency.MONTHLY, pay_date=[15], distribution={"Checking": "remainder"})]
-    bills = [Bill("Rent", 1300.0, 1, BillFrequency.MONTHLY), Bill("Car", 450.0, car_day, BillFrequency.MONTHLY)]
+    bills = [Bill("Rent", 1300.0, 1, frequency=BillFrequency.MONTHLY), Bill("Car", 450.0, car_day, frequency=BillFrequency.MONTHLY)]
     m = FinanceManager([bank], income, bills)
     m._ensure_linked_bills()
     m.cushion = 100.0
@@ -157,3 +157,17 @@ class TestDigest:
         msg = sent[0]
         types = [part.get_content_type() for part in msg.iter_parts()]
         assert types == ["text/plain", "text/html"]
+
+
+def test_extra_payment_never_overdraws_by_rounding():
+    from datetime import timedelta
+    from models.timeline_simulator import TimelineEvent, TimelineSimulator
+    bank = Bank("B")
+    bank.add_account("checking", "Checking", 2099.998064516129)
+    bank.add_credit_account("Visa", 8000.0, 24.0)
+    bank.credit_accounts["Visa"].balance = bank.credit_accounts["Visa"].regular_balance = 5000.0
+    d = date.today()
+    ev = TimelineEvent(event_date=d, event_type="EXTRA_DEBT_PAYMENT", amount=2100.0, description="x",
+                       from_bank="B", from_account="Checking", to_account="(avalanche)")
+    TimelineSimulator([bank], [], []).project_balances(d, d + timedelta(days=1), injected_events={d: [ev]})
+    assert bank.accounts["Checking"].balance >= 0

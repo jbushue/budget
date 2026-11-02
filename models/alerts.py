@@ -83,6 +83,14 @@ def build_alerts(manager, today: date | None = None, include_dismissed: bool = F
                 f"{_money(b['amount'])}" + (f" from {b['source_account']}" if b.get("source_account") else ""),
                 "/bills", due)
 
+    for pr in dash.get("promos", []):
+        if pr.get("on_track") is False:
+            exp = date.fromisoformat(pr["expires"])
+            add(f"promo:{pr['card']}:{pr['promo_name']}:{pr['expires']}", "danger",
+                f"{pr['promo_name']} won't be paid off before it ends",
+                f"{_money(pr['shortfall'])} short by {exp:%b} {exp.day} on {pr['card']} — about "
+                f"{_money(pr['interest_at_risk'])} in deferred interest", "/optimizer", exp)
+
     if settings["alert_low_balance"] and dash.get("lowest_date"):
         lowest, cushion = dash["lowest_balance"], dash["cushion"]
         if lowest < cushion:

@@ -51,7 +51,9 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
   - which payments are worth making early on payday (and how much that saves) — and which aren't
   - how a loan group's payment is split, and what aiming it at the highest rate or paying a little more would save
   - which 0% promos are on track before they expire
-  - and lets you choose the goal — **most cash**, **least interest**, or **pay off one card** — and compare all three side by side
+  - and lets you choose the goal — **most cash**, **least interest**, or **pay off one card** — and compare all three side by side. The chosen goal is **the plan the whole app follows**: dashboard, bills checklist, timeline, alerts and the digest
+  - **0% promos are paid off on time**: every card payment gives each promo its share first, so it's cleared by the payment before it expires; promos that can't be cleared raise an alert
+  - **Safe to spend looks ahead** (90 days by default) and holds back money needed for bills after your next paycheck, plus anything the plan can't pay on time
   - **Pay down debt faster**: searches for the most you can put toward debt each month without checking ever dropping below your cushion or a bill going late (every amount is simulated), sends it highest-interest-first or smallest-first, and shows the interest saved and payoff dates
   - **Better due dates**: finds bills due at the wrong time for your paydays and the day to ask the company to move them to
   - **When can I buy it?**: how much you could spend on each day ahead, and the earliest day a purchase fits

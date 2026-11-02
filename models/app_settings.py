@@ -22,6 +22,12 @@ DEFAULTS: dict = {
     "everyday_weekly": 0.0,
     # "Bank:Account" the everyday spending comes out of ("" = main checking)
     "spending_account": "",
+    # The plan the whole app follows (dashboard, bills, timeline, alerts, digest):
+    # maximize_discretionary | minimize_interest | payoff_credit_account
+    "optimizer_goal": "maximize_discretionary",
+    "optimizer_target": "",     # card for payoff_credit_account
+    # How far ahead Safe to spend looks for bills it must leave money for
+    "lookahead_days": 90,
     # ── Fees ──────────────────────────────────────────────────────────
     "card_late_fee": 30.0,      # credit card / HELOC payment made late
     "default_late_fee": 0.0,    # other bills without their own late fee
@@ -69,6 +75,7 @@ DEFAULTS: dict = {
 }
 
 SPENDING_MODES = ("manual", "learned")
+OPTIMIZER_GOALS = ("maximize_discretionary", "minimize_interest", "payoff_credit_account")
 # Settings never sent to the browser
 SECRET_KEYS = {"password_hash", "smtp_password", "ntfy_token"}
 PUSH_SEVERITIES = ("warning", "danger")
@@ -97,6 +104,10 @@ def _validate(key: str, value):
         raise ValueError(f"{key.replace('_', ' ')} can't be negative")
     if key == "spending_mode" and value not in SPENDING_MODES:
         raise ValueError(f"spending_mode must be one of {', '.join(SPENDING_MODES)}")
+    if key == "optimizer_goal" and value not in OPTIMIZER_GOALS:
+        raise ValueError(f"optimizer_goal must be one of {', '.join(OPTIMIZER_GOALS)}")
+    if key == "lookahead_days" and not 30 <= value <= 365:
+        raise ValueError("look ahead between 30 and 365 days")
     if key == "alert_days_before_due" and not 0 <= value <= 30:
         raise ValueError("alert days before due must be between 0 and 30")
     if key == "spending_account" and value and ":" not in value:

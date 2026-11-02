@@ -41,7 +41,7 @@ class TestKinds:
         bank.add_account("ebt", "Food", 900.0)
         bank.add_account("checking", "Checking", 50.0)
         today = date.today()
-        bill = Bill("Rent", 400.0, (today + timedelta(days=2)).day, BillFrequency.MONTHLY)
+        bill = Bill("Rent", 400.0, (today + timedelta(days=2)).day, frequency=BillFrequency.MONTHLY)
         result = _sim(bank, [bill]).project_balances(today, today + timedelta(days=5))
         assert bank.accounts["Food"].balance == 900.0
         assert any(cf["type"] == "BILL_DEFERRED" for cf in result["cash_flow"])

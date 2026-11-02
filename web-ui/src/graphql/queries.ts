@@ -630,6 +630,7 @@ export const GET_DASHBOARD_SUMMARY = gql`
       safeToSpend safePerDay lowestBalance lowestDate checkingNow cushion
       overdueTotal shortTotal goalReserves everydayWeekly spendingMode
       nextPayday horizon coveredThrough headline otherMoney
+      nearLowest heldForLater heldFor lookaheadDays planGoal planTarget
       billsThisPeriod { name billName kind dueDate amount status shortBy daysOverdue sourceAccount }
       upcomingIncome { date name amount }
       insights { severity category title detail impact date }

@@ -108,6 +108,12 @@ class DashboardSummaryType(graphene.ObjectType):
     insights = graphene.List(DashboardInsightType)
     headline = graphene.String()
     other_money = graphene.JSONString(description="Benefits, other cash, savings and investments outside checking")
+    near_lowest = graphene.Float(description="Lowest checking before the second paycheck")
+    held_for_later = graphene.Float(description="Money kept for bills after the next paycheck")
+    held_for = graphene.JSONString(description="The biggest payments that money is kept for")
+    lookahead_days = graphene.Int()
+    plan_goal = graphene.String(description="The plan the app follows")
+    plan_target = graphene.String()
 
 
 # ─────────────────────────────────────────────────────────────────────────
