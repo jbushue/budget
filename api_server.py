@@ -23,7 +23,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from models.graphql_schema import schema
 from models.finance_manager import FinanceManager
-from models import activity, auth, jobs, web_routes
+from models import activity, auth, jobs, plan, web_routes
 
 
 def create_app():
@@ -213,6 +213,11 @@ if __name__ == '__main__':
 
     if not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         jobs.start(app)  # backups, SimpleFIN sync, digest, push, daily maintenance
+    # Work out the plan in the background while the server starts, so the
+    # first page doesn't wait for it. (Not after every change: a busy
+    # background thread slows every other request down.)
+    with app.config['BUDGET_LOCK']:
+        plan.warm(app.config['BUDGET_STATE']['manager'])
     if debug:
         app.run(debug=True, host=host, port=port)
     else:

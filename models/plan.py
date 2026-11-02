@@ -16,12 +16,17 @@ they both show:
 The optimizer judges a plan by where it leaves you at the end of its window,
 so running it over different windows used to give different plans for the
 same days. One fixed window removes that.
+
+``warm(manager)`` starts working out the plan in the background (at server
+start), from a copy of the data, so the first page that needs the plan finds
+it ready or waits only for that run.
 """
 
 from __future__ import annotations
 
 import hashlib
 import pickle
+import threading
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -57,42 +62,109 @@ def floor(manager) -> float:
     return max(0.0, float(getattr(manager, "cushion", 0.0) or 0.0))
 
 
-def plan_runs(manager, goal: str | None = None, target: str | None = None,
-              start: date | None = None, days: int = PLAN_DAYS) -> PlanRuns:
-    """
-    Both runs for ``goal`` (default: the plan the app follows), cached.
-    Callers must treat the results as read-only.
-    """
-    from models.payment_optimizer import PaymentOptimizer
-    from models.timeline_simulator import TimelineSimulator
-
+def _request(manager, goal, target, start, days):
+    """(goal, target, start, days, cache key) with the defaults filled in."""
     if goal is None:
         goal, target = manager.plan_goal()
     if goal != "payoff_credit_account":
         target = None
     start = start or date.today()
     days = max(PLAN_DAYS, int(days))
-    key = _fingerprint(manager, goal, target, start, days)
-    cache = manager.__dict__.setdefault("_plan_runs", {})
-    if key in cache:
-        cache[key] = cache.pop(key)  # most recently used last
-        return cache[key]
+    return goal, target, start, days, _fingerprint(manager, goal, target, start, days)
 
+
+def _job(manager, goal, target, start, days):
+    """Copy what the runs need (under the caller's lock) and return a function
+    that does the slow part, which only touches the copies."""
+    from models.payment_optimizer import PaymentOptimizer
+    from models.timeline_simulator import TimelineSimulator
+
+    state = (manager.banks, manager.income_sources, manager.bills, manager.bill_groups)
+    base_copy, plan_copy = deepcopy(state), deepcopy(state)
+    options = manager.sim_options()
+    buffer = floor(manager)
+    hold = getattr(manager, "min_hold_days", 7)
     end = start + timedelta(days=days)
-    banks, income, bills, groups = deepcopy((manager.banks, manager.income_sources, manager.bills,
-                                             manager.bill_groups))
-    baseline = TimelineSimulator(banks, income, bills, groups, **manager.sim_options()).project_balances(start, end)
-    banks, income, bills, groups = deepcopy((manager.banks, manager.income_sources, manager.bills,
-                                             manager.bill_groups))
-    optimizer = PaymentOptimizer(banks, income, bills, groups, **manager.sim_options())
-    optimized, summary = optimizer.run_optimized_simulation(
-        start, end, goal, target, discretionary_buffer=floor(manager),
-        min_hold_days=getattr(manager, "min_hold_days", 7))
-    runs = PlanRuns(start, end, goal, target, baseline, optimized, summary)
+
+    def run() -> PlanRuns:
+        baseline = TimelineSimulator(*base_copy, **options).project_balances(start, end)
+        optimizer = PaymentOptimizer(*plan_copy, **options)
+        optimized, summary = optimizer.run_optimized_simulation(
+            start, end, goal, target, discretionary_buffer=buffer, min_hold_days=hold)
+        return PlanRuns(start, end, goal, target, baseline, optimized, summary)
+    return run
+
+
+def _store(manager, key: str, runs: PlanRuns) -> None:
+    cache = manager.__dict__.setdefault("_plan_runs", {})
     cache[key] = runs
     while len(cache) > _KEEP:
         cache.pop(next(iter(cache)))
+
+
+# Background runs in progress: cache key -> set once the run is stored
+_inflight: dict[str, threading.Event] = {}
+_inflight_lock = threading.Lock()
+
+
+def plan_runs(manager, goal: str | None = None, target: str | None = None,
+              start: date | None = None, days: int = PLAN_DAYS) -> PlanRuns:
+    """
+    Both runs for ``goal`` (default: the plan the app follows), cached.
+    Callers must treat the results as read-only.
+    """
+    goal, target, start, days, key = _request(manager, goal, target, start, days)
+    cache = manager.__dict__.setdefault("_plan_runs", {})
+    if key not in cache:
+        with _inflight_lock:
+            pending = _inflight.get(key)
+        if pending is not None:
+            pending.wait(timeout=120)  # warm() is already working it out
+    if key in cache:
+        cache[key] = cache.pop(key)  # most recently used last
+        return cache[key]
+    runs = _job(manager, goal, target, start, days)()
+    _store(manager, key, runs)
     return runs
+
+
+def warm(manager) -> threading.Thread | None:
+    """
+    Start working out the plan in a background thread, unless it's cached or
+    already being worked out. Call with the manager's lock held (the data is
+    copied before this returns); the lock isn't needed while it runs.
+    """
+    key = None
+    try:
+        goal, target, start, days, key = _request(manager, None, None, None, PLAN_DAYS)
+        if key in manager.__dict__.get("_plan_runs", {}):
+            return None
+        with _inflight_lock:
+            if key in _inflight:
+                return None
+            done = _inflight[key] = threading.Event()
+        run = _job(manager, goal, target, start, days)
+    except Exception as e:  # the next page works it out itself (and shows any error)
+        print(f"⚠️  Couldn't start working out the plan: {e}")
+        with _inflight_lock:
+            pending = _inflight.pop(key, None)
+        if pending is not None:
+            pending.set()
+        return None
+
+    def work():
+        try:
+            _store(manager, key, run())
+        except Exception as e:
+            print(f"⚠️  Couldn't work out the plan in the background: {e}")
+        finally:
+            with _inflight_lock:
+                _inflight.pop(key, None)
+            done.set()
+
+    thread = threading.Thread(target=work, name="plan-warm", daemon=True)
+    thread.start()
+    return thread
 
 
 def invalidate(manager) -> None:

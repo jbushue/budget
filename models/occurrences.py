@@ -14,10 +14,14 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from .types import BillFrequency
+
 # Statuses that mean nothing more is owed for that due date
 SETTLED = ("paid", "skipped", "none")
 # Furthest a payment can be recorded ahead (matches the longest plan)
 AHEAD_DAYS = 365
+# Frequencies whose due dates are identified by the exact date, not the month
+_EXACT = frozenset((BillFrequency.WEEKLY, BillFrequency.BIWEEKLY, BillFrequency.ONCE))
 
 
 def _as_date(value) -> date | None:
@@ -61,15 +65,17 @@ def period(bill, day: date):
     moving the due day keeps the month paid), the exact date for weekly,
     biweekly and one-time bills.
     """
-    from .types import BillFrequency
-    if getattr(bill, "frequency", None) in (BillFrequency.WEEKLY, BillFrequency.BIWEEKLY, BillFrequency.ONCE):
+    if getattr(bill, "frequency", None) in _EXACT:
         return day
     return (day.year, day.month)
 
 
 def is_skipped(bill, due: date) -> bool:
+    days = skipped(bill)
+    if not days:
+        return False
     key = period(bill, due)
-    return any(period(bill, d) == key for d in skipped(bill))
+    return any(period(bill, d) == key for d in days)
 
 
 def actual_for(bill, due: date) -> float | None:
@@ -119,9 +125,46 @@ def next_due(bill, on_or_after: date) -> date | None:
     return None if nd == date.max else nd
 
 
+# Payment history grouped by period, per history list. A plan asks about the
+# same few histories hundreds of thousands of times, so the grouping is kept:
+# new payments appended to the list are added to it, anything else (removed
+# or replaced entries) rebuilds it. The cache holds the list itself, so its
+# id can't be reused while cached.
+_by_period_cache: dict[int, tuple] = {}
+
+
+def _add_entries(index: dict, entries, exact: bool) -> None:
+    for e in entries:
+        d = due_of(e)
+        if d:
+            index.setdefault(d if exact else (d.year, d.month), []).append(e)
+
+
+def _by_period(bill) -> dict:
+    hist = history(bill)
+    if not hist:
+        return {}
+    exact = getattr(bill, "frequency", None) in _EXACT
+    size = len(hist)
+    hit = _by_period_cache.get(id(hist))
+    if hit is not None and hit[0] is hist and hit[2] == exact:
+        seen, index = hit[1], hit[4]
+        if seen == size and hit[3] is hist[-1]:
+            return index
+        if seen < size and hist[seen - 1] is hit[3]:  # only appended to
+            _add_entries(index, hist[seen:], exact)
+            _by_period_cache[id(hist)] = (hist, size, exact, hist[-1], index)
+            return index
+    index: dict = {}
+    _add_entries(index, hist, exact)
+    if len(_by_period_cache) > 512:
+        _by_period_cache.clear()
+    _by_period_cache[id(hist)] = (hist, size, exact, hist[-1], index)
+    return index
+
+
 def payments_for(bill, due: date) -> list[dict]:
-    key = period(bill, due)
-    return [e for e in history(bill) if due_of(e) and period(bill, due_of(e)) == key]
+    return list(_by_period(bill).get(period(bill, due), ()))
 
 
 def paid_amount(bill, due: date) -> float:
@@ -258,6 +301,7 @@ def assign_legacy(bill) -> bool:
         else:
             e["due"] = next_due(bill, day) or day
         taken.add(e["due"])
+    _by_period_cache.pop(id(entries), None)
     return True
 
 
@@ -268,7 +312,6 @@ def pin_anchor(bill) -> bool:
     without a start date, quarterly/yearly ones without a due month), so its
     due dates are the same every time. Returns True if it changed.
     """
-    from .types import BillFrequency
     from .date_utils import add_months, clamped_date
     if getattr(bill, "start_date", None) is not None or getattr(bill, "linked_group", None) is not None:
         return False

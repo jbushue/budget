@@ -117,3 +117,37 @@ def test_timeline_totals_add_up_and_net_worth_has_assets(client):  # noqa: F811
     assert p["totalIncome"] - p["totalExpenses"] == pytest.approx(p["netChange"], abs=0.01)
     assert p["netFinalBalance"] == pytest.approx(p["totalFinalBalance"] + p["otherAssets"], abs=0.01)
     assert p["planGoal"] == "maximize_discretionary"
+
+
+def test_background_plan_matches_and_is_reused(monkeypatch):
+    """warm() works the plan out in the background; the next page uses it."""
+    m = manager()
+    expected = plan.plan_runs(manager()).optimized["final_balances"]
+    thread = plan.warm(m)
+    assert thread is not None
+    assert plan.warm(m) is None  # already being worked out
+    thread.join(timeout=60)
+    from models import payment_optimizer
+    monkeypatch.setattr(payment_optimizer.PaymentOptimizer, "run_optimized_simulation",
+                        lambda *a, **k: pytest.fail("the plan was worked out again"))
+    assert plan.plan_runs(m).optimized["final_balances"] == expected
+    assert plan.warm(m) is None  # cached
+
+
+def test_page_waits_for_a_background_plan_instead_of_redoing_it(monkeypatch):
+    import threading
+    m = manager()
+    from models import payment_optimizer
+    orig = payment_optimizer.PaymentOptimizer.run_optimized_simulation
+    release, calls = threading.Event(), []
+
+    def slow(self, *a, **k):
+        calls.append(1)
+        release.wait(timeout=30)
+        return orig(self, *a, **k)
+    monkeypatch.setattr(payment_optimizer.PaymentOptimizer, "run_optimized_simulation", slow)
+    thread = plan.warm(m)
+    threading.Timer(0.2, release.set).start()
+    runs = plan.plan_runs(m)  # waits for the background run
+    thread.join(timeout=60)
+    assert len(calls) == 1 and runs is plan.plan_runs(m)

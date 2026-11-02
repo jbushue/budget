@@ -504,16 +504,46 @@ const totalDebt = computed(() => {
 const accountColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16']
 const debtColors = ['#ef4444', '#f97316', '#ec4899', '#dc2626', '#ea580c', '#db2777']
 
+type Balances = Record<string, number>
+interface ParsedSnapshot {
+  date: string
+  balances: Balances
+  creditBalances: Balances
+  mortgageBalances: Balances
+  helocBalances: Balances
+  total: number
+  netTotal: number
+  debt: number
+}
+
+const asBalances = (v: unknown): Balances => (typeof v === 'string' ? JSON.parse(v) : (v as Balances)) || {}
+const sumOf = (b: Balances) => { let t = 0; for (const k in b) t += Number(b[k]) || 0; return t }
+
+// Every snapshot parsed once; the chart, calendar and day details all read these
+const parsedSnapshots = computed<ParsedSnapshot[]>(() => (proj.value?.snapshots ?? []).map(s => {
+  const creditBalances = asBalances(s.creditBalances)
+  const mortgageBalances = asBalances(s.mortgageBalances)
+  const helocBalances = asBalances(s.helocBalances)
+  return {
+    date: s.date,
+    balances: asBalances(s.balances),
+    creditBalances, mortgageBalances, helocBalances,
+    total: s.total,
+    netTotal: s.netTotal ?? s.total,
+    debt: sumOf(creditBalances) + sumOf(mortgageBalances) + sumOf(helocBalances),
+  }
+}))
+
 const chartData = computed(() => {
-  if (!proj.value) return { labels: [], datasets: [] }
-  const snaps = proj.value.snapshots
+  const snaps = parsedSnapshots.value
+  if (!snaps.length) return { labels: [], datasets: [] }
   const step = Math.max(1, Math.floor(snaps.length / 60))
   const sampled = snaps.filter((_, i) => i % step === 0 || i === snaps.length - 1)
 
   const datasets: any[] = [
     {
       label: 'Net worth',
-      data: sampled.map(s => s.netTotal ?? s.total),
+      data: sampled.map(s => s.netTotal),
       borderColor: '#3b82f6',
       backgroundColor: 'rgba(59,130,246,0.08)',
       fill: true,
@@ -534,28 +564,13 @@ const chartData = computed(() => {
   ]
 
   // Add aggregate debt line if any debt exists
-  const hasDebt = sampled.some(s => {
-    const credit = typeof s.creditBalances === 'string' ? JSON.parse(s.creditBalances) : (s.creditBalances || {})
-    const mortgage = typeof s.mortgageBalances === 'string' ? JSON.parse(s.mortgageBalances) : (s.mortgageBalances || {})
-    const heloc = typeof s.helocBalances === 'string' ? JSON.parse(s.helocBalances) : (s.helocBalances || {})
-    return Object.values(credit).some(v => (v as number) > 0)
-      || Object.values(mortgage).some(v => (v as number) > 0)
-      || Object.values(heloc).some(v => (v as number) > 0)
-  })
+  const positive = (b: Balances) => Object.values(b).some(v => v > 0)
+  const hasDebt = sampled.some(s => positive(s.creditBalances) || positive(s.mortgageBalances) || positive(s.helocBalances))
 
   if (hasDebt) {
     datasets.push({
       label: 'Total Debt',
-      data: sampled.map(s => {
-        const credit = typeof s.creditBalances === 'string' ? JSON.parse(s.creditBalances) : (s.creditBalances || {})
-        const mortgage = typeof s.mortgageBalances === 'string' ? JSON.parse(s.mortgageBalances) : (s.mortgageBalances || {})
-        const heloc = typeof s.helocBalances === 'string' ? JSON.parse(s.helocBalances) : (s.helocBalances || {})
-        return -(
-          Object.values(credit).reduce((a, b) => (a as number) + (b as number), 0) as number
-          + (Object.values(mortgage).reduce((a, b) => (a as number) + (b as number), 0) as number)
-          + (Object.values(heloc).reduce((a, b) => (a as number) + (b as number), 0) as number)
-        )
-      }),
+      data: sampled.map(s => -s.debt),
       borderColor: '#ef4444',
       borderDash: [6, 3],
       tension: 0.3,
@@ -568,18 +583,10 @@ const chartData = computed(() => {
   // Add per-account lines if enabled
   if (showPerAccount.value && sampled.length > 0) {
     // Bank account lines
-    const firstBalances = typeof sampled[0].balances === 'string'
-      ? JSON.parse(sampled[0].balances)
-      : sampled[0].balances
-    const accountKeys = Object.keys(firstBalances || {})
-
-    accountKeys.forEach((key, idx) => {
+    Object.keys(sampled[0].balances).forEach((key, idx) => {
       datasets.push({
         label: key.replace(':', ' / '),
-        data: sampled.map(s => {
-          const bals = typeof s.balances === 'string' ? JSON.parse(s.balances) : s.balances
-          return bals?.[key] ?? 0
-        }),
+        data: sampled.map(s => s.balances[key] ?? 0),
         borderColor: accountColors[idx % accountColors.length],
         borderDash: [4, 2],
         tension: 0.3,
@@ -590,23 +597,12 @@ const chartData = computed(() => {
     })
 
     // Credit card lines (shown as negative)
-    const firstCredit = typeof sampled[0].creditBalances === 'string'
-      ? JSON.parse(sampled[0].creditBalances)
-      : (sampled[0].creditBalances || {})
-    const creditKeys = Object.keys(firstCredit).filter(k => {
-      return sampled.some(s => {
-        const cb = typeof s.creditBalances === 'string' ? JSON.parse(s.creditBalances) : (s.creditBalances || {})
-        return (cb[k] || 0) > 0
-      })
-    })
-
+    const creditKeys = Object.keys(sampled[0].creditBalances)
+      .filter(k => sampled.some(s => (s.creditBalances[k] || 0) > 0))
     creditKeys.forEach((key, idx) => {
       datasets.push({
         label: key.replace(':', ' / '),
-        data: sampled.map(s => {
-          const cb = typeof s.creditBalances === 'string' ? JSON.parse(s.creditBalances) : (s.creditBalances || {})
-          return -(cb[key] || 0)
-        }),
+        data: sampled.map(s => -(s.creditBalances[key] || 0)),
         borderColor: debtColors[idx % debtColors.length],
         borderDash: [2, 2],
         tension: 0.3,
@@ -617,23 +613,12 @@ const chartData = computed(() => {
     })
 
     // HELOC lines (shown as negative)
-    const firstHeloc = typeof sampled[0].helocBalances === 'string'
-      ? JSON.parse(sampled[0].helocBalances)
-      : (sampled[0].helocBalances || {})
-    const helocKeys = Object.keys(firstHeloc).filter(k => {
-      return sampled.some(s => {
-        const hb = typeof s.helocBalances === 'string' ? JSON.parse(s.helocBalances) : (s.helocBalances || {})
-        return (hb[k] || 0) > 0
-      })
-    })
-
+    const helocKeys = Object.keys(sampled[0].helocBalances)
+      .filter(k => sampled.some(s => (s.helocBalances[k] || 0) > 0))
     helocKeys.forEach((key, idx) => {
       datasets.push({
         label: key.replace(':', ' / '),
-        data: sampled.map(s => {
-          const hb = typeof s.helocBalances === 'string' ? JSON.parse(s.helocBalances) : (s.helocBalances || {})
-          return -(hb[key] || 0)
-        }),
+        data: sampled.map(s => -(s.helocBalances[key] || 0)),
         borderColor: debtColors[(creditKeys.length + idx) % debtColors.length],
         borderDash: [2, 2],
         tension: 0.3,
@@ -698,21 +683,7 @@ const calendarDaysMap = computed(() => {
 })
 
 // Also build a snapshot map for days without events (to show balances)
-const snapshotMap = computed(() => {
-  const map = new Map<string, { balances: Record<string, number>, creditBalances: Record<string, number>, mortgageBalances: Record<string, number>, helocBalances: Record<string, number>, total: number, netTotal: number }>()
-  if (!proj.value?.snapshots) return map
-  for (const snap of proj.value.snapshots) {
-    map.set(snap.date, {
-      balances: typeof snap.balances === 'string' ? JSON.parse(snap.balances) : snap.balances,
-      creditBalances: typeof snap.creditBalances === 'string' ? JSON.parse(snap.creditBalances) : (snap.creditBalances || {}),
-      mortgageBalances: typeof snap.mortgageBalances === 'string' ? JSON.parse(snap.mortgageBalances) : (snap.mortgageBalances || {}),
-      helocBalances: typeof snap.helocBalances === 'string' ? JSON.parse(snap.helocBalances) : (snap.helocBalances || {}),
-      total: snap.total,
-      netTotal: snap.netTotal ?? snap.total,
-    })
-  }
-  return map
-})
+const snapshotMap = computed(() => new Map(parsedSnapshots.value.map(s => [s.date, s])))
 
 // Build calendar grid cells
 interface CalendarCell {

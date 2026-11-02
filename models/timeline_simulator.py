@@ -6,7 +6,7 @@ from models.fixed_bill import Bill, AccountLinkedBill, FloatingBill, GroupLinked
 from models import occurrences as occ
 from models.bill_group import BillGroup
 from models.income_source import IncomeSource
-from models.date_utils import add_months, clamped_date, is_clamped_day
+from models.date_utils import add_months, clamped_date, is_clamped_day, monthly_days
 from models.types import account_kind, pays_bills, PURPOSE_LABELS
 
 
@@ -33,6 +33,8 @@ class TimelineEvent:
     # BILL_DUE / BILL_GROUP_PAYMENT: the due date being paid (set for overdue ones
     # paid on the first day; otherwise it's the event's own date)
     due: date = None
+    # BILL_DUE / BILL_GROUP_PAYMENT: the bill itself (no search by name)
+    bill: object = None
 
     def __lt__(self, other):
         """Enable sorting by date."""
@@ -127,22 +129,19 @@ class TimelineSimulator:
                         account_name=bill.preferred_source_account or "(unassigned)",
                         bank_name=bill.preferred_source_bank or "(unassigned)",
                         due=due,
+                        bill=bill,
                     ))
 
-        # Pre-calculate all income pay dates in the range using get_pay_dates_in_range
-        income_pay_dates = {}
+        # Events are generated per source (each income, bill, account) for the
+        # whole window at once, rather than asking every source about every
+        # day. The stable sort below keeps the same order within a day: income,
+        # bills (in bill order), refills, then interest bank by bank.
+        events = self.events
         for income in self.income_sources:
-            pay_dates = income.get_pay_dates_in_range(start_date - timedelta(days=1), end_date)
-            income_pay_dates[income.source_name] = set(pay_dates)
-        
-        current_date = start_date
-
-        while current_date <= end_date:
-            # Check for income deposits on this day
-            for income in self.income_sources:
-                if current_date in income_pay_dates.get(income.source_name, set()):
-                    self.events.append(TimelineEvent(
-                        event_date=current_date,
+            for pay_day in sorted(set(income.get_pay_dates_in_range(start_date - timedelta(days=1), end_date))):
+                if start_date <= pay_day <= end_date:
+                    events.append(TimelineEvent(
+                        event_date=pay_day,
                         event_type="INCOME",
                         amount=income.amount,
                         description=f"Income: {income.source_name}",
@@ -150,39 +149,34 @@ class TimelineSimulator:
                         bank_name="(multiple)"
                     ))
 
-            # Check for bill payments on this day — covers ALL bill types
-            # including AccountLinkedBill for credit/mortgage/HELOC
-            # and GroupLinkedBill for bill groups
-            for bill in self.bills:
-                # Skip linked credit bills whose account is in a bill group
-                if self._grouped_card(bill):
-                    continue
-                # Cards and HELOCs at $0 today still get their payment days: the
-                # plan may charge or draw on them later (a $0 payment is skipped
-                # when the day comes)
+        # Bill payments — covers ALL bill types including AccountLinkedBill for
+        # credit/mortgage/HELOC and GroupLinkedBill for bill groups. Cards and
+        # HELOCs at $0 today still get their payment days: the plan may charge
+        # or draw on them later (a $0 payment is skipped when the day comes).
+        for bill in self.bills:
+            if self._grouped_card(bill):
+                continue  # its bill group pays it
+            # Use BILL_GROUP_PAYMENT event type for group-linked bills
+            event_type = "BILL_GROUP_PAYMENT" if isinstance(bill, GroupLinkedBill) else "BILL_DUE"
+            for due in occ.due_dates(bill, start_date, end_date):
+                events.append(TimelineEvent(
+                    event_date=due,
+                    event_type=event_type,
+                    # Resolve dynamic (linked) amounts as of the simulated date
+                    amount=bill.amount_on(due),
+                    description=f"Bill: {bill.bill_name}",
+                    account_name=bill.preferred_source_account or "(unassigned)",
+                    bank_name=bill.preferred_source_bank or "(unassigned)",
+                    bill=bill,
+                ))
 
-                next_due = bill.get_next_due_date(current_date - timedelta(days=1))
-                if next_due == current_date:
-                    # Use BILL_GROUP_PAYMENT event type for group-linked bills
-                    event_type = "BILL_GROUP_PAYMENT" if isinstance(bill, GroupLinkedBill) else "BILL_DUE"
-                    self.events.append(TimelineEvent(
-                        event_date=current_date,
-                        event_type=event_type,
-                        # Resolve dynamic (linked) amounts as of the simulated date
-                        amount=bill.amount_on(current_date),
-                        description=f"Bill: {bill.bill_name}",
-                        account_name=bill.preferred_source_account or "(unassigned)",
-                        bank_name=bill.preferred_source_bank or "(unassigned)"
-                    ))
-
-
-            # Monthly refills (EBT benefits, HSA contributions) land on their day
-            for bank in self.banks:
-                for account in bank.get_all_accounts():
-                    if (getattr(account, "refill_amount", 0) > 0 and account.refill_day
-                            and is_clamped_day(current_date, account.refill_day)):
-                        self.events.append(TimelineEvent(
-                            event_date=current_date,
+        # Monthly refills (EBT benefits, HSA contributions) land on their day
+        for bank in self.banks:
+            for account in bank.get_all_accounts():
+                if getattr(account, "refill_amount", 0) > 0 and account.refill_day:
+                    for day in monthly_days(start_date, end_date, account.refill_day):
+                        events.append(TimelineEvent(
+                            event_date=day,
                             event_type="ACCOUNT_REFILL",
                             amount=account.refill_amount,
                             description=f"Refill: {account.account_name}",
@@ -190,63 +184,60 @@ class TimelineSimulator:
                             bank_name=bank.name,
                         ))
 
-            # Check for interest accrual on this day
-            # Accrual days are clamped to the month length (day 31 accrues on
-            # Feb 28, Apr 30, ...) so short months are not skipped.
-            if include_interest:
-                for bank in self.banks:
-                    for account in bank.get_all_accounts():
-                        # No interest day set: paid at the end of each month
-                        accrual_day = account.interest_accrual_date or 31
-                        if (is_clamped_day(current_date, accrual_day)
-                                and account.interest_rate > 0):
-                            # Balance-independent: the actual amount is computed when the
-                            # event is processed (money may be swept in mid-simulation);
-                            # zero-interest events are dropped from the processed list.
-                            monthly_rate = account.interest_rate / 12 / 100
-                            interest = max(0.0, account.balance * monthly_rate)
-                            self.events.append(TimelineEvent(
-                                event_date=current_date,
-                                event_type="INTEREST",
-                                amount=interest,
-                                description=f"Interest accrued on {account.account_name}",
-                                account_name=account.account_name,
-                                bank_name=bank.name,
-                                account_kind="bank",
-                            ))
+        # Interest accrual days are clamped to the month length (day 31 accrues
+        # on Feb 28, Apr 30, ...) so short months are not skipped.
+        if include_interest:
+            for bank in self.banks:
+                for account in bank.get_all_accounts():
+                    if account.interest_rate <= 0:
+                        continue
+                    # No interest day set: paid at the end of each month.
+                    # Balance-independent: the actual amount is computed when the
+                    # event is processed (money may be swept in mid-simulation);
+                    # zero-interest events are dropped from the processed list.
+                    interest = max(0.0, account.balance * account.interest_rate / 12 / 100)
+                    for day in monthly_days(start_date, end_date, account.interest_accrual_date or 31):
+                        events.append(TimelineEvent(
+                            event_date=day,
+                            event_type="INTEREST",
+                            amount=interest,
+                            description=f"Interest accrued on {account.account_name}",
+                            account_name=account.account_name,
+                            bank_name=bank.name,
+                            account_kind="bank",
+                        ))
 
-                    for credit_account in bank.get_all_credit_accounts():
-                        if (is_clamped_day(current_date, card_interest_day(credit_account))
-                                and credit_account.interest_rate > 0):
-                            monthly_rate = credit_account.interest_rate / 12 / 100
-                            interest = credit_account.balance * monthly_rate
-                            self.events.append(TimelineEvent(
-                                event_date=current_date,
-                                event_type="INTEREST",
-                                amount=interest,
-                                description=f"Interest accrued on {credit_account.account_name}",
-                                account_name=credit_account.account_name,
-                                bank_name=bank.name,
-                                account_kind="credit",
-                            ))
+                for credit_account in bank.get_all_credit_accounts():
+                    if credit_account.interest_rate <= 0:
+                        continue
+                    interest = credit_account.balance * credit_account.interest_rate / 12 / 100
+                    for day in monthly_days(start_date, end_date, card_interest_day(credit_account)):
+                        events.append(TimelineEvent(
+                            event_date=day,
+                            event_type="INTEREST",
+                            amount=interest,
+                            description=f"Interest accrued on {credit_account.account_name}",
+                            account_name=credit_account.account_name,
+                            bank_name=bank.name,
+                            account_kind="credit",
+                        ))
 
-                    # HELOC interest accrues monthly on the payment due day and
-                    # is processed before that day's bills, so the payment
-                    # (interest-only during the draw period) covers it.
-                    for heloc in bank.get_all_heloc_accounts():
-                        if (is_clamped_day(current_date, heloc.payment_due_date)
-                                and heloc.interest_rate > 0):
-                            self.events.append(TimelineEvent(
-                                event_date=current_date,
-                                event_type="INTEREST",
-                                amount=heloc.current_monthly_interest,
-                                description=f"Interest accrued on {heloc.account_name}",
-                                account_name=heloc.account_name,
-                                bank_name=bank.name,
-                                account_kind="heloc",
-                            ))
-
-            current_date += timedelta(days=1)
+                # HELOC interest accrues monthly on the payment due day and
+                # is processed before that day's bills, so the payment
+                # (interest-only during the draw period) covers it.
+                for heloc in bank.get_all_heloc_accounts():
+                    if heloc.interest_rate <= 0:
+                        continue
+                    for day in monthly_days(start_date, end_date, heloc.payment_due_date):
+                        events.append(TimelineEvent(
+                            event_date=day,
+                            event_type="INTEREST",
+                            amount=heloc.current_monthly_interest,
+                            description=f"Interest accrued on {heloc.account_name}",
+                            account_name=heloc.account_name,
+                            bank_name=bank.name,
+                            account_kind="heloc",
+                        ))
 
         # Sort events by date
         self.events.sort()
@@ -314,6 +305,23 @@ class TimelineSimulator:
         self._start_balances = {key: bal for key, (bal, _) in self._interest_balances().items()}
         self._interest_days = {key: day for key, (_, day) in self._interest_balances().items()}
         self._cycled = set()
+
+        # The accounts don't change during a run, so the per-day work below
+        # walks flat lists built once instead of every bank's dicts every day
+        bank_rows = [(f"{b.name}:{a.account_name}", b, a) for b in self.banks for a in b.get_all_accounts()]
+        credit_rows = [(f"{b.name}:{c.account_name}", b, c) for b in self.banks for c in b.get_all_credit_accounts()]
+        mortgage_rows = [(f"{b.name}:{m.account_name}", m) for b in self.banks for m in b.get_all_mortgage_accounts()]
+        heloc_rows = [(f"{b.name}:{h.account_name}", h) for b in self.banks for h in b.get_all_heloc_accounts()]
+        # (tracker key, account, attribute interest is charged on)
+        interest_rows = [(("bank", b.name, a.account_name), a, "balance") for key, b, a in bank_rows if a.interest_rate > 0]
+        interest_rows += [(("credit", b.name, c.account_name), c, "regular_balance")
+                          for key, b, c in credit_rows if c.interest_rate > 0]
+        interest_rows += [(("heloc", b.name, h.account_name), h, "balance")
+                          for b in self.banks for h in b.get_all_heloc_accounts() if h.interest_rate > 0]
+        self._bank_rows = bank_rows
+        self._spending_rows = [(b, a) for key, b, a in bank_rows if getattr(a, "weekly_spending", 0.0) > 0]
+        promo_cards = [(b, c) for key, b, c in credit_rows if c.active_promos]
+        tracker = self._balance_tracker
 
         current_date = start_date
         while current_date <= end_date:
@@ -415,8 +423,8 @@ class TimelineSimulator:
                         })
 
                 elif event.event_type == "BILL_DUE":
-                    # Find matching bill and pay it — handles all bill types uniformly
-                    for bill in self.bills:
+                    # Pay the event's bill — handles all bill types uniformly
+                    for bill in ((event.bill,) if event.bill is not None else self.bills):
                         if event.description != f"Bill: {bill.bill_name}":
                             continue
                         due = event.due or current_date
@@ -594,8 +602,8 @@ class TimelineSimulator:
                             })
 
                 elif event.event_type == "BILL_GROUP_PAYMENT":
-                    # Find the matching GroupLinkedBill from self.bills
-                    for bill in self.bills:
+                    # Pay the event's GroupLinkedBill
+                    for bill in ((event.bill,) if event.bill is not None else self.bills):
                         if not isinstance(bill, GroupLinkedBill) or event.description != f"Bill: {bill.bill_name}":
                             continue
                         due = event.due or current_date
@@ -717,44 +725,36 @@ class TimelineSimulator:
 
             # A 0% promo still owing at the end of its last day is charged its
             # deferred interest that day (not at the next statement)
-            for bank in self.banks:
-                for credit in bank.get_all_credit_accounts():
-                    if not any(p.has_expired(current_date) and not p.interest_charged for p in credit.active_promos):
-                        continue
-                    charged = credit.process_expired_promos(current_date)
-                    if charged > 0:
-                        cash_flow.append({
-                            "date": current_date, "type": "INTEREST",
-                            "description": f"Deferred promo interest: {credit.account_name}",
-                            "amount": charged, "account": credit.account_name, "bank": bank.name,
-                            "account_kind": "credit", "promo": True,
-                        })
+            for bank, credit in promo_cards:
+                if not any(p.has_expired(current_date) and not p.interest_charged for p in credit.active_promos):
+                    continue
+                charged = credit.process_expired_promos(current_date)
+                if charged > 0:
+                    cash_flow.append({
+                        "date": current_date, "type": "INTEREST",
+                        "description": f"Deferred promo interest: {credit.account_name}",
+                        "amount": charged, "account": credit.account_name, "bank": bank.name,
+                        "account_kind": "credit", "promo": True,
+                    })
 
             # End-of-day balances for average-daily-balance interest
-            for key, (bal, _) in self._interest_balances().items():
-                total, days = self._balance_tracker.get(key, (0.0, 0))
-                self._balance_tracker[key] = (total + bal, days + 1)
+            for key, acc, attr in interest_rows:
+                total, days = tracker.get(key, (0.0, 0))
+                tracker[key] = (total + getattr(acc, attr), days + 1)
 
             # Create snapshot for this date
-            snapshot = {"date": current_date, "balances": {}, "credit_balances": {}, "mortgage_balances": {},
-                        "heloc_balances": {}, "promo_balances": {}}
-            for bank in self.banks:
-                for account in bank.get_all_accounts():
-                    key = f"{bank.name}:{account.account_name}"
-                    snapshot["balances"][key] = account.balance
-                for credit in bank.get_all_credit_accounts():
-                    key = f"{bank.name}:{credit.account_name}"
-                    snapshot["credit_balances"][key] = credit.balance
-                    for promo_name, bal in credit.promo_balance.items():
-                        snapshot["promo_balances"][f"{key}:{promo_name}"] = bal
-                for mortgage in bank.get_all_mortgage_accounts():
-                    key = f"{bank.name}:{mortgage.account_name}"
-                    snapshot["mortgage_balances"][key] = mortgage.current_principal
-                for heloc in bank.get_all_heloc_accounts():
-                    key = f"{bank.name}:{heloc.account_name}"
-                    snapshot["heloc_balances"][key] = heloc.balance
-
-            snapshots.append(snapshot)
+            promo_balances = {}
+            for key, _, credit in credit_rows:
+                for promo_name, bal in credit.promo_balance.items():
+                    promo_balances[f"{key}:{promo_name}"] = bal
+            snapshots.append({
+                "date": current_date,
+                "balances": {key: a.balance for key, _, a in bank_rows},
+                "credit_balances": {key: c.balance for key, _, c in credit_rows},
+                "mortgage_balances": {key: m.current_principal for key, m in mortgage_rows},
+                "heloc_balances": {key: h.balance for key, h in heloc_rows},
+                "promo_balances": promo_balances,
+            })
             current_date += timedelta(days=1)
 
         # Compile final balances
@@ -933,28 +933,30 @@ class TimelineSimulator:
         spending (accounts marked offsets_everyday).
         """
         covered = 0.0
-        for bank in self.banks:
-            for account in bank.get_all_accounts():
-                weekly = getattr(account, "weekly_spending", 0.0)
-                if weekly <= 0 or account.balance <= 0:
-                    continue
-                amount = round(min(weekly / 7.0, account.balance), 2)
-                if amount <= 0:
-                    continue
-                account.balance -= amount
-                account._record_transaction("WITHDRAWAL", -amount, "Spending", current_date)
-                kind = account_kind(account)
-                label = PURPOSE_LABELS.get(kind.get("purpose"), "Spending")
-                cash_flow.append({
-                    "date": current_date,
-                    "type": "ACCOUNT_SPENDING",
-                    "description": f"{label} from {account.account_name}",
-                    "amount": -amount,
-                    "account": account.account_name,
-                    "bank": bank.name,
-                })
-                if account.offsets_everyday:
-                    covered += amount
+        rows = getattr(self, "_spending_rows", None)
+        if rows is None:
+            rows = [(b, a) for b in self.banks for a in b.get_all_accounts()]
+        for bank, account in rows:
+            weekly = getattr(account, "weekly_spending", 0.0)
+            if weekly <= 0 or account.balance <= 0:
+                continue
+            amount = round(min(weekly / 7.0, account.balance), 2)
+            if amount <= 0:
+                continue
+            account.balance -= amount
+            account._record_transaction("WITHDRAWAL", -amount, "Spending", current_date)
+            kind = account_kind(account)
+            label = PURPOSE_LABELS.get(kind.get("purpose"), "Spending")
+            cash_flow.append({
+                "date": current_date,
+                "type": "ACCOUNT_SPENDING",
+                "description": f"{label} from {account.account_name}",
+                "amount": -amount,
+                "account": account.account_name,
+                "bank": bank.name,
+            })
+            if account.offsets_everyday:
+                covered += amount
         return covered
 
     def _apply_daily_spending(self, current_date: date, cash_flow: list[dict], covered: float = 0.0):
@@ -1012,21 +1014,21 @@ class TimelineSimulator:
 
     def _charge_overdraft_fees(self, current_date: date, cash_flow: list[dict], overdrawn: set[str]):
         fee = max(0.0, self.fees.get("overdraft_fee", 0.0))
-        for bank in self.banks:
-            for acc in bank.get_all_accounts():
-                key = f"{bank.name}:{acc.account_name}"
-                if acc.balance < -0.005:
-                    if key not in overdrawn:
-                        overdrawn.add(key)
-                        if fee > 0 and acc.account_type.value == "checking":
-                            self._force_withdraw(acc, fee, "Overdraft fee", current_date)
-                            cash_flow.append({
-                                "date": current_date, "type": "FEE", "fee_kind": "overdraft",
-                                "description": f"Overdraft fee: {acc.account_name}", "amount": -fee,
-                                "account": acc.account_name, "bank": bank.name,
-                            })
-                else:
-                    overdrawn.discard(key)
+        rows = getattr(self, "_bank_rows", None) or [(f"{b.name}:{a.account_name}", b, a)
+                                                    for b in self.banks for a in b.get_all_accounts()]
+        for key, bank, acc in rows:
+            if acc.balance < -0.005:
+                if key not in overdrawn:
+                    overdrawn.add(key)
+                    if fee > 0 and acc.account_type.value == "checking":
+                        self._force_withdraw(acc, fee, "Overdraft fee", current_date)
+                        cash_flow.append({
+                            "date": current_date, "type": "FEE", "fee_kind": "overdraft",
+                            "description": f"Overdraft fee: {acc.account_name}", "amount": -fee,
+                            "account": acc.account_name, "bank": bank.name,
+                        })
+            else:
+                overdrawn.discard(key)
 
     def _get_bank_by_name(self, bank_name: str) -> Bank | None:
         """Get a bank by name."""

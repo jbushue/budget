@@ -5,13 +5,31 @@ All "day of month" schedules clamp to the last day of short months
 (e.g. a bill due on the 31st falls on Feb 28/29, Apr 30, ...).
 """
 
-import calendar
 from datetime import date, timedelta
+
+# Days in each month (February in a common year). A table lookup: this runs
+# hundreds of thousands of times per plan, and calendar.monthrange is slow.
+_MONTH_DAYS = (0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 
 
 def last_day_of_month(year: int, month: int) -> int:
     """Return the number of days in the given month."""
-    return calendar.monthrange(year, month)[1]
+    if month == 2 and year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
+        return 29
+    return _MONTH_DAYS[month]
+
+
+def monthly_days(start: date, end: date, day: int) -> list[date]:
+    """The (clamped) ``day`` of every month from ``start`` through ``end``."""
+    out = []
+    y, m = start.year, start.month
+    while True:
+        d = date(y, m, min(day, last_day_of_month(y, m)))
+        if d > end:
+            return out
+        if d >= start:
+            out.append(d)
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
 
 
 def clamped_date(year: int, month: int, day: int) -> date:
