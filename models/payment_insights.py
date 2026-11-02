@@ -362,6 +362,8 @@ class PaymentInsightsAnalyzer:
         rows = []
         for cf in baseline["cash_flow"]:
             t = cf["type"]
+            if cf.get("overdue"):
+                continue  # an earlier due date paid on day one (listed as overdue)
             if t in PAID_TYPES:
                 status, kind = "on_time", PAID_TYPES[t]
             elif t in DEFERRED_TYPES:

@@ -31,7 +31,7 @@ class TestLatePayment:
     def test_paying_overdue_bill_keeps_next_occurrence(self, api):  # noqa: F811
         due = _recent_due()
         bill = _bill(api, "Water", 60, due.day)
-        bill.created_on = due - timedelta(days=60)  # it existed before this due date
+        bill.created_on = due - timedelta(days=20)  # it existed before this due date
         assert [o["name"] for o in overdue_bills(api.manager, TODAY)] == ["Water"]
 
         api('mutation { markBillPaid(billName: "Water", moveMoney: false) { success } }')

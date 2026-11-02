@@ -223,6 +223,8 @@ export const GET_ALL_BILLS = gql`
       linkedBankName
       linkedAccountName
       linkedAccountType
+      nextUnpaidDue
+      overdueCount
     }
   }
 `
@@ -587,8 +589,40 @@ export const UPDATE_INCOME = gql`
 `
 
 export const MARK_BILL_PAID = gql`
-  mutation MarkBillPaid($billName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String, $moveMoney: Boolean) {
-    markBillPaid(billName: $billName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate, moveMoney: $moveMoney) { success message }
+  mutation MarkBillPaid($billName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String, $moveMoney: Boolean, $dueDate: String) {
+    markBillPaid(billName: $billName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate, moveMoney: $moveMoney, dueDate: $dueDate) { success message }
+  }
+`
+
+// ── Paying by due date (the Bills month view) ─────────────────────────
+
+export const GET_BILL_MONTH = gql`
+  query GetBillMonth($month: String) {
+    billMonth(month: $month) {
+      month
+      firstMonth
+      lastMonth
+      overdueBefore
+      totals { due paid remaining overdue }
+      occurrences {
+        billName displayName kind dueDate amount paid remaining status paidOn
+        sourceBank sourceAccount isFloating hasActualAmount estimatedAmount
+        bankName accountName groupName balanceOwed
+        payments { date amount sourceBank sourceAccount movedMoney }
+      }
+    }
+  }
+`
+
+export const UNDO_BILL_PAYMENT = gql`
+  mutation UndoBillPayment($billName: String!, $dueDate: String) {
+    undoBillPayment(billName: $billName, dueDate: $dueDate) { success message }
+  }
+`
+
+export const SKIP_BILL_OCCURRENCE = gql`
+  mutation SkipBillOccurrence($billName: String!, $dueDate: String!, $skip: Boolean) {
+    skipBillOccurrence(billName: $billName, dueDate: $dueDate, skip: $skip) { success message }
   }
 `
 
@@ -658,8 +692,8 @@ export const RESET_BILL_PERIOD = gql`
 `
 
 export const SET_FLOATING_BILL_AMOUNT = gql`
-  mutation SetFloatingBillAmount($billName: String!, $actualAmount: Float!) {
-    setFloatingBillAmount(billName: $billName, actualAmount: $actualAmount) { success message }
+  mutation SetFloatingBillAmount($billName: String!, $actualAmount: Float!, $dueDate: String) {
+    setFloatingBillAmount(billName: $billName, actualAmount: $actualAmount, dueDate: $dueDate) { success message }
   }
 `
 
@@ -704,8 +738,8 @@ export const GET_CREDIT_PAYMENTS_DUE = gql`
 `
 
 export const MARK_CREDIT_PAYMENT_PAID = gql`
-  mutation MarkCreditPaymentPaid($bankName: String!, $accountName: String!, $amountPaid: Float!, $sourceBank: String, $sourceAccount: String, $paymentDate: String) {
-    markCreditPaymentPaid(bankName: $bankName, accountName: $accountName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate) { success message }
+  mutation MarkCreditPaymentPaid($bankName: String!, $accountName: String!, $amountPaid: Float!, $sourceBank: String, $sourceAccount: String, $paymentDate: String, $dueDate: String) {
+    markCreditPaymentPaid(bankName: $bankName, accountName: $accountName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate, dueDate: $dueDate) { success message }
   }
 `
 
@@ -843,6 +877,7 @@ export const GET_BILL_PAYMENT_HISTORY = gql`
       sourceBank
       sourceAccount
       paymentDate
+      dueDate
     }
   }
 `
@@ -1049,8 +1084,8 @@ export const REMOVE_BILL_GROUP_MEMBER = gql`
 `
 
 export const MARK_BILL_GROUP_PAID = gql`
-  mutation MarkBillGroupPaid($groupName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String) {
-    markBillGroupPaid(groupName: $groupName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate) {
+  mutation MarkBillGroupPaid($groupName: String!, $amountPaid: Float, $sourceBank: String, $sourceAccount: String, $paymentDate: String, $dueDate: String) {
+    markBillGroupPaid(groupName: $groupName, amountPaid: $amountPaid, sourceBank: $sourceBank, sourceAccount: $sourceAccount, paymentDate: $paymentDate, dueDate: $dueDate) {
       success
       message
       billGroup { ${BILL_GROUP_FIELDS} }

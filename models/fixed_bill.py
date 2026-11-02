@@ -3,6 +3,7 @@ from copy import deepcopy
 
 from .types import BillFrequency, BillType
 from .date_utils import add_months, clamped_date, next_by_days, next_by_months
+from . import occurrences as occ
 
 
 class Bill:
@@ -64,10 +65,11 @@ class Bill:
         self.preferred_source_account = preferred_source_account
         self.preferred_source_bank = preferred_source_bank
 
-        # Payment tracking
+        # Payment tracking: each payment records the due date it pays (see occurrences)
         self.payment_history: list[dict] = []
-        self.is_paid_this_period = False
-        self.carryover_balance: float = 0.0  # Underpayment carried to next period
+        self.skipped: set[date] = set()  # due dates not owed (waived, paid elsewhere)
+        # Due dates before this never count as overdue (set when due-date tracking began)
+        self.tracked_from: date | None = None
 
         # Fee if paid late (None = use the app-wide default from settings)
         self.late_fee: float | None = None
@@ -77,33 +79,52 @@ class Bill:
 
     @property
     def effective_amount(self) -> float:
-        """Amount actually due this period, including any carryover from underpayment."""
-        return self.amount + self.carryover_balance
+        """What is still owed on the due date a payment would go to now."""
+        due = occ.default_due(self)
+        return occ.remaining(self, due) if due else self.amount
 
-    def mark_paid(self, source_bank: str, source_account: str, amount_paid: float = None, payment_date: date = None):
-        """Record that this bill has been paid.
-        
-        If amount_paid differs from effective_amount, the difference becomes
-        carryover for the next period (positive = still owed, negative = credit).
+    @property
+    def carryover_balance(self) -> float:
+        """Left unpaid on earlier due dates (still owed alongside the next one)."""
+        due = occ.default_due(self)
+        return round(sum(left for d, left in occ.overdue(self) if d != due), 2)
+
+    @carryover_balance.setter
+    def carryover_balance(self, value):
+        pass  # derived from the payments now
+
+    @property
+    def is_paid_this_period(self) -> bool:
+        """Nothing overdue and the next due date is paid (or skipped)."""
+        return occ.is_paid_now(self)
+
+    @is_paid_this_period.setter
+    def is_paid_this_period(self, value: bool):
+        """True skips the due date a payment would go to; False un-skips the next one."""
+        if value:
+            due = occ.default_due(self)
+            if due is not None and occ.status(self, due) not in ("paid", "skipped"):
+                self.skipped = set(self.skipped) | {due}
+        else:
+            nd = occ.next_due(self, date.today())
+            self.skipped = {d for d in self.skipped if nd is None or occ.period(self, d) != occ.period(self, nd)}
+
+    def mark_paid(self, source_bank: str, source_account: str, amount_paid: float = None, payment_date: date = None,
+                  due: date = None, moved_money: bool = True):
+        """Record a payment for one due date (default: the oldest still owed, else the next).
+
+        Paying less than is owed leaves that due date partly paid.
         """
-        due_amount = self.effective_amount
-        if amount_paid is None:
-            amount_paid = due_amount
-
-        # Calculate carryover: positive means underpaid, negative means overpaid (credit)
-        self.carryover_balance = max(0.0, round(due_amount - amount_paid, 2))
-
-        self.payment_history.append({
-            "date": payment_date or date.today(),
-            "source_bank": source_bank,
-            "source_account": source_account,
-            "amount_paid": amount_paid
-        })
-        self.is_paid_this_period = True
+        due = due or occ.default_due(self, payment_date or date.today())
+        entry = occ.new_entry(self, due, amount_paid, payment_date, source_bank, source_account, moved_money)
+        self.payment_history.append(entry)
+        return entry
 
     def reset_period(self):
-        """Reset the paid status for the next period (e.g., next month)."""
-        self.is_paid_this_period = False
+        """Undo the latest recorded payment's due date (kept for older callers)."""
+        due = occ.latest_paid_due(self)
+        if due is not None:
+            self.payment_history = [e for e in self.payment_history if e not in occ.payments_for(self, due)]
 
     # Month step for month-based frequencies
     _MONTH_STEPS = {
@@ -249,47 +270,62 @@ class FloatingBill(Bill):
         self.min_amount = min_amount or estimated_amount * 0.8
         self.max_amount = max_amount or estimated_amount * 1.2
         self.estimated_amount = estimated_amount
-        self._actual_amount: float | None = None  # Set when the real bill arrives
+        # The real amount of a due date's bill once it arrives (due date -> amount)
+        self.actual_amounts: dict[date, float] = {}
         self.amount_history: list[float] = []  # Past actual amounts for averaging
 
-    def set_actual_amount(self, actual_amount: float):
+    def amount_on(self, reference_date: date = None) -> float:
+        """The due date's actual amount if it's known, else the estimate."""
+        actual = occ.actual_for(self, reference_date) if reference_date is not None else None
+        return self.amount if actual is None else actual
+
+    def set_actual_amount(self, actual_amount: float, due: date = None):
         """
-        Set the actual amount for the next bill payment.
-        Call this when the real bill arrives and you know the exact amount.
-        The amount resets to the estimate after the bill is marked paid.
+        Set the real amount of one due date's bill (default: the due date a
+        payment would go to now). Other due dates keep the estimate.
         """
         if actual_amount <= 0:
             raise ValueError("Actual amount must be positive.")
-        self._actual_amount = actual_amount
-        self.amount = actual_amount
+        due = due or occ.default_due(self)
+        if due is not None:
+            self.reset_to_estimate(due)
+            self.actual_amounts[due] = actual_amount
 
-    def reset_to_estimate(self):
-        """Reset the amount back to the estimate (called after payment or manually)."""
-        self._actual_amount = None
-        self.amount = self.estimated_amount
+    def reset_to_estimate(self, due: date = None):
+        """Go back to the estimate for a due date (default: the one a payment would go to now)."""
+        due = due or occ.default_due(self)
+        if due is not None:
+            key = occ.period(self, due)
+            self.actual_amounts = {d: v for d, v in self.actual_amounts.items() if occ.period(self, d) != key}
+
+    @property
+    def _actual_amount(self) -> float | None:
+        """The actual amount for the due date a payment would go to now, if set."""
+        due = occ.default_due(self)
+        return occ.actual_for(self, due) if due else None
 
     @property
     def has_actual_amount(self) -> bool:
-        """Whether an actual amount has been set for the next payment."""
+        """Whether the real amount is known for the due date a payment would go to now."""
         return self._actual_amount is not None
 
-    def mark_paid(self, source_bank: str, source_account: str, amount_paid: float = None, payment_date: date = None):
-        """Record payment, update history, recalculate estimate, then reset for next period."""
-        paid_amount = amount_paid if amount_paid is not None else self.amount
-        super().mark_paid(source_bank, source_account, paid_amount, payment_date)
+    def mark_paid(self, source_bank: str, source_account: str, amount_paid: float = None, payment_date: date = None,
+                  due: date = None, moved_money: bool = True, learn: bool = True):
+        """Record payment, update history and recalculate the estimate
+        (learn=False for payments a projection only imagines)."""
+        entry = super().mark_paid(source_bank, source_account, amount_paid, payment_date, due, moved_money)
+        paid_amount = entry["amount_paid"]
 
         # Record the actual amount paid into history
-        if paid_amount > 0:
+        if paid_amount > 0 and learn:
             self.amount_history.append(round(paid_amount, 2))
             # Keep last 12 entries
             if len(self.amount_history) > 12:
                 self.amount_history = self.amount_history[-12:]
             # Recalculate estimate from history
             self._recalculate_estimate()
-
-        # Reset to the (possibly updated) estimate for next period
-        self._actual_amount = None
         self.amount = self.estimated_amount
+        return entry
 
     def _recalculate_estimate(self):
         """
@@ -343,9 +379,6 @@ class AccountLinkedBill(Bill):
         self.linked_bank_name = linked_bank_name
         self.linked_account_type = linked_account_type
 
-        # Initialize private tracking field before super().__init__ sets is_paid_this_period
-        self._is_paid_this_period = False
-
         # Build a unique name for this linked bill
         bill_name = f"[Auto] {linked_account.account_name} Payment"
 
@@ -364,10 +397,6 @@ class AccountLinkedBill(Bill):
         # Get the initial amount (may be 0 for zero-balance credit cards)
         initial_amount = self._resolve_amount_from_account(linked_account, linked_account_type)
 
-        # Bill.__init__ resets is_paid_this_period, which would clobber the
-        # linked account's flag through our setter — remember and restore it.
-        was_paid = getattr(linked_account, 'is_paid_this_period', False)
-
         super().__init__(
             bill_name=bill_name,
             amount=initial_amount,
@@ -378,7 +407,6 @@ class AccountLinkedBill(Bill):
             preferred_source_bank=preferred_source_bank,
             _skip_amount_validation=True,
         )
-        self.is_paid_this_period = was_paid
 
     @staticmethod
     def _resolve_amount_from_account(account, account_type: str, reference_date=None) -> float:
@@ -418,11 +446,6 @@ class AccountLinkedBill(Bill):
         self._static_amount = value
 
     @property
-    def effective_amount(self) -> float:
-        """Amount actually due this period, including any carryover."""
-        return self.amount + self.carryover_balance
-
-    @property
     def is_account_linked(self) -> bool:
         """Whether this bill is linked to an account."""
         return True
@@ -434,26 +457,15 @@ class AccountLinkedBill(Bill):
             return self.linked_account.current_principal
         return self.linked_account.balance
 
-    @property
-    def is_paid_this_period(self) -> bool:
-        """Read paid status from the linked account."""
-        return getattr(self.linked_account, 'is_paid_this_period', self._is_paid_this_period)
-
-    @is_paid_this_period.setter
-    def is_paid_this_period(self, value: bool):
-        """Set paid status on both the bill and the linked account."""
-        self._is_paid_this_period = value
-        if hasattr(self.linked_account, 'is_paid_this_period'):
-            self.linked_account.is_paid_this_period = value
-
-    def mark_paid(self, source_bank: str, source_account: str, amount_paid: float = None, payment_date: date = None):
+    def mark_paid(self, source_bank: str, source_account: str, amount_paid: float = None, payment_date: date = None,
+                  due: date = None, moved_money: bool = True):
         """
-        Record payment for this linked bill.
+        Record payment for one due date of this linked bill.
         Also calls the linked account's make_payment() to update balances.
         """
-        due_amount = self.effective_amount
-        if amount_paid is None:
-            amount_paid = due_amount
+        due = due or occ.default_due(self, payment_date or date.today())
+        entry = occ.new_entry(self, due, amount_paid, payment_date, source_bank, source_account, moved_money)
+        amount_paid = entry["amount_paid"]
 
         # Call the linked account's make_payment
         if amount_paid > 0:
@@ -484,28 +496,15 @@ class AccountLinkedBill(Bill):
                     transaction_date=payment_date or date.today()
                 )
 
-        # Track carryover
-        self.carryover_balance = max(0.0, round(due_amount - amount_paid, 2))
-
-        self.payment_history.append({
-            "date": payment_date or date.today(),
-            "source_bank": source_bank,
-            "source_account": source_account,
-            "amount_paid": amount_paid
-        })
-        self.is_paid_this_period = True
-
-    def reset_period(self):
-        """Reset the paid status for the next period."""
-        self.is_paid_this_period = False
+        self.payment_history.append(entry)
+        return entry
 
     def copy(self):
         """Create a deep copy of this linked bill."""
         return deepcopy(self)
 
     def __repr__(self):
-        status = "PAID" if self.is_paid_this_period else "UNPAID"
-        return f"AccountLinkedBill({self.bill_name}, ${self.amount:.2f}, {self.linked_account_type}, {status})"
+        return f"AccountLinkedBill({self.bill_name}, ${self.amount:.2f}, {self.linked_account_type})"
 
 
 class GroupLinkedBill(Bill):
@@ -531,9 +530,6 @@ class GroupLinkedBill(Bill):
         """
         self.linked_group = linked_group
 
-        # Initialize private tracking field before super().__init__
-        self._is_paid_this_period = False
-
         bill_name = f"[Auto] {linked_group.group_name} Payment"
         self.group_link_key = f"group:{linked_group.group_name}"
 
@@ -544,7 +540,8 @@ class GroupLinkedBill(Bill):
         if preferred_source_account is None:
             preferred_source_account = linked_group.preferred_source_account
 
-        was_paid = linked_group.is_paid_this_period  # restored after Bill.__init__ resets it
+        # Bill.__init__ clears the payments and skips, which live on the group
+        kept = (linked_group.payment_history, set(getattr(linked_group, "skipped", set())))
 
         super().__init__(
             bill_name=bill_name,
@@ -556,7 +553,41 @@ class GroupLinkedBill(Bill):
             preferred_source_bank=preferred_source_bank,
             _skip_amount_validation=True,
         )
-        self.is_paid_this_period = was_paid
+        linked_group.payment_history, linked_group.skipped = kept
+
+    # Payments, skips and tracking dates live on the group (it's what is saved);
+    # Bill.__init__'s assignments to them are ignored
+    @property
+    def payment_history(self) -> list[dict]:
+        return self.linked_group.payment_history
+
+    @payment_history.setter
+    def payment_history(self, value):
+        self.linked_group.payment_history = value
+
+    @property
+    def skipped(self) -> set:
+        return self.linked_group.skipped
+
+    @skipped.setter
+    def skipped(self, value):
+        self.linked_group.skipped = set(value)
+
+    @property
+    def created_on(self) -> date:
+        return self.linked_group.created_on
+
+    @created_on.setter
+    def created_on(self, value):
+        pass
+
+    @property
+    def tracked_from(self):
+        return getattr(self.linked_group, "tracked_from", None)
+
+    @tracked_from.setter
+    def tracked_from(self, value):
+        pass
 
     @property
     def amount(self) -> float:
@@ -569,28 +600,12 @@ class GroupLinkedBill(Bill):
         self._static_amount = value
 
     @property
-    def effective_amount(self) -> float:
-        """Amount actually due this period, including any carryover."""
-        return self.amount + self.carryover_balance
-
-    @property
     def is_group_linked(self) -> bool:
         """Whether this bill is linked to a bill group."""
         return True
 
-    @property
-    def is_paid_this_period(self) -> bool:
-        """Read paid status from the linked group."""
-        return self.linked_group.is_paid_this_period
-
-    @is_paid_this_period.setter
-    def is_paid_this_period(self, value: bool):
-        """Set paid status on both the bill and the linked group."""
-        self._is_paid_this_period = value
-        self.linked_group.is_paid_this_period = value
-
     def mark_paid(self, source_bank: str, source_account: str, amount_paid: float = None,
-                  payment_date: date = None, banks: list = None):
+                  payment_date: date = None, banks: list = None, due: date = None, moved_money: bool = True):
         """
         Record payment for this group bill.
         Distributes the payment across group member accounts and marks the group as paid.
@@ -601,10 +616,11 @@ class GroupLinkedBill(Bill):
             amount_paid: Amount paid (defaults to group total_payment)
             payment_date: Date of payment
             banks: List of Bank objects needed for distribute_payment
+            due: The due date this pays (default: the oldest still owed, else the next)
         """
-        due_amount = self.effective_amount
-        if amount_paid is None:
-            amount_paid = due_amount
+        due = due or occ.default_due(self, payment_date or date.today())
+        entry = occ.new_entry(self, due, amount_paid, payment_date, source_bank, source_account, moved_money)
+        amount_paid = entry["amount_paid"]
 
         # Distribute payment across group members if banks are provided
         sub_payments = []
@@ -613,33 +629,15 @@ class GroupLinkedBill(Bill):
                 amount_paid, banks, payment_date or date.today()
             )
 
-        # Mark the group as paid
-        self.linked_group.mark_paid(payment_date or date.today())
-
-        # Track carryover
-        self.carryover_balance = max(0.0, round(due_amount - amount_paid, 2))
-
-        self.payment_history.append({
-            "date": payment_date or date.today(),
-            "source_bank": source_bank,
-            "source_account": source_account,
-            "amount_paid": amount_paid,
-            "sub_payments": sub_payments,
-        })
-        # is_paid_this_period is already set via linked_group.mark_paid above
-
+        entry["sub_payments"] = sub_payments
+        self.payment_history.append(entry)
         return sub_payments
-
-    def reset_period(self):
-        """Reset the paid status for the next period."""
-        self.is_paid_this_period = False
 
     def copy(self):
         """Create a deep copy of this group-linked bill."""
         return deepcopy(self)
 
     def __repr__(self):
-        status = "PAID" if self.is_paid_this_period else "UNPAID"
-        return f"GroupLinkedBill({self.bill_name}, ${self.amount:.2f}, {status})"
+        return f"GroupLinkedBill({self.bill_name}, ${self.amount:.2f})"
 
 

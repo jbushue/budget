@@ -146,12 +146,13 @@ class ResetBillToEstimate(graphene.Mutation):
 
     class Arguments:
         bill_name = graphene.String(required=True)
+        due_date = graphene.String(description="YYYY-MM-DD (default: the due date a payment goes to now)")
 
     Output = ToolResult
 
-    def mutate(self, info, bill_name):
+    def mutate(self, info, bill_name, due_date=None):
         m = _manager(info)
-        return _run(tools.reset_bill_to_estimate, m, bill_name) if m else _no_manager()
+        return _run(tools.reset_bill_to_estimate, m, bill_name, due_date) if m else _no_manager()
 
 
 class ToolsMutation(graphene.ObjectType):

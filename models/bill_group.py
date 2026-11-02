@@ -10,7 +10,6 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 
 from .types import AllocationMethod, BillFrequency
-from .date_utils import next_by_months
 
 
 @dataclass
@@ -76,8 +75,10 @@ class BillGroup:
         self.preferred_source_account = preferred_source_account
         self.created_on: date = date.today()  # restored from the database on load
         self.members: list[BillGroupMember] = members or []
-        self.is_paid_this_period: bool = False
+        # Payments made through the group's bill, each for one due date (see occurrences)
         self.payment_history: list[dict] = []
+        self.skipped: set[date] = set()
+        self.tracked_from: date | None = None
 
     # ── Member management ──
 
@@ -265,20 +266,23 @@ class BillGroup:
     # ── Due-date helpers ──
 
     def get_next_due_date(self, reference_date: date) -> date:
-        """Calculate next monthly due date after reference_date (day clamped to month length)."""
-        return next_by_months(reference_date.year, reference_date.month, self.due_date, 1, reference_date)
+        """Next due date after reference_date, on the group's schedule."""
+        return self.as_bill().get_next_due_date(reference_date)
 
-    def mark_paid(self, payment_date: date = None):
-        """Mark this group payment as paid for the current period."""
-        self.is_paid_this_period = True
-        self.payment_history.append({
-            "date": payment_date or date.today(),
-            "amount": self.total_payment,
-        })
+    def as_bill(self):
+        """The group's payment as a bill (shares this group's payments)."""
+        from .fixed_bill import GroupLinkedBill
+        return GroupLinkedBill(self)
 
-    def reset_period(self):
-        """Reset paid status for next billing period."""
-        self.is_paid_this_period = False
+    @property
+    def is_paid_this_period(self) -> bool:
+        """Nothing overdue and the next due date is paid."""
+        from . import occurrences as occ
+        return occ.is_paid_now(self.as_bill())
+
+    @is_paid_this_period.setter
+    def is_paid_this_period(self, value: bool):
+        pass  # derived from the payments
 
     @property
     def last_paid_date(self):

@@ -48,22 +48,19 @@ def test_bill_paid_on_its_due_date_is_still_owed_next_month():
     bank = Bank("B")
     bank.add_account("checking", "Chk", 5000.0)
     rent = Bill("Rent", 1000.0, 5)
-    rent.is_paid_this_period = True
-    rent.payment_history = [{"date": date(2026, 11, 5), "amount_paid": 1000.0}]
+    rent.mark_paid("B", "Chk", 1000.0, date(2026, 11, 5), due=date(2026, 11, 5))
     r = TimelineSimulator([bank], [], [rent]).project_balances(date(2026, 11, 6), date(2026, 12, 10))
     assert any(cf["type"] == "BILL_PAYMENT" and cf["date"] == date(2026, 12, 5) for cf in r["cash_flow"])
 
 
-def test_auto_reset_clears_a_flag_once_its_due_date_has_passed(monkeypatch):
+def test_last_months_payment_doesnt_cover_this_month():
     bank = Bank("B")
     bank.add_account("checking", "Chk", 5000.0)
     rent = Bill("Rent", 1000.0, TODAY.day if TODAY.day <= 28 else 28)
-    paid_on = TODAY - timedelta(days=40)
-    rent.is_paid_this_period = True
-    rent.payment_history = [{"date": paid_on, "amount_paid": 1000.0}]
-    m = FinanceManager([bank], [], [rent])
-    monkeypatch.setattr(m, "save_to_database", lambda: True)
-    assert m.auto_reset_periods() == 1 and not rent.is_paid_this_period
+    rent.created_on = TODAY - timedelta(days=45)
+    last = rent.get_next_due_date(TODAY - timedelta(days=40))
+    rent.mark_paid("B", "Chk", 1000.0, last, due=last)
+    assert not rent.is_paid_this_period
 
 
 def test_income_without_a_split_goes_to_checking_even_if_a_card_is_listed_first():

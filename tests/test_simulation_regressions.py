@@ -53,7 +53,7 @@ class TestPaidFlagFirstOccurrenceOnly:
         b = Bank("B")
         b.add_account("checking", "chk", 10000)
         rent = Bill("Rent", 1000, 1)
-        rent.is_paid_this_period = True
+        rent.mark_paid("B", "chk", 1000, date(2025, 12, 28), due=date(2026, 1, 1))
         r = TimelineSimulator([b], [], [rent]).project_balances(date(2026, 1, 1), date(2026, 4, 30))
         assert [c["date"] for c in cf_of(r, "BILL_ALREADY_PAID")] == [date(2026, 1, 1)]
         assert [c["date"] for c in cf_of(r, "BILL_PAYMENT")] == [

@@ -147,7 +147,7 @@ class TestPaidStatusPersists:
         assert paid["[Auto] Loans Payment"]
         assert not paid["Rent"]
 
-    def test_auto_reset_works_after_restart(self, temp_db):
+    def test_old_payments_dont_cover_this_month_after_restart(self, temp_db):
         manager = _build_manager()
         rent = next(b for b in manager.bills if b.bill_name == "Rent")
         rent.mark_paid("Chase", "Checking", payment_date=date(2020, 1, 1))
@@ -156,10 +156,12 @@ class TestPaidStatusPersists:
         manager.save_to_database()
 
         manager = _loaded_manager()
-        assert manager.auto_reset_periods() >= 2
         paid = {b.bill_name: b.is_paid_this_period for b in manager.bills}
         assert not paid["Rent"]
         assert not paid["[Auto] Loans Payment"]
+        # ...and the payments themselves (with their due dates) survived
+        assert {b.bill_name: len(b.payment_history) for b in manager.bills
+                if b.bill_name in ("Rent", "[Auto] Loans Payment")} == {"Rent": 1, "[Auto] Loans Payment": 1}
 
     def test_same_card_name_in_two_banks(self, temp_db):
         a, b = Bank("A"), Bank("B")
@@ -169,9 +171,8 @@ class TestPaidStatusPersists:
         manager = FinanceManager([a, b], [], [])
         bill_a = next(x for x in manager.bills if x.linked_bank_name == "A")
         bill_a.is_paid_this_period = True
-        bill_a.carryover_balance = 12.5
         manager.save_to_database()
 
         linked = {x.linked_bank_name: x for x in _loaded_manager().bills if isinstance(x, AccountLinkedBill)}
-        assert linked["A"].is_paid_this_period and linked["A"].carryover_balance == 12.5
-        assert not linked["B"].is_paid_this_period and linked["B"].carryover_balance == 0.0
+        assert linked["A"].is_paid_this_period
+        assert not linked["B"].is_paid_this_period

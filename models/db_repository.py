@@ -21,6 +21,57 @@ from models.fixed_bill import Bill, FloatingBill, AccountLinkedBill, GroupLinked
 from models.income_source import IncomeSource
 from models.bill_group import BillGroup, BillGroupMember
 from models.types import AllocationMethod
+from models import occurrences as occ
+
+
+
+def _as_day(value):
+    return occ._as_date(value)
+
+
+def _day(entry: dict):
+    from datetime import date as date_type
+    return occ.paid_on(entry) or date_type.today()
+
+
+def _dates_json(dates) -> str | None:
+    return json.dumps(sorted(d.isoformat() for d in dates)) if dates else None
+
+
+def _dates_from(text) -> set:
+    try:
+        return {d for d in (occ._as_date(x) for x in json.loads(text or "[]")) if d}
+    except (ValueError, TypeError):
+        return set()
+
+
+def _amounts_json(amounts: dict) -> str | None:
+    return json.dumps({d.isoformat(): v for d, v in amounts.items()}) if amounts else None
+
+
+def _amounts_from(text) -> dict:
+    try:
+        return {occ._as_date(k): float(v) for k, v in json.loads(text or "{}").items() if occ._as_date(k)}
+    except (ValueError, TypeError, AttributeError):
+        return {}
+
+
+def _log_json(entries: list[dict]) -> str | None:
+    def plain(v):
+        return v.isoformat() if hasattr(v, "isoformat") else v
+    return json.dumps([{k: plain(v) for k, v in e.items()} for e in entries]) if entries else None
+
+
+def _log_from(text) -> list[dict]:
+    try:
+        entries = json.loads(text or "[]")
+    except (ValueError, TypeError):
+        return []
+    for e in entries:
+        for k in ("date", "due"):
+            if e.get(k):
+                e[k] = occ._as_date(e[k])
+    return entries
 
 
 class DatabaseRepository:
@@ -356,17 +407,21 @@ class DatabaseRepository:
             db_bill.frequency = bill.frequency
             db_bill.preferred_source_bank = bill.preferred_source_bank
             db_bill.preferred_source_account = bill.preferred_source_account
-            db_bill.is_paid_this_period = bill.is_paid_this_period
-            db_bill.carryover_balance = getattr(bill, 'carryover_balance', 0.0)
+            # Paid status is per due date now (payments, skips); the old flag stays False
+            db_bill.is_paid_this_period = False
+            db_bill.carryover_balance = 0.0
             db_bill.start_date = getattr(bill, 'start_date', None)
             db_bill.late_fee = getattr(bill, 'late_fee', None)
+            db_bill.skipped_dates = _dates_json(getattr(bill, 'skipped', None))
+            db_bill.tracked_from = getattr(bill, 'tracked_from', None)
 
             # Update floating bill fields
             if isinstance(bill, FloatingBill):
                 db_bill.min_amount = bill.min_amount
                 db_bill.max_amount = bill.max_amount
                 db_bill.estimated_amount = bill.estimated_amount
-                db_bill.actual_amount = bill._actual_amount
+                db_bill.actual_amount = None
+                db_bill.actual_amounts = _amounts_json(bill.actual_amounts)
                 db_bill.amount_history = json.dumps(bill.amount_history) if bill.amount_history else None
 
             # Update linked bill fields
@@ -384,10 +439,12 @@ class DatabaseRepository:
                 'frequency': bill.frequency,
                 'preferred_source_bank': bill.preferred_source_bank,
                 'preferred_source_account': bill.preferred_source_account,
-                'is_paid_this_period': bill.is_paid_this_period,
-                'carryover_balance': getattr(bill, 'carryover_balance', 0.0),
+                'is_paid_this_period': False,
+                'carryover_balance': 0.0,
                 'start_date': getattr(bill, 'start_date', None),
                 'late_fee': getattr(bill, 'late_fee', None),
+                'skipped_dates': _dates_json(getattr(bill, 'skipped', None)),
+                'tracked_from': getattr(bill, 'tracked_from', None),
             }
 
             # Add floating bill specifics if applicable
@@ -395,7 +452,7 @@ class DatabaseRepository:
                 kwargs['min_amount'] = bill.min_amount
                 kwargs['max_amount'] = bill.max_amount
                 kwargs['estimated_amount'] = bill.estimated_amount
-                kwargs['actual_amount'] = bill._actual_amount
+                kwargs['actual_amounts'] = _amounts_json(bill.actual_amounts)
                 kwargs['amount_history'] = json.dumps(bill.amount_history) if bill.amount_history else None
 
             # Add linked bill specifics if applicable
@@ -430,22 +487,16 @@ class DatabaseRepository:
     def _sync_bill_payments(self, db_bill: BillModel, bill: Bill):
         """
         Make the DB rows match the bill's payment history. Usually that's just
-        appending new payments; if one was removed (e.g. a match undone), the
-        rows are rewritten so the removal sticks and later payments aren't lost.
+        appending new payments; if one was removed or changed (e.g. a match
+        undone), the rows are rewritten so the change sticks.
         """
-        from datetime import date as date_type
-
-        def day(entry):
-            paid_on = entry.get('date') or date_type.today()
-            return date_type.fromisoformat(paid_on) if isinstance(paid_on, str) else paid_on
-
-        def sig(paid_on, amount):
-            # Date and amount only: renaming an account rewrites the source columns in SQL
-            return (paid_on, round(float(amount or 0.0), 2))
+        def sig(paid_on, amount, due):
+            # Not the source: renaming an account rewrites the source columns in SQL
+            return (paid_on, round(float(amount or 0.0), 2), due)
 
         rows = sorted(db_bill.payments, key=lambda r: r.id or 0)
-        in_db = [sig(r.payment_date, r.amount_paid) for r in rows]
-        wanted = [sig(day(e), e.get('amount_paid')) for e in bill.payment_history]
+        in_db = [sig(r.payment_date, r.amount_paid, r.due_date) for r in rows]
+        wanted = [sig(_day(e), e.get('amount_paid'), occ.due_of(e)) for e in bill.payment_history]
         if wanted[:len(in_db)] == in_db:
             new_entries = bill.payment_history[len(in_db):]
         else:
@@ -454,13 +505,15 @@ class DatabaseRepository:
             self.session.flush()
             new_entries = bill.payment_history
         for entry in new_entries:
-            paid_on = day(entry)
             self.session.add(BillPaymentModel(
                 bill_id=db_bill.id,
                 amount_paid=entry.get('amount_paid') or 0.0,
                 source_bank=entry.get('source_bank') or '',
                 source_account=entry.get('source_account') or '',
-                payment_date=paid_on,
+                payment_date=_day(entry),
+                due_date=occ.due_of(entry),
+                owed=entry.get('owed'),
+                moved_money=entry.get('moved_money'),
             ))
 
     @staticmethod
@@ -472,9 +525,33 @@ class DatabaseRepository:
                 "source_bank": p.source_bank,
                 "source_account": p.source_account,
                 "amount_paid": p.amount_paid,
+                "due": p.due_date,
+                "owed": p.owed,
+                "moved_money": p.moved_money,
             }
             for p in sorted(db_bill.payments, key=lambda p: (p.payment_date, p.id))
         ]
+
+    @staticmethod
+    def _restore_paid_state(bill: Bill, db_bill: BillModel):
+        """Payments, skips and tracking start; older data gets due dates filled in."""
+        bill.payment_history = DatabaseRepository._payment_history_from_db(db_bill)
+        bill.skipped = _dates_from(getattr(db_bill, 'skipped_dates', None))
+        bill.tracked_from = getattr(db_bill, 'tracked_from', None)
+        bill.start_date = db_bill.start_date
+        bill.late_fee = getattr(db_bill, 'late_fee', None)
+        if db_bill.created_at:
+            bill.created_on = local_date(db_bill.created_at)
+        occ.pin_anchor(bill)
+        occ.assign_legacy(bill)
+        # The old "paid this period" flag with no payment behind it: skip that due date
+        # (linked bills do this once their real account is connected)
+        bill._legacy_paid = bool(db_bill.is_paid_this_period) and not bill.payment_history
+
+    @staticmethod
+    def _apply_legacy_flag(bill):
+        if bill.__dict__.pop('_legacy_paid', False):
+            bill.is_paid_this_period = True
 
     def load_bills(self) -> list[Bill]:
         """Load all bills from the database."""
@@ -526,13 +603,7 @@ class DatabaseRepository:
                     preferred_source_bank=db_bill.preferred_source_bank,
                     preferred_source_account=db_bill.preferred_source_account,
                 )
-                bill.is_paid_this_period = db_bill.is_paid_this_period
-                bill.carryover_balance = getattr(db_bill, 'carryover_balance', None) or 0.0
-                bill.payment_history = self._payment_history_from_db(db_bill)
-                bill.start_date = db_bill.start_date
-                bill.late_fee = getattr(db_bill, 'late_fee', None)
-                if db_bill.created_at:
-                    bill.created_on = local_date(db_bill.created_at)
+                self._restore_paid_state(bill, db_bill)
                 bills.append(bill)
             elif db_bill.bill_type.value == "floating":
                 # Use stored estimated_amount if available, else fall back to amount
@@ -556,17 +627,12 @@ class DatabaseRepository:
                     except (json.JSONDecodeError, TypeError):
                         bill.amount_history = []
 
-                # Restore actual amount if one was set
-                if db_bill.actual_amount is not None:
+                self._restore_paid_state(bill, db_bill)
+                bill.actual_amounts = _amounts_from(getattr(db_bill, 'actual_amounts', None))
+                # An actual amount saved before they were kept per due date
+                if db_bill.actual_amount is not None and not bill.actual_amounts:
                     bill.set_actual_amount(db_bill.actual_amount)
-
-                bill.is_paid_this_period = db_bill.is_paid_this_period
-                bill.carryover_balance = getattr(db_bill, 'carryover_balance', None) or 0.0
-                bill.payment_history = self._payment_history_from_db(db_bill)
-                bill.start_date = db_bill.start_date
-                bill.late_fee = getattr(db_bill, 'late_fee', None)
-                if db_bill.created_at:
-                    bill.created_on = local_date(db_bill.created_at)
+                self._apply_legacy_flag(bill)
                 bills.append(bill)
             else:
                 bill = Bill(
@@ -580,13 +646,8 @@ class DatabaseRepository:
                     preferred_source_account=db_bill.preferred_source_account
                 )
 
-                bill.is_paid_this_period = db_bill.is_paid_this_period
-                bill.carryover_balance = getattr(db_bill, 'carryover_balance', None) or 0.0
-                bill.payment_history = self._payment_history_from_db(db_bill)
-                bill.start_date = db_bill.start_date
-                bill.late_fee = getattr(db_bill, 'late_fee', None)
-                if db_bill.created_at:
-                    bill.created_on = local_date(db_bill.created_at)
+                self._restore_paid_state(bill, db_bill)
+                self._apply_legacy_flag(bill)
                 bills.append(bill)
 
         return bills
@@ -719,8 +780,11 @@ class DatabaseRepository:
             db_group.group_type = group.group_type
             db_group.preferred_source_bank = group.preferred_source_bank
             db_group.preferred_source_account = group.preferred_source_account
-            db_group.is_paid_this_period = group.is_paid_this_period
-            db_group.last_paid_date = group.last_paid_date
+            db_group.is_paid_this_period = False
+            db_group.last_paid_date = _as_day(group.last_paid_date)
+            db_group.payment_log = _log_json(group.payment_history)
+            db_group.skipped_dates = _dates_json(group.skipped)
+            db_group.tracked_from = group.tracked_from
         else:
             db_group = BillGroupModel(
                 group_name=group.group_name,
@@ -730,8 +794,11 @@ class DatabaseRepository:
                 group_type=group.group_type,
                 preferred_source_bank=group.preferred_source_bank,
                 preferred_source_account=group.preferred_source_account,
-                is_paid_this_period=group.is_paid_this_period,
-                last_paid_date=group.last_paid_date,
+                is_paid_this_period=False,
+                last_paid_date=_as_day(group.last_paid_date),
+                payment_log=_log_json(group.payment_history),
+                skipped_dates=_dates_json(group.skipped),
+                tracked_from=group.tracked_from,
             )
             self.session.add(db_group)
             self.session.flush()  # get db_group.id
@@ -795,11 +862,20 @@ class DatabaseRepository:
                 preferred_source_account=db_group.preferred_source_account,
                 members=members,
             )
-            group.is_paid_this_period = db_group.is_paid_this_period
             if getattr(db_group, 'created_at', None):
                 group.created_on = local_date(db_group.created_at)
-            if db_group.last_paid_date:
-                group.payment_history.append({"date": db_group.last_paid_date})
+            group.tracked_from = getattr(db_group, 'tracked_from', None)
+            group.skipped = _dates_from(getattr(db_group, 'skipped_dates', None))
+            log = getattr(db_group, 'payment_log', None)
+            if log:
+                group.payment_history = _log_from(log)
+            elif db_group.last_paid_date:
+                # Saved before group payments were kept: the last one paid in full
+                group.payment_history = [{"date": db_group.last_paid_date, "amount_paid": db_group.total_payment}]
+            as_bill = group.as_bill()
+            occ.assign_legacy(as_bill)
+            if db_group.is_paid_this_period and not group.payment_history:
+                as_bill.is_paid_this_period = True
             groups.append(group)
 
         return groups

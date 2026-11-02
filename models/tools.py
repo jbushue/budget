@@ -245,14 +245,19 @@ def update_balances(manager, updates: list[dict]) -> int:
 
 # ── bills ────────────────────────────────────────────────────────────────
 
-def reset_bill_to_estimate(manager, bill_name: str) -> str:
+def reset_bill_to_estimate(manager, bill_name: str, due_date: str | None = None) -> str:
     bill = next((b for b in manager.bills if b.bill_name == bill_name), None)
     if bill is None:
         raise ToolError(f"Bill '{bill_name}' not found")
     if not hasattr(bill, "reset_to_estimate"):
         raise ToolError(f"{bill_name} has a fixed amount")
-    bill.reset_to_estimate()
-    return f"{bill_name} is back to its ${bill.amount:,.2f} estimate"
+    from models.gql_bills import resolve_due
+    try:
+        due = resolve_due(bill, due_date)
+    except ValueError as e:
+        raise ToolError(str(e))
+    bill.reset_to_estimate(due)
+    return f"{bill_name} due {due:%b} {due.day} is back to its ${bill.amount:,.2f} estimate"
 
 
 # ── payment strategies ───────────────────────────────────────────────────

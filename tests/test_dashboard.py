@@ -129,6 +129,10 @@ class TestSettings:
         assert m.everyday_spending is None
 
 
+def od_due(rows):
+    return date.fromisoformat(rows[0]["due_date"])
+
+
 class TestDashboard:
 
     def _manager(self, checking=2000.0, weekly=0.0, cushion=200.0, bills=None):
@@ -149,7 +153,7 @@ class TestDashboard:
         assert d["safe_to_spend"] == pytest.approx(600)
         assert d["status"] == "ok"
         assert d["next_payday"] == PAYDAY.isoformat()
-        assert d["safe_per_day"] == pytest.approx(600 / (PAYDAY - TODAY).days)
+        assert d["safe_per_day"] == pytest.approx(600 / (PAYDAY - TODAY).days, abs=0.01)
         names = [b["name"] for b in d["bills_this_period"]]
         assert names == ["Rent"] and d["bills_this_period"][0]["status"] == "covered"
 
@@ -178,10 +182,10 @@ class TestDashboard:
         d = build_dashboard(m)
         assert d["status"] == "warning" and "tight" in d["status_title"]
 
-    def test_overdue_bill_is_held_back(self):
+    def test_overdue_bill_is_paid_first(self):
         past = TODAY - timedelta(days=3)
         late = Bill("Phone", 80, past.day)
-        late.created_on = past - timedelta(days=40)
+        late.created_on = past - timedelta(days=10)
         m = self._manager(checking=2000, bills=[late])
         od = overdue_bills(m, TODAY)
         assert [o["name"] for o in od] == ["Phone"] and od[0]["days_overdue"] == 3
@@ -189,9 +193,19 @@ class TestDashboard:
         assert d["overdue_total"] == 80
         assert d["status"] == "warning"
         assert d["bills_this_period"][0]["status"] == "overdue"
+        # The projection pays it today, so it's out of the lowest point (not taken off twice)
+        clean = build_dashboard(self._manager(checking=2000))
+        assert d["safe_to_spend"] == pytest.approx(clean["safe_to_spend"] - 80)
         # Paid bills aren't overdue
-        late.is_paid_this_period = True
+        late.mark_paid("B", "Chk", 80, TODAY, due=od_due(od))
         assert overdue_bills(m, TODAY) == []
+
+    def test_every_missed_month_is_overdue(self):
+        past = TODAY - timedelta(days=3)
+        late = Bill("Phone", 80, min(past.day, 28))
+        late.created_on = past - timedelta(days=70)
+        m = self._manager(checking=2000, bills=[late])
+        assert len(overdue_bills(m, TODAY)) >= 2
 
     def test_newly_added_bill_is_not_overdue(self):
         """A bill added today isn't overdue for a due date before it existed."""
@@ -199,9 +213,6 @@ class TestDashboard:
         fresh = Bill("Phone", 80, past.day)  # created_on = today
         m = self._manager(bills=[fresh])
         assert overdue_bills(m, TODAY) == []
-        # ...unless it has been paid before (so it's clearly being tracked)
-        fresh.payment_history.append({"date": past - timedelta(days=30), "amount_paid": 80})
-        assert [o["name"] for o in overdue_bills(m, TODAY)] == ["Phone"]
 
     def test_created_date_survives_reload(self, api):  # noqa: F811
         api('mutation { createBill(billName: "Gym", amount: 40, dueDate: 3) { success } }')

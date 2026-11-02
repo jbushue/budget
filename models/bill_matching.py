@@ -31,6 +31,7 @@ from statistics import median
 
 from models import database as db
 from models import ledger
+from models import occurrences as occ
 from models.fixed_bill import AccountLinkedBill, FloatingBill, GroupLinkedBill
 
 NOT_A_BILL = "__none__"  # matched_bill value for "this transaction isn't a bill payment"
@@ -79,18 +80,18 @@ def _nearest_due(bill, when: date) -> date | None:
 
 
 def _already_paid(bill, due: date, exclude: tuple | None = None) -> bool:
-    history = bill.payment_history
-    if isinstance(bill, GroupLinkedBill) and not history:
-        history = bill.linked_group.payment_history
-    for h in history:
-        d = _as_date(h.get("date"))
-        if d is None:
-            continue
-        if exclude and d == exclude[0] and abs(float(h.get("amount_paid") or 0) - exclude[1]) < 0.01:
-            continue
-        if due - timedelta(days=EARLY_DAYS + 20) <= d <= due + timedelta(days=LATE_DAYS):
-            return True
-    return False
+    """Whether that due date is already fully paid (or skipped), not counting
+    the payment ``exclude`` = (date, amount)."""
+    if occ.is_skipped(bill, due):
+        return True
+    entries = [h for h in occ.payments_for(bill, due)
+               if not (exclude and occ.paid_on(h) == exclude[0]
+                       and abs(float(h.get("amount_paid") or 0) - exclude[1]) < 0.01)]
+    if not entries:
+        return False
+    if any(h.get("owed") is None for h in entries):
+        return True
+    return sum(float(h.get("amount_paid") or 0) for h in entries) >= occ.amount_due(bill, due) - 0.005
 
 
 def _amount_fits(bill, amount: float) -> tuple[bool, bool]:
@@ -189,11 +190,8 @@ def find_matches(manager, today: date | None = None, days: int = LOOKBACK_DAYS) 
 
 
 def _record(manager, txn: dict, bill, due: date | None, today: date | None = None) -> None:
-    from models.dashboard import settle_paid_flag
     manager.record_bill_paid(bill, -txn["amount"], _as_date(txn["date"]),
-                             txn["bank_name"] or "", txn["account_name"] or "")
-    # The payment was for a due date that has passed: the upcoming one is still owed
-    settle_paid_flag(bill, due is not None and due < (today or date.today()))
+                             txn["bank_name"] or "", txn["account_name"] or "", due=due)
     ledger.update_transaction(txn["id"], matched_bill=bill.bill_name)
 
 
@@ -250,21 +248,12 @@ def unmatch(manager, txn_id: int) -> None:
     if bill is None:
         return
     when, amount = _as_date(txn["date"]), -txn["amount"]
-    histories = [bill.payment_history]
-    if isinstance(bill, GroupLinkedBill):
-        histories.append(bill.linked_group.payment_history)
-    removed_last = False
-    for history in histories:
-        for i in range(len(history) - 1, -1, -1):
-            h = history[i]
-            if _as_date(h.get("date")) == when and abs(float(h.get("amount_paid", h.get("amount", 0)) or 0) - amount) < 0.01:
-                removed_last = removed_last or i == len(history) - 1
-                history.pop(i)
-                break
-    if removed_last:
-        bill.is_paid_this_period = False
-        if isinstance(bill, GroupLinkedBill):
-            bill.linked_group.is_paid_this_period = False
+    history = bill.payment_history
+    for i in range(len(history) - 1, -1, -1):
+        h = history[i]
+        if _as_date(h.get("date")) == when and abs(float(h.get("amount_paid", h.get("amount", 0)) or 0) - amount) < 0.01:
+            history.pop(i)  # that due date is owed again
+            break
     manager.save_to_database()
 
 

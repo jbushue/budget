@@ -15,8 +15,10 @@ balance — not by a total:
                     upcoming payday, paying bills on their due dates and
                     including your everyday spending allowance)
                   − your cushion
-                  − overdue bills not yet marked paid
                   − money set aside in checking for goals
+
+Bills that are overdue (a due date passed without being marked paid) are paid
+on the projection's first day, so they come out of the lowest point too.
 
 The projection already subtracts your usual everyday spending, so this is
 what you can spend *on top of* it.
@@ -26,6 +28,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from . import occurrences as occ
 from .fixed_bill import AccountLinkedBill, GroupLinkedBill
 from .payment_insights import PaymentInsightsAnalyzer, checking_keys, _r, _money, _day
 
@@ -145,101 +148,37 @@ def _skip_bill(bill, grouped_keys) -> bool:
     return False
 
 
-def _history(bill) -> list[dict]:
-    if isinstance(bill, GroupLinkedBill):
-        return bill.linked_group.payment_history or bill.payment_history
-    return bill.payment_history
-
-
-def _as_date(value) -> date | None:
-    if isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except (TypeError, ValueError):
-        return None
-
-
 def overdue_due_date(bill, today: date) -> date | None:
-    """
-    The bill's most recent due date (within the last 31 days) if it passed
-    without a payment, else None. A payment counts for that due date if it
-    was made after the previous due date (early or late).
-    """
-    try:
-        prev_due = last_due = None
-        d = bill.get_next_due_date(today - timedelta(days=32))
-        while d < today:
-            prev_due, last_due = last_due, d
-            d = bill.get_next_due_date(d)
-        if last_due is None:
-            return None
-        if prev_due is None:
-            prev_due = last_due - timedelta(days=31)
-            back = bill.get_next_due_date(last_due - timedelta(days=400))
-            while back < last_due:
-                prev_due = back
-                back = bill.get_next_due_date(back)
-    except Exception:
-        return None
-    # Only call it overdue if the bill was being tracked by then: it existed
-    # before that due date, or has been paid before. (A bill you just added
-    # isn't "overdue" for last month.)
-    anchor = getattr(bill, "start_date", None)
-    if anchor and last_due < anchor:
-        return None
-    history = _history(bill)
-    created = getattr(bill.linked_group if isinstance(bill, GroupLinkedBill) else bill, "created_on", None)
-    if not history:
-        if bill.is_paid_this_period or created is None or created > last_due:
-            return None
-        return last_due
-    if any((_as_date(h.get("date")) or date.min) > prev_due for h in history):
-        return None
-    return last_due
-
-
-def settle_paid_flag(bill, was_overdue: bool) -> None:
-    """
-    After paying an OVERDUE bill, the payment was for the missed due date —
-    the next one is still owed, so don't flag the upcoming occurrence as paid
-    (otherwise the projection would skip it).
-    """
-    if not was_overdue:
-        return
-    bill.is_paid_this_period = False
-    if isinstance(bill, GroupLinkedBill):
-        bill.linked_group.is_paid_this_period = False
+    """The bill's oldest due date before ``today`` that isn't fully paid, else None."""
+    late = occ.overdue(bill, today)
+    return late[0][0] if late else None
 
 
 def overdue_bills(manager, today: date) -> list[dict]:
     """
-    Bills whose most recent due date (within the last 31 days) has passed
-    without being paid. The projection starts today, so these are not in
-    it — the money for them is still sitting in checking.
+    One row per due date that has passed without being fully paid (a partly
+    paid one shows what's left). The projection pays these on its first day,
+    since that money is already owed.
     """
     grouped = manager.get_grouped_account_keys()
     out = []
     for bill in manager.bills:
         if _skip_bill(bill, grouped):
             continue
-        last_due = overdue_due_date(bill, today)
-        if last_due is None:
-            continue
-        amount = bill.effective_amount if not isinstance(bill, AccountLinkedBill) else min(
-            bill.effective_amount, bill.linked_account_balance)
-        if amount <= 0:
-            continue
-        out.append({
-            "name": _bill_label(bill),
-            "bill_name": bill.bill_name,
-            "kind": _bill_kind(bill),
-            "due_date": last_due.isoformat(),
-            "amount": _r(amount),
-            "days_overdue": (today - last_due).days,
-            "source_account": bill.preferred_source_account or "",
-        })
-    return sorted(out, key=lambda r: r["due_date"])
+        for due, left in occ.overdue(bill, today):
+            amount = left if not isinstance(bill, AccountLinkedBill) else min(left, bill.linked_account_balance)
+            if amount <= 0:
+                continue
+            out.append({
+                "name": _bill_label(bill),
+                "bill_name": bill.bill_name,
+                "kind": _bill_kind(bill),
+                "due_date": due.isoformat(),
+                "amount": _r(amount),
+                "days_overdue": (today - due).days,
+                "source_account": bill.preferred_source_account or "",
+            })
+    return sorted(out, key=lambda r: (r["due_date"], r["name"]))
 
 
 def _goal_reserves(manager) -> float:
@@ -326,7 +265,8 @@ def build_dashboard(manager, today: date | None = None) -> dict:
     held = held_back(manager, opt["late_payments"], today)
     overdue, overdue_total, short_total = held["overdue"], held["overdue_total"], held["short_total"]
     reserves, cushion = held["reserves"], held["cushion"]
-    safe = max(0.0, lowest - cushion - overdue_total - short_total - reserves)
+    # Overdue bills are already paid out of the projection on its first day
+    safe = max(0.0, lowest - cushion - short_total - reserves)
     days_to_payday = max(1, (next_payday - today).days) if next_payday else 14
     per_day = safe / days_to_payday
 
@@ -344,7 +284,7 @@ def build_dashboard(manager, today: date | None = None) -> dict:
         status = "warning"
         title = f"{len(overdue)} bill(s) past due and not marked paid"
         detail = ("If you've already paid them, mark them paid below. "
-                  f"Until then, {_money(overdue_total)} is held back from safe-to-spend.")
+                  f"Until then, the plan pays the {_money(overdue_total)} first.")
     elif late_base:
         status = "warning"
         title = "Bills are covered — if you follow the plan"

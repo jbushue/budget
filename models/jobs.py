@@ -3,7 +3,7 @@ Background jobs for a server that stays running.
 
 One thread wakes every couple of minutes and runs whatever is due:
 
-* maintenance  — daily: roll bill periods over, record the net worth snapshot,
+* maintenance  — daily: record the net worth snapshot,
                  drop activity history older than a year
                  (otherwise these only happen when the server starts)
 * backup       — daily automatic database backup (models/backups.py)
@@ -44,11 +44,10 @@ def maintenance_due(now: datetime, settings: dict) -> bool:
 def run_maintenance(manager, now: datetime) -> str:
     from models.app_settings import update_settings
     from models import activity
-    reset = manager.auto_reset_periods()
     manager.record_net_worth_snapshot()
     activity.prune(now)
     update_settings({"last_maintenance_date": now.date().isoformat()})
-    return f"Rolled over {reset} bill period(s); net worth recorded" if reset else "Net worth recorded"
+    return "Net worth recorded"
 
 
 def simplefin_due(now: datetime, settings: dict) -> bool:

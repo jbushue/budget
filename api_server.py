@@ -57,10 +57,6 @@ def create_app():
     try:
         if manager.load_from_database():
             print("✓ Loaded data from database")
-            # Auto-reset bill periods that have rolled over
-            reset_count = manager.auto_reset_periods()
-            if reset_count > 0:
-                print(f"✓ Auto-reset {reset_count} bill period(s)")
             # Record daily net worth snapshot
             snap = manager.record_net_worth_snapshot()
             if snap:

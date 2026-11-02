@@ -4,7 +4,7 @@ Provides persistent storage for the financial management system.
 """
 
 from datetime import date, datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, Float, String, Date, DateTime, Boolean, ForeignKey, Enum
+from sqlalchemy import create_engine, Column, Integer, Float, String, Date, DateTime, Boolean, ForeignKey, Enum, Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 import enum
 import os
@@ -295,6 +295,13 @@ class BillModel(Base):
     # Fee charged when this bill is paid late (None = use the app-wide default)
     late_fee = Column(Float, nullable=True)
 
+    # Due dates not owed (JSON list of ISO dates), a floating bill's actual
+    # amount per due date (JSON {date: amount}), and the first due date that
+    # can be overdue (set when paying by due date began)
+    skipped_dates = Column(Text, nullable=True)
+    actual_amounts = Column(Text, nullable=True)
+    tracked_from = Column(Date, nullable=True)
+
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -315,6 +322,11 @@ class BillPaymentModel(Base):
     source_bank = Column(String(100), nullable=False)
     source_account = Column(String(100), nullable=False)
     payment_date = Column(Date, nullable=False, default=date.today)
+    # The due date this payment is for, what that due date owed, and whether
+    # the app moved the money (False = just recorded)
+    due_date = Column(Date, nullable=True)
+    owed = Column(Float, nullable=True)
+    moved_money = Column(Boolean, nullable=True)
     created_at = Column(DateTime, default=utc_now)
 
     # Relationships
@@ -404,6 +416,10 @@ class BillGroupModel(Base):
     preferred_source_account = Column(String(100), nullable=True)
     is_paid_this_period = Column(Boolean, nullable=False, default=False)
     last_paid_date = Column(Date, nullable=True)
+    # Payments per due date (JSON list), skipped due dates, tracking start (see bills)
+    payment_log = Column(Text, nullable=True)
+    skipped_dates = Column(Text, nullable=True)
+    tracked_from = Column(Date, nullable=True)
 
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
@@ -758,6 +774,20 @@ def _run_migrations():
                 conn.execute(text(
                     "ALTER TABLE bill_groups ADD COLUMN last_paid_date DATE"
                 ))
+
+    # Migration: paid status per due date. Bills that already exist only count
+    # due dates from a month back as overdue (what the app showed before)
+    for table, cols in (("bills", (("skipped_dates", "TEXT"), ("actual_amounts", "TEXT"), ("tracked_from", "DATE"))),
+                        ("bill_groups", (("payment_log", "TEXT"), ("skipped_dates", "TEXT"), ("tracked_from", "DATE"))),
+                        ("bill_payments", (("due_date", "DATE"), ("owed", "FLOAT"), ("moved_money", "BOOLEAN")))):
+        if table in inspector.get_table_names():
+            columns = [col["name"] for col in inspector.get_columns(table)]
+            with engine.begin() as conn:
+                for name, kind in cols:
+                    if name not in columns:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {kind}"))
+                        if name == "tracked_from":
+                            conn.execute(text(f"UPDATE {table} SET tracked_from = date('now', 'localtime', '-31 day')"))
 
     # Migration: sessions belong to a user (older password-only sessions stop working)
     if "auth_sessions" in inspector.get_table_names():

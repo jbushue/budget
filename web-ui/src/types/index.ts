@@ -147,6 +147,9 @@ export interface BillItem {
   linkedBankName: string | null
   linkedAccountName: string | null
   linkedAccountType: string | null
+  /** The due date a payment goes to now (oldest still owed, else the next) */
+  nextUnpaidDue?: string | null
+  overdueCount?: number
 }
 
 export interface BalanceHistoryEntry {
@@ -353,6 +356,42 @@ export interface BillPaymentHistory {
   sourceBank: string
   sourceAccount: string
   paymentDate: string
+  dueDate?: string | null
+}
+
+/** paid | partial | skipped | none (nothing owed) | overdue | unpaid | untracked (before tracking began) */
+export type OccurrenceStatus = 'paid' | 'partial' | 'skipped' | 'none' | 'overdue' | 'unpaid' | 'untracked'
+
+/** One due date of one bill (the Bills month view). */
+export interface BillOccurrence {
+  billName: string
+  displayName: string
+  kind: 'bill' | 'floating' | 'credit' | 'mortgage' | 'heloc' | 'group'
+  dueDate: string
+  amount: number
+  paid: number
+  remaining: number
+  status: OccurrenceStatus
+  paidOn: string | null
+  sourceBank: string
+  sourceAccount: string
+  isFloating: boolean
+  hasActualAmount: boolean
+  estimatedAmount: number | null
+  bankName: string | null
+  accountName: string | null
+  groupName: string | null
+  balanceOwed: number | null
+  payments: { date: string; amount: number; sourceBank: string; sourceAccount: string; movedMoney: boolean | null }[]
+}
+
+export interface BillMonth {
+  month: string
+  firstMonth: string
+  lastMonth: string
+  overdueBefore: number
+  totals: { due: number; paid: number; remaining: number; overdue: number }
+  occurrences: BillOccurrence[]
 }
 
 export interface DebtPayoffStrategy {

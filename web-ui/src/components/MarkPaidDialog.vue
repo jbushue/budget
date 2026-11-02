@@ -2,6 +2,7 @@
   <div v-if="bill" class="modal-overlay" @click.self="emit('close')">
     <div class="modal" style="max-width:440px">
       <h3 style="margin-top:0">Mark "{{ bill.name }}" paid</h3>
+      <p v-if="bill.dueDate" class="muted" style="font-size:0.85rem;margin:-0.25rem 0 0.75rem">For the bill due {{ fmtDate(bill.dueDate) }}</p>
       <div class="form-group">
         <label>Amount</label>
         <input v-model.number="amount" type="number" step="0.01" min="0" />
@@ -39,7 +40,7 @@ import { ref, computed, watch } from 'vue'
 import { useMutation, useQuery } from '@vue/apollo-composable'
 import { GET_ALL_BANKS, GET_SIMPLEFIN_SYNCED_ACCOUNTS, MARK_BILL_PAID } from '../graphql/queries'
 import { runMutation } from '../utils/mutation'
-import { todayISO, num } from '../utils/format'
+import { todayISO, num, fmtDate } from '../utils/format'
 import type { Bank, MutationPayload, SimplefinSyncedAccount } from '../types'
 
 /** Minimal bill info the dialog needs. */
@@ -48,6 +49,8 @@ export interface PayableBill {
   billName: string
   amount: number
   sourceAccount?: string
+  /** The due date this pays (default: the oldest still owed, else the next) */
+  dueDate?: string | null
 }
 
 const props = defineProps<{ bill: PayableBill | null }>()
@@ -94,6 +97,7 @@ async function save() {
     paymentDate: paidOn.value,
     sourceBank, sourceAccount,
     moveMoney: moveMoney.value,
+    dueDate: props.bill!.dueDate || null,
   } }), 'markBillPaid', { failMessage: 'Could not mark the bill paid' })
   saving.value = false
   if (ok) {

@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 """
 Editing accounts and banks after they're created: every setting, renames
@@ -10,6 +12,7 @@ from sqlalchemy import text
 from models import database as db
 from models import app_settings, simplefin
 from models.finance_manager import FinanceManager
+from models import occurrences as occ
 from models.fixed_bill import AccountLinkedBill
 from tests.test_graphql_api import api  # noqa: F401  (fixture)
 from tests.test_persistence import temp_db  # noqa: F401  (fixture)
@@ -116,9 +119,12 @@ class TestCards:
             assert card.regular_balance == pytest.approx(1541.67)
             bills = [b for b in m.bills if isinstance(b, AccountLinkedBill)]
             assert [b.bill_name for b in bills] == ["[Auto] Sapphire Payment"]
-            # The payment bill kept its own settings, history and paid flag, and follows the new due day
+            # The payment bill kept its own settings and history, and follows the new due day;
+            # the payment still counts for this month's due date
             assert bills[0].preferred_source_account == "Chk" and bills[0].payment_history
-            assert bills[0].is_paid_this_period and bills[0].due_date == 20
+            assert bills[0].due_date == 20
+            due = occ.next_due(bills[0], date.today())
+            assert occ.payments_for(bills[0], due) and due.day == 20
         assert rows("SELECT COUNT(*) FROM bills")[0][0] == 1
 
     def test_balance_cant_drop_below_promos(self, api):  # noqa: F811

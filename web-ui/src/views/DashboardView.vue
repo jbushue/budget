@@ -99,7 +99,7 @@
                   <div style="font-weight:600">{{ currency(b.amount) }}</div>
                   <span class="badge" :class="PERIOD_BADGE[b.status].cls">{{ PERIOD_BADGE[b.status].label }}{{ b.status === 'short' && b.shortBy >= 0.01 ? ` ${currency(b.shortBy)}` : '' }}</span>
                 </div>
-                <button v-if="b.status !== 'paid'" class="btn btn-sm btn-outline" style="margin-left:0.5rem" @click="payBill = { name: b.name, billName: b.billName, amount: b.amount, sourceAccount: b.sourceAccount }">Mark paid</button>
+                <button v-if="b.status !== 'paid'" class="btn btn-sm btn-outline" style="margin-left:0.5rem" @click="payBill = { name: b.name, billName: b.billName, amount: b.amount, sourceAccount: b.sourceAccount, dueDate: b.dueDate }">Mark paid</button>
               </li>
             </ul>
             <div v-if="dash.upcomingIncome.length" style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem">

@@ -201,7 +201,7 @@ class BankType(graphene.ObjectType):
                 status=m.status.value if hasattr(m.status, 'value') else str(m.status),
                 market_value=m.market_value,
                 equity=m.equity,
-                is_paid_this_period=m.is_paid_this_period,
+                is_paid_this_period=_account_paid(info, 'mortgage', self.name, name),
                 start_date=m.start_date.isoformat() if m.start_date else None,
                 escrow_property_tax=m.escrow.property_tax_monthly,
                 escrow_insurance=m.escrow.homeowners_insurance_monthly,
@@ -236,7 +236,7 @@ class BankType(graphene.ObjectType):
                 payment_due_date=h.payment_due_date,
                 preferred_source_bank=h.preferred_source_bank,
                 preferred_source_account=h.preferred_source_account,
-                is_paid_this_period=h.is_paid_this_period,
+                is_paid_this_period=_account_paid(info, 'heloc', self.name, name),
             )
             for name, h in heloc_dict.items()
         ]
@@ -281,6 +281,18 @@ class BillType(graphene.ObjectType):
     linked_account_type = graphene.String()
     start_date = graphene.String()
     late_fee = graphene.Float(description="Fee if paid late (null = the default from settings)")
+    next_unpaid_due = graphene.String(description="The due date a payment goes to now (oldest still owed, else next)")
+    overdue_count = graphene.Int(description="Due dates passed without being fully paid")
+
+
+def _account_paid(info, kind: str, bank_name: str, account_name: str) -> bool:
+    """Paid status of a mortgage/HELOC comes from its payment bill."""
+    manager = info.context.get('manager') if info and info.context else None
+    for bill in (manager.bills if manager else []):
+        if (isinstance(bill, AccountLinkedBill) and bill.linked_account_type == kind
+                and bill.linked_bank_name == bank_name and bill.linked_account.account_name == account_name):
+            return bill.is_paid_this_period
+    return False
 
 
 def _iso(d):
@@ -321,6 +333,7 @@ def _income_to_type(income) -> 'IncomeSourceType':
 
 def _bill_to_type(bill) -> 'BillType':
     """Convert a Bill object to a BillType GraphQL object."""
+    from models import occurrences as occ
     carryover = getattr(bill, 'carryover_balance', 0.0) or 0.0
     effective = getattr(bill, 'effective_amount', bill.amount)
     is_linked = isinstance(bill, AccountLinkedBill)
@@ -350,6 +363,8 @@ def _bill_to_type(bill) -> 'BillType':
         linked_account_type=getattr(bill, 'linked_account_type', None) if is_linked else None,
         start_date=_iso(getattr(bill, 'start_date', None)),
         late_fee=getattr(bill, 'late_fee', None),
+        next_unpaid_due=_iso(occ.default_due(bill)),
+        overdue_count=len(occ.overdue(bill)),
     )
 
 
@@ -597,6 +612,7 @@ class BillPaymentHistoryType(graphene.ObjectType):
     source_bank = graphene.String()
     source_account = graphene.String()
     payment_date = graphene.String()
+    due_date = graphene.String(description="The due date the payment was for")
 
 
 class DebtPayoffStrategyType(graphene.ObjectType):
@@ -1231,9 +1247,13 @@ class Query(ExtQuery, graphene.ObjectType):
             # Optimization events use from_bank/from_account instead of bank/account
             source_bank = cf.get('bank', cf.get('from_bank', ''))
             source_account = cf.get('account', cf.get('from_account', ''))
+            description = cf.get('description', '')
+            if cf.get('overdue') and cf.get('due'):
+                # An earlier due date that wasn't paid: the plan pays it first
+                description = f"{description} (overdue, was due {cf['due']:%b} {cf['due'].day})"
             events_by_date[cf_date].append(CalendarEventType(
                 event_type=cf['type'],
-                description=cf.get('description', ''),
+                description=description,
                 amount=cf['amount'],
                 source_bank=source_bank,
                 source_account=source_account,
@@ -1452,38 +1472,21 @@ class Query(ExtQuery, graphene.ObjectType):
             return []
 
     def resolve_bill_payment_history(self, info, bill_name=None, limit=50):
-        """Get bill payment history."""
-        try:
-            from models.database import get_session
-            from sqlalchemy import text
-            session = get_session()
-            try:
-                if bill_name:
-                    rows = session.execute(text("""
-                        SELECT b.bill_name, bp.amount_paid, bp.source_bank, bp.source_account, bp.payment_date
-                        FROM bill_payments bp
-                        JOIN bills b ON b.id = bp.bill_id
-                        WHERE b.bill_name = :name
-                        ORDER BY bp.payment_date DESC LIMIT :lim
-                    """), {"name": bill_name, "lim": limit}).fetchall()
-                else:
-                    rows = session.execute(text("""
-                        SELECT b.bill_name, bp.amount_paid, bp.source_bank, bp.source_account, bp.payment_date
-                        FROM bill_payments bp
-                        JOIN bills b ON b.id = bp.bill_id
-                        ORDER BY bp.payment_date DESC LIMIT :lim
-                    """), {"lim": limit}).fetchall()
-                return [
-                    BillPaymentHistoryType(
-                        bill_name=r[0], amount_paid=r[1], source_bank=r[2],
-                        source_account=r[3], payment_date=str(r[4])
-                    )
-                    for r in rows
-                ]
-            finally:
-                session.close()
-        except Exception:
-            return []
+        """Recorded bill payments (loan groups included), newest first."""
+        from models import occurrences as occ
+        manager = info.context.get('manager')
+        rows = []
+        for bill in (manager.bills if manager else []):
+            if bill_name and bill.bill_name != bill_name:
+                continue
+            for e in bill.payment_history:
+                paid = occ.paid_on(e)
+                rows.append((paid or date.min, BillPaymentHistoryType(
+                    bill_name=bill.bill_name, amount_paid=float(e.get("amount_paid") or 0.0),
+                    source_bank=e.get("source_bank") or "", source_account=e.get("source_account") or "",
+                    payment_date=_iso(paid), due_date=_iso(occ.due_of(e)))))
+        rows.sort(key=lambda r: r[0], reverse=True)
+        return [r[1] for r in rows[:limit]]
 
     def resolve_debt_payoff_comparison(self, info, extra_monthly=0):
         """Compare debt payoff strategies."""
@@ -2131,9 +2134,9 @@ class UpdateBill(graphene.Mutation):
 
         if amount is not None:
             if isinstance(bill, FloatingBill):
+                # Due dates with an actual amount keep it; the rest use the new estimate
                 bill.estimated_amount = amount
-                if not bill.has_actual_amount:
-                    bill.amount = amount
+                bill.amount = amount
             else:
                 bill.amount = amount
         if due_date is not None:
@@ -2256,10 +2259,12 @@ class DeleteAccount(graphene.Mutation):
 
 class MarkBillPaid(graphene.Mutation):
     """
-    Mark a bill as paid for the current period. Works for regular bills and
-    for account-linked bills (credit/mortgage/HELOC payments). The money comes
-    out of the source account (or the bill's preferred source); paying from a
-    credit card charges the card.
+    Pay one due date of a bill (dueDate; default: the oldest still owed, else
+    the next — any due date up to a year ahead can be paid early). Works for
+    regular bills and for account-linked bills (credit/mortgage/HELOC
+    payments). The money comes out of the source account (or the bill's
+    preferred source); paying from a credit card charges the card. Paying
+    less than is owed leaves the due date partly paid.
 
     With moveMoney: false the bill is only recorded as paid — use it when the
     payment already happened and your balances already reflect it.
@@ -2271,40 +2276,43 @@ class MarkBillPaid(graphene.Mutation):
         source_account = graphene.String()
         payment_date = graphene.String()  # ISO date string
         move_money = graphene.Boolean(default_value=True)
+        due_date = graphene.String(description="The due date this pays (YYYY-MM-DD)")
     success = graphene.Boolean()
     message = graphene.String()
 
     def mutate(self, info, bill_name, amount_paid=None, source_bank=None, source_account=None, payment_date=None,
-               move_money=True):
+               move_money=True, due_date=None):
         manager = info.context.get('manager')
         if not manager:
             return MarkBillPaid(success=False, message="Manager not available")
         bill = next((b for b in manager.bills if b.bill_name == bill_name), None)
         if not bill:
             return MarkBillPaid(success=False, message=f"Bill '{bill_name}' not found")
+        from models import occurrences as occ
+        from models.gql_bills import resolve_due
         try:
             pay_date = _parse_date(payment_date, "payment date") or date.today()
+            due = resolve_due(bill, due_date, pay_date)
         except ValueError as e:
             return MarkBillPaid(success=False, message=str(e))
         src_bank = source_bank or bill.preferred_source_bank or ''
         src_acct = source_account or bill.preferred_source_account or ''
-        pay_amount = amount_paid if amount_paid is not None else bill.effective_amount
+        pay_amount = amount_paid if amount_paid is not None else occ.remaining(bill, due)
         if pay_amount < 0:
             return MarkBillPaid(success=False, message="Amount paid cannot be negative")
+        when = f"due {due:%b} {due.day}"
         if not move_money:
-            manager.record_bill_paid(bill, pay_amount, pay_date, src_bank, src_acct)
+            manager.record_bill_paid(bill, pay_amount, pay_date, src_bank, src_acct, due=due)
             manager.save_to_database()
-            return MarkBillPaid(success=True, message=f"Bill '{bill_name}' recorded as paid")
+            return MarkBillPaid(success=True, message=f"Bill '{bill_name}' ({when}) recorded as paid")
 
         if isinstance(bill, AccountLinkedBill) and pay_amount > bill.linked_account_balance + 0.005:
             return MarkBillPaid(success=False, message=(
                 f"Payment exceeds the balance owed (${bill.linked_account_balance:,.2f})"))
 
-        key = ("bill", bill_name)
+        key = ("bill", bill_name, due_date)
         if _repeat_payment(key, pay_amount, pay_date, src_bank, src_acct):
             return MarkBillPaid(success=False, message=f"That payment for '{bill_name}' was just recorded")
-        from models.dashboard import overdue_due_date, settle_paid_flag
-        was_overdue = overdue_due_date(bill, pay_date) is not None
         try:
             undo = _take_payment(manager, src_bank, src_acct, pay_amount, f"Bill payment: {bill_name}", pay_date)
         except ValueError as e:
@@ -2312,23 +2320,23 @@ class MarkBillPaid(graphene.Mutation):
 
         try:
             if isinstance(bill, GroupLinkedBill):
-                bill.mark_paid(src_bank, src_acct, amount_paid=pay_amount, payment_date=pay_date, banks=manager.banks)
+                bill.mark_paid(src_bank, src_acct, amount_paid=pay_amount, payment_date=pay_date, banks=manager.banks,
+                               due=due)
             else:
-                bill.mark_paid(src_bank, src_acct, amount_paid=pay_amount, payment_date=pay_date)
+                bill.mark_paid(src_bank, src_acct, amount_paid=pay_amount, payment_date=pay_date, due=due)
         except ValueError as e:
             undo()
             return MarkBillPaid(success=False, message=f"Payment error: {e}")
-        settle_paid_flag(bill, was_overdue)
 
-        # Persist all state changes (balances, paid flag, payment history)
+        # Persist all state changes (balances, payment history)
         manager.save_to_database()
         _remember_payment(key, pay_amount, pay_date, src_bank, src_acct)
 
-        return MarkBillPaid(success=True, message=f"Bill '{bill_name}' marked as paid")
+        return MarkBillPaid(success=True, message=f"Bill '{bill_name}' ({when}) marked as paid")
 
 
 class ResetBillPeriod(graphene.Mutation):
-    """Reset a bill's paid status for new period."""
+    """Undo the payments for a bill's latest paid due date (see undoBillPayment)."""
     class Arguments:
         bill_name = graphene.String(required=True)
     success = graphene.Boolean()
@@ -2341,20 +2349,25 @@ class ResetBillPeriod(graphene.Mutation):
         bill = next((b for b in manager.bills if b.bill_name == bill_name), None)
         if not bill:
             return ResetBillPeriod(success=False, message=f"Bill '{bill_name}' not found")
-        bill.reset_period()
+        from models import occurrences as occ
+        from models.gql_bills import undo_payments
+        due = occ.latest_paid_due(bill)
+        if due is not None:
+            undo_payments(manager, bill, due)
         manager.save_to_database()
-        return ResetBillPeriod(success=True, message=f"Bill '{bill_name}' reset for new period")
+        return ResetBillPeriod(success=True, message=f"Bill '{bill_name}' is owed again")
 
 
 class SetFloatingBillAmount(graphene.Mutation):
-    """Set the actual amount for a floating/variable bill."""
+    """Set the actual amount of one due date of a floating/variable bill (other due dates keep the estimate)."""
     class Arguments:
         bill_name = graphene.String(required=True)
         actual_amount = graphene.Float(required=True)
+        due_date = graphene.String(description="YYYY-MM-DD (default: the due date a payment goes to now)")
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, bill_name, actual_amount):
+    def mutate(self, info, bill_name, actual_amount, due_date=None):
         manager = info.context.get('manager')
         if not manager:
             return SetFloatingBillAmount(success=False, message="Manager not available")
@@ -2364,7 +2377,8 @@ class SetFloatingBillAmount(graphene.Mutation):
         if not hasattr(bill, 'set_actual_amount'):
             return SetFloatingBillAmount(success=False, message=f"Bill '{bill_name}' is not a floating bill")
         try:
-            bill.set_actual_amount(actual_amount)
+            from models.gql_bills import resolve_due
+            bill.set_actual_amount(actual_amount, resolve_due(bill, due_date))
             manager.save_to_database()
             return SetFloatingBillAmount(success=True, message=f"Actual amount set to ${actual_amount:.2f}")
         except ValueError as e:
@@ -2372,7 +2386,7 @@ class SetFloatingBillAmount(graphene.Mutation):
 
 
 class MarkCreditPaymentPaid(graphene.Mutation):
-    """Record a credit card payment and mark the card's payment paid for the current period."""
+    """Record a credit card payment for one due date (default: the oldest still owed, else the next)."""
     class Arguments:
         bank_name = graphene.String(required=True)
         account_name = graphene.String(required=True)
@@ -2380,10 +2394,12 @@ class MarkCreditPaymentPaid(graphene.Mutation):
         source_bank = graphene.String()
         source_account = graphene.String()
         payment_date = graphene.String()  # ISO date string
+        due_date = graphene.String(description="The due date this pays (YYYY-MM-DD)")
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, bank_name, account_name, amount_paid, source_bank=None, source_account=None, payment_date=None):
+    def mutate(self, info, bank_name, account_name, amount_paid, source_bank=None, source_account=None, payment_date=None,
+               due_date=None):
         manager = info.context.get('manager')
         if not manager:
             return MarkCreditPaymentPaid(success=False, message="Manager not available")
@@ -2414,8 +2430,15 @@ class MarkCreditPaymentPaid(graphene.Mutation):
         ), None)
         src_bank = source_bank or (linked_bill.preferred_source_bank if linked_bill else None) or ''
         src_acct = source_account or (linked_bill.preferred_source_account if linked_bill else None) or ''
+        due = None
+        if linked_bill:
+            from models.gql_bills import resolve_due
+            try:
+                due = resolve_due(linked_bill, due_date, pay_date)
+            except ValueError as e:
+                return MarkCreditPaymentPaid(success=False, message=str(e))
 
-        key = ("credit", bank_name, account_name)
+        key = ("credit", bank_name, account_name, due_date)
         if _repeat_payment(key, amount_paid, pay_date, src_bank, src_acct):
             return MarkCreditPaymentPaid(success=False, message=f"That payment to {account_name} was just recorded")
         try:
@@ -2426,8 +2449,8 @@ class MarkCreditPaymentPaid(graphene.Mutation):
 
         try:
             if linked_bill:
-                # Pays the card, tracks carryover vs. the minimum, and marks the bill paid
-                linked_bill.mark_paid(src_bank, src_acct, amount_paid=amount_paid, payment_date=pay_date)
+                # Pays the card and records the payment against that due date's minimum
+                linked_bill.mark_paid(src_bank, src_acct, amount_paid=amount_paid, payment_date=pay_date, due=due)
             else:
                 acc.make_payment(amount_paid, description="Credit card payment", transaction_date=pay_date)
         except ValueError as e:
@@ -2445,7 +2468,7 @@ class MarkCreditPaymentPaid(graphene.Mutation):
 
 
 class ResetCreditPaymentPeriod(graphene.Mutation):
-    """Reset a credit card payment's paid status for new period."""
+    """Undo the payments for a card's latest paid due date (see undoBillPayment)."""
     class Arguments:
         bank_name = graphene.String(required=True)
         account_name = graphene.String(required=True)
@@ -2461,9 +2484,13 @@ class ResetCreditPaymentPeriod(graphene.Mutation):
         for bill in manager.bills:
             if isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'credit':
                 if bill.linked_bank_name == bank_name and bill.linked_account.account_name == account_name:
-                    bill.reset_period()
+                    from models import occurrences as occ
+                    from models.gql_bills import undo_payments
+                    due = occ.latest_paid_due(bill)
+                    if due is not None:
+                        undo_payments(manager, bill, due)
                     manager.save_to_database()
-                    return ResetCreditPaymentPeriod(success=True, message=f"Credit payment for {account_name} reset for new period")
+                    return ResetCreditPaymentPeriod(success=True, message=f"Credit payment for {account_name} is owed again")
 
         return ResetCreditPaymentPeriod(success=False, message=f"No payment found for credit account '{account_name}' at '{bank_name}'")
 
@@ -2689,7 +2716,7 @@ class RemoveSimplefinConnection(graphene.Mutation):
 
 
 class AutoResetPeriods(graphene.Mutation):
-    """Auto-reset bill periods that have rolled over."""
+    """No longer needed (bills are paid per due date); always resets nothing."""
     success = graphene.Boolean()
     reset_count = graphene.Int()
     message = graphene.String()
@@ -2921,8 +2948,9 @@ class RemoveBillGroupMember(graphene.Mutation):
 
 class MarkBillGroupPaid(graphene.Mutation):
     """
-    Pay a bill group for the current period: withdraws from the source (or the
-    group's preferred source) and distributes the payment across member accounts.
+    Pay one due date of a bill group (default: the oldest still owed, else the
+    next): withdraws from the source (or the group's preferred source) and
+    distributes the payment across member accounts.
     """
     class Arguments:
         group_name = graphene.String(required=True)
@@ -2930,12 +2958,14 @@ class MarkBillGroupPaid(graphene.Mutation):
         source_bank = graphene.String()
         source_account = graphene.String()
         payment_date = graphene.String()  # ISO date string
+        due_date = graphene.String(description="The due date this pays (YYYY-MM-DD)")
 
     bill_group = graphene.Field(BillGroupType)
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, group_name, amount_paid=None, source_bank=None, source_account=None, payment_date=None):
+    def mutate(self, info, group_name, amount_paid=None, source_bank=None, source_account=None, payment_date=None,
+               due_date=None):
         manager = info.context.get('manager')
         if not manager:
             return MarkBillGroupPaid(success=False, message="Manager not available")
@@ -2945,11 +2975,14 @@ class MarkBillGroupPaid(graphene.Mutation):
         manager.refresh()
         group_bill = next((b for b in manager.bills
                            if isinstance(b, GroupLinkedBill) and b.linked_group is group), None)
+        from models import occurrences as occ
+        from models.gql_bills import resolve_due
         try:
             pay_date = _parse_date(payment_date, "payment date") or date.today()
+            due = resolve_due(group_bill, due_date, pay_date)
         except ValueError as e:
             return MarkBillGroupPaid(success=False, message=str(e))
-        pay_amount = amount_paid if amount_paid is not None else group_bill.effective_amount
+        pay_amount = amount_paid if amount_paid is not None else occ.remaining(group_bill, due)
         if pay_amount < 0:
             return MarkBillGroupPaid(success=False, message="Amount paid cannot be negative")
         total_owed = group.get_total_balance(manager.banks)
@@ -2958,7 +2991,7 @@ class MarkBillGroupPaid(graphene.Mutation):
         src_bank = source_bank or group.preferred_source_bank or ''
         src_acct = source_account or group.preferred_source_account or ''
 
-        key = ("group", group_name)
+        key = ("group", group_name, due_date)
         if _repeat_payment(key, pay_amount, pay_date, src_bank, src_acct):
             return MarkBillGroupPaid(success=False, message=f"That payment for '{group_name}' was just recorded")
         try:
@@ -2966,7 +2999,8 @@ class MarkBillGroupPaid(graphene.Mutation):
         except ValueError as e:
             return MarkBillGroupPaid(success=False, message=str(e))
         try:
-            group_bill.mark_paid(src_bank, src_acct, amount_paid=pay_amount, payment_date=pay_date, banks=manager.banks)
+            group_bill.mark_paid(src_bank, src_acct, amount_paid=pay_amount, payment_date=pay_date, banks=manager.banks,
+                                 due=due)
         except ValueError as e:
             undo()
             return MarkBillGroupPaid(success=False, message=f"Payment error: {e}")

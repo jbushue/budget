@@ -3,15 +3,21 @@
     <div class="view-header">
       <div class="view-title">
         <h2>Bills</h2>
-        <p class="view-sub">Everything you pay on a schedule, and what's due this period.</p>
+        <p class="view-sub">Everything you pay on a schedule, month by month.</p>
       </div>
       <div style="display:flex;gap:0.5rem">
-        <button class="btn btn-outline" title="Start a new period for bills whose period has ended" @click="autoReset()"><Icon name="refresh" :size="15" /> Auto-reset</button>
         <button class="btn btn-primary" @click="openCreate()"><Icon name="plus" :size="16" /> Add bill</button>
       </div>
     </div>
 
-    <div v-if="loading && !result" class="loading">Loading bills...</div>
+    <div class="tabs" role="tablist" style="margin-bottom:1rem">
+      <button v-for="t in TABS" :key="t.key" class="tab" :class="{ active: tab === t.key }" role="tab"
+              :aria-selected="tab === t.key" @click="setTab(t.key)">{{ t.label }}</button>
+    </div>
+
+    <BillMonth v-if="tab === 'month'" ref="monthRef" @set-amount="openSetActualFor" @changed="refreshAll" />
+
+    <div v-else-if="loading && !result" class="loading">Loading bills...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else>
@@ -22,8 +28,8 @@
           <div class="stat-label">Bills per month</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">{{ paidCount }} / {{ unifiedRows.length }}</div>
-          <div class="stat-label">Paid this period</div>
+          <div class="stat-value" :style="overdueCount ? 'color:var(--danger)' : ''">{{ overdueCount }}</div>
+          <div class="stat-label">Overdue due dates</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">{{ currency(totalMonthly * 12) }}</div>
@@ -40,8 +46,7 @@
         <button class="chip" :class="{ selected: filter === 'group' }" @click="filter = 'group'">Groups</button>
         <button class="chip" :class="{ selected: filter === 'mortgage' }" @click="filter = 'mortgage'">Mortgage</button>
         <button class="chip" :class="{ selected: filter === 'heloc' }" @click="filter = 'heloc'">HELOC</button>
-        <button class="chip" :class="{ selected: filter === 'unpaid' }" @click="filter = 'unpaid'">Unpaid</button>
-        <button class="chip" :class="{ selected: filter === 'paid' }" @click="filter = 'paid'">Paid</button>
+        <button class="chip" :class="{ selected: filter === 'overdue' }" @click="filter = 'overdue'">Overdue</button>
       </div>
 
       <div v-if="filtered.length === 0" class="empty-state">
@@ -54,7 +59,7 @@
           <table>
             <thead>
               <tr>
-                <th>Status</th>
+                <th>Next due</th>
                 <th>Name</th>
                 <th>Type</th>
                 <th>Frequency</th>
@@ -69,8 +74,10 @@
               <tr v-for="row in filtered" :key="row.key" :style="row.isPaid ? 'opacity:0.65' : ''">
                 <!-- Status -->
                 <td>
-                  <span v-if="row.isPaid" class="badge badge-success">Paid</span>
+                  <span v-if="row.overdue" class="badge badge-danger">Overdue</span>
+                  <span v-else-if="row.isPaid" class="badge badge-success">Paid</span>
                   <span v-else class="badge badge-warning">Due</span>
+                  <div v-if="row.nextDue" style="font-size:0.7rem;color:var(--text-muted)">{{ row.overdue ? 'from' : '' }} {{ fmtDateShort(row.nextDue) }}</div>
                   <div v-if="row.isPaid && row.lastPaymentInfo" style="font-size:0.7rem;color:var(--text-muted)">
                     {{ row.lastPaymentInfo }}
                   </div>
@@ -139,10 +146,9 @@
                   <!-- Bill actions -->
                   <template v-if="row.kind === 'bill'">
                     <template v-if="!row.isPaid">
-                      <button v-if="row.billData?.billType === 'floating'" class="btn btn-outline btn-sm" @click="openSetActual(row.billData!)" style="margin-right:0.25rem" title="Enter this period's actual amount">Set amount</button>
+                      <button v-if="row.billData?.billType === 'floating'" class="btn btn-outline btn-sm" @click="openSetActual(row.billData!)" style="margin-right:0.25rem" title="Enter the actual amount of the next bill">Set amount</button>
                       <button class="btn btn-success btn-sm" @click="openMarkPaid(row.billData!)" style="margin-right:0.25rem" title="Mark as paid">Pay</button>
                     </template>
-                    <button v-else class="btn btn-outline btn-sm" @click="resetBill(row.billData!.billName)" style="margin-right:0.25rem" title="Reset for new period">Reset</button>
                     <RowMenu :items="[
                       { label: 'Edit bill', icon: 'pencil', action: () => openEdit(row.billData!) },
                       { label: 'Amount history', icon: 'history', hidden: row.billData?.billType !== 'floating', action: () => openSetActual(row.billData!) },
@@ -152,12 +158,7 @@
                   </template>
                   <!-- Credit actions -->
                   <template v-else-if="row.kind === 'credit'">
-                    <template v-if="creditTarget(row)">
-                      <template v-if="!row.isPaid">
-                        <button class="btn btn-success btn-sm" @click="openCreditPay(row)" title="Mark as paid">Pay</button>
-                      </template>
-                      <button v-else class="btn btn-outline btn-sm" @click="resetCreditPayment(row)" title="Reset for new period">Reset</button>
-                    </template>
+                    <button v-if="creditTarget(row) && !row.isPaid" class="btn btn-success btn-sm" @click="openCreditPay(row)" title="Mark as paid">Pay</button>
                   </template>
                   <!-- Group actions -->
                   <template v-else-if="row.kind === 'group'">
@@ -169,7 +170,6 @@
                   <!-- Mortgage / HELOC actions (linked "[Auto] ... Payment" bill) -->
                   <template v-else-if="(row.kind === 'mortgage' || row.kind === 'heloc') && row.billData">
                     <button v-if="!row.isPaid" class="btn btn-success btn-sm" @click="openMarkPaid(row.billData)" title="Mark as paid">Pay</button>
-                    <button v-else class="btn btn-outline btn-sm" @click="resetBill(row.billData.billName)" title="Reset for new period">Reset</button>
                   </template>
                 </td>
               </tr>
@@ -185,10 +185,10 @@
         </div>
       </div>
 
-      <RecurringSuggestions style="margin-top:1.5rem" @added="refetch()" />
-      <RecentPayments ref="recentRef" style="margin-top:1.5rem" />
-
     </template>
+
+    <RecurringSuggestions style="margin-top:1.5rem" @added="refetch()" />
+    <RecentPayments ref="recentRef" style="margin-top:1.5rem" />
 
     <!-- Create / Edit Bill Modal -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
@@ -278,14 +278,15 @@
       <div class="modal">
         <h3>Mark “{{ billName(payForm.billName) }}” paid</h3>
         <p v-if="payingBill" style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
-          Amount due: {{ currency(payingBill.effectiveAmount) }}
-          <template v-if="payingBill.carryoverBalance > 0"> (includes {{ currency(payingBill.carryoverBalance) }} carryover)</template>
+          <template v-if="payForm.dueDate">For the bill due {{ fmtDate(payForm.dueDate) }} · </template>
+          Still owed: {{ currency(payingBill.effectiveAmount) }}
+          <template v-if="payingBill.carryoverBalance > 0"> (plus {{ currency(payingBill.carryoverBalance) }} from earlier due dates)</template>
         </p>
         <div class="form-group">
           <label>Amount paid</label>
           <input v-model.number="payForm.amountPaid" type="number" step="0.01" />
           <div v-if="payingBill && payForm.amountPaid < payingBill.effectiveAmount" style="font-size:0.75rem;color:var(--warning);margin-top:0.25rem">
-            {{ currency(payingBill.effectiveAmount - payForm.amountPaid) }} will carry over to next period
+            {{ currency(payingBill.effectiveAmount - payForm.amountPaid) }} will still be owed for this due date
           </div>
         </div>
         <div class="form-group">
@@ -316,14 +317,15 @@
     <!-- Set Actual Amount Modal -->
     <div v-if="showActualModal" class="modal-overlay" @click.self="showActualModal = false">
       <div class="modal">
-        <h3>Set this period’s amount for “{{ billName(actualForm.billName) }}”</h3>
+        <h3>Set the amount for “{{ billName(actualForm.billName) }}”</h3>
+        <p v-if="actualForm.dueDate" class="muted" style="font-size:0.85rem;margin:-0.25rem 0 0.75rem">For the bill due {{ fmtDate(actualForm.dueDate) }}</p>
         <p v-if="actualForm.min && actualForm.max" style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
           Range: {{ currency(actualForm.min) }} - {{ currency(actualForm.max) }}
         </p>
         <div class="form-group">
           <label>Actual amount</label>
           <input v-model.number="actualForm.amount" type="number" step="0.01" />
-          <small class="muted">Estimate: {{ currency(actualForm.estimate) }}. After it's paid, the amount goes back to the estimate.</small>
+          <small class="muted">Estimate: {{ currency(actualForm.estimate) }}. Only this due date changes; the others keep the estimate.</small>
         </div>
         <div v-if="actualForm.history.length" class="history-box">
           <div class="history-head">
@@ -339,7 +341,7 @@
         </div>
         <p v-else class="muted" style="font-size:0.82rem">No past amounts yet — each payment you mark adds one, and the estimate learns from them.</p>
         <div class="modal-actions">
-          <button v-if="actualForm.hasActual" class="btn btn-ghost" style="margin-right:auto" @click="resetToEstimate(actualForm.bill!); showActualModal = false">Back to estimate</button>
+          <button v-if="actualForm.hasActual" class="btn btn-ghost" style="margin-right:auto" @click="resetToEstimate(actualForm.bill!, actualForm.dueDate); showActualModal = false">Back to estimate</button>
           <button class="btn btn-outline" @click="showActualModal = false">Cancel</button>
           <button class="btn btn-primary" @click="setActualAmount">Set amount</button>
         </div>
@@ -351,6 +353,7 @@
       <div class="modal">
         <h3>Pay "{{ creditPayForm.accountName }}" ({{ creditPayForm.bankName }})</h3>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">
+          <template v-if="creditPayForm.dueDate">For the payment due {{ fmtDate(creditPayForm.dueDate) }} · </template>
           Balance: {{ currency(creditPayForm.balance) }} · Min Payment: {{ currency(creditPayForm.minPayment) }}
         </p>
         <div class="form-group">
@@ -426,21 +429,22 @@ import { RESET_BILL_TO_ESTIMATE } from '../graphql/tools'
 import RowMenu from '../components/RowMenu.vue'
 import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {
   GET_ALL_BILLS, GET_ALL_BANKS, GET_CREDIT_PAYMENTS_DUE,
   GET_ALL_BILL_GROUPS,
   CREATE_BILL, UPDATE_BILL, DELETE_BILL,
-  MARK_BILL_PAID, RESET_BILL_PERIOD, SET_FLOATING_BILL_AMOUNT,
-  MARK_CREDIT_PAYMENT_PAID, RESET_CREDIT_PAYMENT_PERIOD,
-  AUTO_RESET_PERIODS,
+  MARK_BILL_PAID, SET_FLOATING_BILL_AMOUNT,
+  MARK_CREDIT_PAYMENT_PAID,
   MARK_BILL_GROUP_PAID,
 } from '../graphql/queries'
-import { currency, pct, fmtDate, frequencyLabel, billTypeLabel, todayISO, billName, num } from '../utils/format'
+import { currency, pct, fmtDate, fmtDateShort, frequencyLabel, billTypeLabel, todayISO, billName, num } from '../utils/format'
 import { runMutation } from '../utils/mutation'
 import RecurringSuggestions from '../components/RecurringSuggestions.vue'
 import RecentPayments from '../components/RecentPayments.vue'
-import type { BillItem, Bank, CreditPaymentDue, BillGroup, MortgageAccount, HELOCAccount, MutationPayload } from '../types'
+import BillMonth from '../components/BillMonth.vue'
+import type { BillItem, BillOccurrence, Bank, CreditPaymentDue, BillGroup, MortgageAccount, HELOCAccount, MutationPayload } from '../types'
 import { ask, notify } from '../utils/dialog'
 
 // ── Unified Row Type ──
@@ -456,6 +460,8 @@ interface UnifiedRow {
   amountColor?: string
   amountSubtext?: string
   isPaid: boolean
+  overdue?: boolean
+  nextDue?: string | null
   lastPaymentInfo?: string
   source: string
   billData?: BillItem
@@ -464,6 +470,16 @@ interface UnifiedRow {
   mortgageData?: MortgageAccount & { bankName: string }
   helocData?: HELOCAccount & { bankName: string }
 }
+
+// ── Tabs: By month (pay any month's bills) / All bills (set them up) ──
+const TABS = [{ key: 'month', label: 'By month' }, { key: 'all', label: 'All bills' }]
+const route = useRoute()
+const router = useRouter()
+const tab = computed(() => (route.query.tab === 'all' ? 'all' : 'month'))
+function setTab(key: string) {
+  router.replace({ query: { ...route.query, tab: key === 'month' ? undefined : key } })
+}
+const monthRef = ref<InstanceType<typeof BillMonth> | null>(null)
 
 // ── Data Queries ──
 const { result, loading, error, refetch } = useQuery<{ allBills: BillItem[] }>(GET_ALL_BILLS)
@@ -546,6 +562,8 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
       dueDay: b.dueDate,
       amount: b.effectiveAmount,
       isPaid: b.isPaidThisPeriod,
+      overdue: (b.overdueCount ?? 0) > 0,
+      nextDue: b.nextUnpaidDue,
       source: b.preferredSourceBank ? `${b.preferredSourceBank} / ${b.preferredSourceAccount}` : '',
       billData: b,
     })
@@ -576,6 +594,8 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
         amountColor: 'var(--danger)',
         amountSubtext: cp ? `Bal: ${currency(cp.balance)}` : undefined,
         isPaid: b.isPaidThisPeriod,
+        overdue: (b.overdueCount ?? 0) > 0,
+        nextDue: b.nextUnpaidDue,
         lastPaymentInfo: b.isPaidThisPeriod && cp?.lastPaymentAmount
           ? `${currency(cp.lastPaymentAmount)} on ${fmtDate(cp.lastPaymentDate)}`
           : undefined,
@@ -595,6 +615,8 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
         dueDay: b.dueDate,
         amount: b.amount,
         isPaid: b.isPaidThisPeriod,
+        overdue: (b.overdueCount ?? 0) > 0,
+        nextDue: b.nextUnpaidDue,
         source: b.preferredSourceBank ? `${b.preferredSourceBank} / ${b.preferredSourceAccount}` : '',
         mortgageData: md ?? undefined,
         billData: b,
@@ -614,6 +636,8 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
         dueDay: b.dueDate,
         amount: b.amount,
         isPaid: b.isPaidThisPeriod,
+        overdue: (b.overdueCount ?? 0) > 0,
+        nextDue: b.nextUnpaidDue,
         source: b.preferredSourceBank ? `${b.preferredSourceBank} / ${b.preferredSourceAccount}` : '',
         helocData: hd ?? undefined,
         billData: b,
@@ -638,11 +662,9 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
     })
   }
 
-  // Sort: unpaid first, then by due day
-  rows.sort((a, b) => {
-    if (a.isPaid !== b.isPaid) return a.isPaid ? 1 : -1
-    return (a.dueDay ?? 32) - (b.dueDay ?? 32)
-  })
+  // Sort: overdue first, then unpaid, then by due day
+  const rank = (r: UnifiedRow) => (r.overdue ? 0 : r.isPaid ? 2 : 1)
+  rows.sort((a, b) => rank(a) - rank(b) || (a.dueDay ?? 32) - (b.dueDay ?? 32))
 
   return rows
 })
@@ -651,8 +673,7 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
 const filter = ref('all')
 const filtered = computed(() => {
   if (filter.value === 'all') return unifiedRows.value
-  if (filter.value === 'paid') return unifiedRows.value.filter(r => r.isPaid)
-  if (filter.value === 'unpaid') return unifiedRows.value.filter(r => !r.isPaid)
+  if (filter.value === 'overdue') return unifiedRows.value.filter(r => r.overdue)
   if (filter.value === 'credit') return unifiedRows.value.filter(r => r.kind === 'credit')
   if (filter.value === 'group') return unifiedRows.value.filter(r => r.kind === 'group')
   if (filter.value === 'mortgage') return unifiedRows.value.filter(r => r.kind === 'mortgage')
@@ -663,7 +684,7 @@ const filtered = computed(() => {
 })
 
 const filteredTotal = computed(() => filtered.value.reduce((s, r) => s + r.amount, 0))
-const paidCount = computed(() => unifiedRows.value.filter(r => r.isPaid).length)
+const overdueCount = computed(() => bills.value.reduce((n, b) => n + (b.overdueCount ?? 0), 0))
 
 const totalMonthly = computed(() => {
   let total = 0
@@ -830,7 +851,7 @@ async function deleteBill(name: string) {
 
 // ── Mark Paid (regular bills and mortgage/HELOC "[Auto] ... Payment" bills) ──
 const showPayModal = ref(false)
-const payForm = ref({ billName: '', amountPaid: 0, sourceBank: '', sourceAccount: '', paymentDate: '' })
+const payForm = ref({ billName: '', amountPaid: 0, sourceBank: '', sourceAccount: '', paymentDate: '', dueDate: '' })
 const { mutate: doMarkPaid } = useMutation<{ markBillPaid: MutationPayload }>(MARK_BILL_PAID)
 const payingBill = computed(() => bills.value.find(b => b.billName === payForm.value.billName))
 
@@ -842,7 +863,7 @@ function openMarkPaid(b: BillItem) {
   payForm.value = {
     billName: b.billName, amountPaid: b.effectiveAmount,
     sourceBank: b.preferredSourceBank || '', sourceAccount: b.preferredSourceAccount || '',
-    paymentDate: todayISO(),
+    paymentDate: todayISO(), dueDate: b.nextUnpaidDue || '',
   }
   showPayModal.value = true
 }
@@ -860,31 +881,40 @@ async function markPaid() {
     billName: payForm.value.billName, amountPaid: num(payForm.value.amountPaid),
     sourceBank: payForm.value.sourceBank || null, sourceAccount: payForm.value.sourceAccount || null,
     paymentDate: payForm.value.paymentDate || null,
+    dueDate: payForm.value.dueDate || null,
   }}), 'markBillPaid', { failMessage: 'Failed to mark bill as paid' }))
   if (!ok) return
   showPayModal.value = false
+  refreshAll()
+}
+
+/** After a payment anywhere on the page: both tabs and the account balances. */
+function refreshAll() {
   refetch()
   refetchCredit()
   refetchBanks()
-}
-
-// ── Reset Period ──
-const { mutate: doReset } = useMutation<{ resetBillPeriod: MutationPayload }>(RESET_BILL_PERIOD)
-async function resetBill(name: string) {
-  const ok = await runMutation(() => doReset({ variables: { billName: name }}), 'resetBillPeriod', { failMessage: 'Failed to reset bill period' })
-  if (ok) refetch()
+  refetchGroups()
+  monthRef.value?.refetch()
 }
 
 // ── Set Floating Bill Actual Amount ──
 const showActualModal = ref(false)
-const actualForm = ref({ billName: '', amount: 0, min: 0, max: 0, estimate: 0, history: [] as number[], hasActual: false, bill: null as BillItem | null })
+const actualForm = ref({ billName: '', amount: 0, min: 0, max: 0, estimate: 0, history: [] as number[], hasActual: false,
+  bill: null as BillItem | null, dueDate: '' })
 const { mutate: doSetActual } = useMutation<{ setFloatingBillAmount: MutationPayload }>(SET_FLOATING_BILL_AMOUNT)
 const { mutate: doResetEstimate } = useMutation<{ resetBillToEstimate: MutationPayload }>(RESET_BILL_TO_ESTIMATE)
 
-function openSetActual(b: BillItem) {
-  actualForm.value = { billName: b.billName, amount: b.amount, min: b.minAmount || 0, max: b.maxAmount || 0,
-    estimate: b.estimatedAmount ?? b.amount, history: b.amountHistory ?? [], hasActual: b.hasActualAmount, bill: b }
+function openSetActual(b: BillItem, dueDate?: string, hasActual?: boolean, amount?: number) {
+  actualForm.value = { billName: b.billName, amount: amount ?? (b.actualAmount ?? b.amount), min: b.minAmount || 0, max: b.maxAmount || 0,
+    estimate: b.estimatedAmount ?? b.amount, history: b.amountHistory ?? [], hasActual: hasActual ?? b.hasActualAmount, bill: b,
+    dueDate: dueDate ?? b.nextUnpaidDue ?? '' }
   showActualModal.value = true
+}
+
+/** "Set this month's amount" from the month view. */
+function openSetActualFor(o: BillOccurrence) {
+  const b = bills.value.find(x => x.billName === o.billName)
+  if (b) openSetActual(b, o.dueDate, o.hasActualAmount, o.amount)
 }
 
 const histStats = computed(() => {
@@ -892,36 +922,28 @@ const histStats = computed(() => {
   return h.length ? { avg: h.reduce((a, b) => a + b, 0) / h.length, min: Math.min(...h), max: Math.max(...h) } : { avg: 0, min: 0, max: 1 }
 })
 
-async function resetToEstimate(b: BillItem) {
-  const ok = await runMutation(() => doResetEstimate({ variables: { billName: b.billName } }), 'resetBillToEstimate',
-    { failMessage: 'Could not reset the amount', showSuccess: true })
-  if (ok) refetch()
+async function resetToEstimate(b: BillItem, dueDate?: string) {
+  const ok = await runMutation(() => doResetEstimate({ variables: { billName: b.billName, dueDate: dueDate || null } }),
+    'resetBillToEstimate', { failMessage: 'Could not reset the amount', showSuccess: true })
+  if (ok) refreshAll()
 }
 
 async function setActualAmount() {
   const ok = await runMutation(
-    () => doSetActual({ variables: { billName: actualForm.value.billName, actualAmount: num(actualForm.value.amount) }}),
+    () => doSetActual({ variables: { billName: actualForm.value.billName, actualAmount: num(actualForm.value.amount),
+      dueDate: actualForm.value.dueDate || null }}),
     'setFloatingBillAmount', { failMessage: 'Failed to set actual amount' },
   )
   if (!ok) return
   showActualModal.value = false
-  refetch()
+  refreshAll()
 }
 
 // ── Credit Card Payment tracking ──
 const showCreditPayModal = ref(false)
-const creditPayForm = ref({ bankName: '', accountName: '', balance: 0, minPayment: 0, amountPaid: 0, sourceBank: '', sourceAccount: '', paymentDate: '' })
+const creditPayForm = ref({ bankName: '', accountName: '', balance: 0, minPayment: 0, amountPaid: 0, sourceBank: '', sourceAccount: '',
+  paymentDate: '', dueDate: '' })
 const { mutate: doMarkCreditPaid } = useMutation<{ markCreditPaymentPaid: MutationPayload }>(MARK_CREDIT_PAYMENT_PAID)
-const { mutate: doResetCreditPeriod } = useMutation<{ resetCreditPaymentPeriod: MutationPayload }>(RESET_CREDIT_PAYMENT_PERIOD)
-const { mutate: doAutoReset } = useMutation<{ autoResetPeriods: MutationPayload & { resetCount?: number | null } }>(AUTO_RESET_PERIODS)
-
-async function autoReset() {
-  const ok = await runMutation(() => doAutoReset(), 'autoResetPeriods', { failMessage: 'Auto-reset failed', showSuccess: true })
-  if (!ok) return
-  refetch()
-  refetchCredit()
-  refetchGroups()
-}
 
 watch(() => creditPayForm.value.sourceBank, (newVal) => {
   creditPayForm.value.sourceAccount = keepAccountIfValid(newVal, creditPayForm.value.sourceAccount)
@@ -948,7 +970,7 @@ function openCreditPay(row: UnifiedRow) {
     bankName: cp.bankName, accountName: cp.accountName,
     balance: cp.balance, minPayment: cp.minimumPayment,
     amountPaid: cp.minimumPayment, sourceBank: src.bank, sourceAccount: src.account,
-    paymentDate: todayISO(),
+    paymentDate: todayISO(), dueDate: b?.nextUnpaidDue || '',
   }
   showCreditPayModal.value = true
 }
@@ -959,24 +981,11 @@ async function markCreditPaid() {
     amountPaid: num(creditPayForm.value.amountPaid),
     sourceBank: creditPayForm.value.sourceBank || null, sourceAccount: creditPayForm.value.sourceAccount || null,
     paymentDate: creditPayForm.value.paymentDate || null,
+    dueDate: creditPayForm.value.dueDate || null,
   }}), 'markCreditPaymentPaid', { failMessage: 'Failed to mark credit payment as paid' }))
   if (!ok) return
   showCreditPayModal.value = false
-  refetch()
-  refetchCredit()
-  refetchBanks()
-}
-
-async function resetCreditPayment(row: UnifiedRow) {
-  const cp = creditTarget(row)
-  if (!cp) return
-  const ok = await runMutation(
-    () => doResetCreditPeriod({ variables: { bankName: cp.bankName, accountName: cp.accountName }}),
-    'resetCreditPaymentPeriod', { failMessage: 'Failed to reset credit payment period' },
-  )
-  if (!ok) return
-  refetch()
-  refetchCredit()
+  refreshAll()
 }
 
 // ── Bill Group actions ──
@@ -1009,10 +1018,7 @@ async function markGroupPaid() {
   }}), 'markBillGroupPaid', { failMessage: 'Failed to mark group as paid' }))
   if (!ok) return
   showGroupPayModal.value = false
-  refetchGroups()
-  refetch()
-  refetchCredit()
-  refetchBanks()
+  refreshAll()
 }
 </script>
 

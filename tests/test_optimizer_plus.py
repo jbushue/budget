@@ -2,7 +2,7 @@
 
 import json
 import time
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -109,7 +109,9 @@ def setup(client):  # noqa: F811
                'balance: 2000, interestRate: 22.0, creditLimit: 5000, paymentDueDate: 18) { success message } }')
     ok(client, 'mutation { createAccount(bankName: "Bank", accountName: "SNAP", accountType: "ebt", '
                'balance: 150, refillAmount: 291, refillDay: 3, weeklySpending: 50) { success message } }')
-    ok(client, 'mutation { createBill(billName: "Rent", amount: 1200, dueDate: 1) { success message } }')
+    # Due in a few days, so it's in this pay period whatever today's date is
+    rent_day = min((date.today() + timedelta(days=3)).day, 28)
+    ok(client, f'mutation {{ createBill(billName: "Rent", amount: 1200, dueDate: {rent_day}) {{ success message }} }}')
     return client
 
 

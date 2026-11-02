@@ -184,13 +184,13 @@ class TestScheduler:
         st = jobs.status()
         assert st["backup"]["ok"] is False and st["maintenance"]["ok"] is True
 
-    def test_maintenance_rolls_bill_periods(self, client):
+    def test_maintenance_records_net_worth(self, client):
         state, lock = state_and_lock(client)
         manager = state["manager"]
         calls = []
-        manager.auto_reset_periods = lambda: calls.append(1) or 2
+        manager.record_net_worth_snapshot = lambda: calls.append(1)
         msg = jobs.run_maintenance(manager, datetime.now())
-        assert calls and "2 bill period" in msg
+        assert calls and "Net worth" in msg
 
     def test_job_status_query(self, client):
         state, lock = state_and_lock(client)

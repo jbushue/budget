@@ -26,7 +26,7 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 **Bills and income**
 - Fixed and variable bills; one-time, weekly, bi-weekly, monthly, quarterly, semi-annual, and yearly schedules
 - Card, mortgage, HELOC, and loan-group payments are created automatically as bills
-- Mark bills paid (from checking, savings, or a card), with partial payments, carryover, and payment history
+- Pay bills month by month (from checking, savings, or a card): pay ahead, catch up on a missed month, skip one, partial payments, undo, and payment history
 - Income sources with flexible schedules and per-account distribution — dollar amounts or percentages, plus "the rest"
 - Variable bills keep their **amount history** (average, low, high) and go back to the estimate after they're paid — or on demand
 

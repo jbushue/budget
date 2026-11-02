@@ -2,7 +2,8 @@ from datetime import date, timedelta
 from dataclasses import dataclass
 
 from models.bank import Bank
-from models.fixed_bill import Bill, AccountLinkedBill, GroupLinkedBill
+from models.fixed_bill import Bill, AccountLinkedBill, FloatingBill, GroupLinkedBill
+from models import occurrences as occ
 from models.bill_group import BillGroup
 from models.income_source import IncomeSource
 from models.date_utils import add_months, clamped_date, is_clamped_day
@@ -29,6 +30,9 @@ class TimelineEvent:
     promo_name: str = None
     # INTEREST: 'bank', 'credit', or 'heloc' (which account collection)
     account_kind: str = None
+    # BILL_DUE / BILL_GROUP_PAYMENT: the due date being paid (set for overdue ones
+    # paid on the first day; otherwise it's the event's own date)
+    due: date = None
 
     def __lt__(self, other):
         """Enable sorting by date."""
@@ -38,30 +42,6 @@ class TimelineEvent:
 def card_interest_day(card) -> int:
     """Day a card charges interest: its statement day, else its due day, else month end."""
     return card.statement_date or card.payment_due_date or 31
-
-
-def _paid_flag_covers(bill, day: date) -> bool:
-    """
-    A bill marked paid covers the first due date on or after its last payment.
-    A flag left over from an earlier period (paid on the due date, then not
-    reset yet) must not skip the next occurrence.
-    """
-    history = getattr(bill, "payment_history", None) or getattr(getattr(bill, "linked_group", None),
-                                                                "payment_history", None)
-    if not history:
-        return True
-    last = history[-1].get("date")
-    if isinstance(last, str):
-        try:
-            last = date.fromisoformat(last)
-        except ValueError:
-            return True
-    if not isinstance(last, date):
-        return True
-    try:
-        return day <= bill.get_next_due_date(last - timedelta(days=1))
-    except Exception:
-        return True
 
 
 class TimelineSimulator:
@@ -131,7 +111,24 @@ class TimelineSimulator:
             List of TimelineEvent objects sorted by date
         """
         self.events = []
-        
+
+        # Bills already overdue are paid on the first day of a projection that
+        # starts today: that money is owed, so it isn't available to spend
+        if start_date == date.today():
+            for bill in self.bills:
+                if self._grouped_card(bill):
+                    continue
+                for due, left in occ.overdue(bill, start_date):
+                    self.events.append(TimelineEvent(
+                        event_date=start_date,
+                        event_type="BILL_GROUP_PAYMENT" if isinstance(bill, GroupLinkedBill) else "BILL_DUE",
+                        amount=left,
+                        description=f"Bill: {bill.bill_name}",
+                        account_name=bill.preferred_source_account or "(unassigned)",
+                        bank_name=bill.preferred_source_bank or "(unassigned)",
+                        due=due,
+                    ))
+
         # Pre-calculate all income pay dates in the range using get_pay_dates_in_range
         income_pay_dates = {}
         for income in self.income_sources:
@@ -158,9 +155,8 @@ class TimelineSimulator:
             # and GroupLinkedBill for bill groups
             for bill in self.bills:
                 # Skip linked credit bills whose account is in a bill group
-                if isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'credit':
-                    if (bill.linked_bank_name, bill.linked_account.account_name) in self._grouped_account_keys:
-                        continue
+                if self._grouped_card(bill):
+                    continue
                 # Cards and HELOCs at $0 today still get their payment days: the
                 # plan may charge or draw on them later (a $0 payment is skipped
                 # when the day comes)
@@ -305,11 +301,6 @@ class TimelineSimulator:
         snapshots = []
         cash_flow = []
 
-        # A bill's real-world "paid this period" flag only applies to its
-        # FIRST occurrence in the window (the current period). Payments made
-        # inside the simulation set the flag too, but must not suppress the
-        # following period, so later occurrences ignore it.
-        first_occurrence_seen: set[int] = set()
         # Checking accounts currently below $0 (overdraft fee charged once per dip)
         overdrawn: set[str] = {
             f"{b.name}:{a.account_name}" for b in self.banks for a in b.get_all_accounts()
@@ -426,13 +417,13 @@ class TimelineSimulator:
                 elif event.event_type == "BILL_DUE":
                     # Find matching bill and pay it — handles all bill types uniformly
                     for bill in self.bills:
-                        next_due = bill.get_next_due_date(current_date - timedelta(days=1))
-                        if next_due == current_date and event.description == f"Bill: {bill.bill_name}":
-                            # Skip if already paid this period (first occurrence only)
-                            is_first = id(bill) not in first_occurrence_seen
-                            first_occurrence_seen.add(id(bill))
-                            if is_first and bill.is_paid_this_period and _paid_flag_covers(bill, current_date):
-                                bill.is_paid_this_period = False
+                        if event.description != f"Bill: {bill.bill_name}":
+                            continue
+                        due = event.due or current_date
+                        if event.due is not None or bill.get_next_due_date(current_date - timedelta(days=1)) == current_date:
+                            # Paid (or skipped) for this due date already: nothing to pay
+                            state = occ.status(bill, due, current_date)
+                            if state in ("paid", "skipped"):
                                 cash_flow.append({
                                     "date": current_date,
                                     "type": "BILL_ALREADY_PAID",
@@ -443,9 +434,11 @@ class TimelineSimulator:
                                 })
                                 break
 
-                            # Get the actual current amount as of the simulated date
-                            # (dynamic for linked bills: promo payoff math, HELOC phase)
-                            bill_amount = bill.amount_on(current_date)
+                            # What's left of this due date (dynamic for linked bills:
+                            # promo payoff math, HELOC phase, as of the simulated date)
+                            bill_amount = (occ.remaining(bill, due) if state == "partial" or event.due
+                                           else bill.amount_on(current_date))
+                            overdue_info = {"overdue": True, "due": due} if event.due else {}
 
                             # Skip zero-amount bills (e.g. zero-balance credit card)
                             if bill_amount <= 0:
@@ -473,6 +466,7 @@ class TimelineSimulator:
                                     "bank": None,
                                     "error": "No account has sufficient funds",
                                     **self._linked_bill_names(bill),
+                                    **overdue_info,
                                 })
                                 self._charge_late_fee(bill, current_date, cash_flow)
                                 break
@@ -488,7 +482,7 @@ class TimelineSimulator:
                                         transaction_date=current_date
                                     )
                                     # mark_paid calls linked_account.make_payment()
-                                    bill.mark_paid(source_bank.name, source_account, bill_amount, current_date)
+                                    bill.mark_paid(source_bank.name, source_account, bill_amount, current_date, due=due)
 
                                     # Determine cash flow type based on account type
                                     cf_type = "BILL_PAYMENT"
@@ -507,6 +501,7 @@ class TimelineSimulator:
                                         "account": source_account,
                                         "bank": source_bank.name,
                                         **self._linked_bill_names(bill),
+                                        **overdue_info,
                                     }
 
                                     # Add type-specific info
@@ -533,14 +528,20 @@ class TimelineSimulator:
                                         description=f"Payment: {bill.bill_name}",
                                         transaction_date=current_date
                                     )
-                                    bill.mark_paid(source_bank.name, source_account, bill_amount, current_date)
+                                    if isinstance(bill, FloatingBill):
+                                        # An imagined payment doesn't change the bill's estimate
+                                        bill.mark_paid(source_bank.name, source_account, bill_amount, current_date,
+                                                       due=due, learn=False)
+                                    else:
+                                        bill.mark_paid(source_bank.name, source_account, bill_amount, current_date, due=due)
                                     cash_flow.append({
                                         "date": current_date,
                                         "type": "BILL_PAYMENT",
                                         "description": bill.bill_name,
                                         "amount": -bill_amount,
                                         "account": source_account,
-                                        "bank": source_bank.name
+                                        "bank": source_bank.name,
+                                        **overdue_info,
                                     })
                             except ValueError as e:
                                 cash_flow.append({
@@ -552,6 +553,7 @@ class TimelineSimulator:
                                     "bank": source_bank.name,
                                     "error": str(e),
                                     **self._linked_bill_names(bill),
+                                    **overdue_info,
                                 })
                                 self._charge_late_fee(bill, current_date, cash_flow)
                             break
@@ -594,16 +596,13 @@ class TimelineSimulator:
                 elif event.event_type == "BILL_GROUP_PAYMENT":
                     # Find the matching GroupLinkedBill from self.bills
                     for bill in self.bills:
-                        if not isinstance(bill, GroupLinkedBill):
+                        if not isinstance(bill, GroupLinkedBill) or event.description != f"Bill: {bill.bill_name}":
                             continue
-                        next_due = bill.get_next_due_date(current_date - timedelta(days=1))
-                        if next_due == current_date and event.description == f"Bill: {bill.bill_name}":
+                        due = event.due or current_date
+                        if event.due is not None or bill.get_next_due_date(current_date - timedelta(days=1)) == current_date:
                             group = bill.linked_group
-                            # Real-world paid flag applies to the first occurrence only
-                            is_first = id(bill) not in first_occurrence_seen
-                            first_occurrence_seen.add(id(bill))
-                            if is_first and bill.is_paid_this_period and _paid_flag_covers(bill, current_date):
-                                bill.is_paid_this_period = False
+                            state = occ.status(bill, due, current_date)
+                            if state in ("paid", "skipped"):
                                 cash_flow.append({
                                     "date": current_date,
                                     "type": "BILL_GROUP_ALREADY_PAID",
@@ -614,7 +613,8 @@ class TimelineSimulator:
                                 })
                                 break
 
-                            bill_amount = bill.amount_on(current_date)
+                            bill_amount = (occ.remaining(bill, due) if state == "partial" or event.due
+                                           else bill.amount_on(current_date))
                             # Never withdraw more than the members still owe
                             bill_amount = min(bill_amount, round(group.get_total_balance(self.banks), 2))
                             if bill_amount <= 0:
@@ -639,7 +639,7 @@ class TimelineSimulator:
                                     sub_payments = bill.mark_paid(
                                         source_bank.name, source_account_name,
                                         bill_amount, current_date,
-                                        banks=self.banks
+                                        banks=self.banks, due=due
                                     )
                                     # Only what was actually applied to members leaves
                                     # checking; refund any (rounding) difference.
@@ -660,7 +660,8 @@ class TimelineSimulator:
                                         "amount": -bill_amount,
                                         "account": source_account_name,
                                         "bank": source_bank.name,
-                                        "sub_payments": sub_payments
+                                        "sub_payments": sub_payments,
+                                        **({"overdue": True, "due": due} if event.due else {}),
                                     })
                                 except ValueError as e:
                                     cash_flow.append({
@@ -980,6 +981,11 @@ class TimelineSimulator:
         if isinstance(bill, AccountLinkedBill) and bill.linked_account_type in ("credit", "heloc"):
             return max(0.0, self.fees.get("card_late_fee", 0.0))
         return max(0.0, self.fees.get("default_late_fee", 0.0))
+
+    def _grouped_card(self, bill) -> bool:
+        """A card's own payment is skipped when its bill group pays it."""
+        return (isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'credit'
+                and (bill.linked_bank_name, bill.linked_account.account_name) in self._grouped_account_keys)
 
     def _charge_late_fee(self, bill: Bill, current_date: date, cash_flow: list[dict]):
         """Late fee for a payment that couldn't be made: cards add it to the balance,

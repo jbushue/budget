@@ -149,17 +149,19 @@ Every card payment in the plan gives each 0% promo its share first: what's left 
 
 A promo carves out part of the card's existing balance as interest-free until the promo's end date. Interest is only charged on the **regular** balance. If a promo **expires with a balance remaining**, the app charges **deferred (retroactive) interest** as if the promo never existed — `remaining × ((1 + APR/12)^months − 1)` — and the leftover amount becomes regular, interest-bearing debt. Projections apply this on the simulated expiry date, so you can see the hit coming.
 
-### "Paid this period" and the billing cycle
+### Paid status, due date by due date
 
-Each bill tracks whether it has been **paid this period**. Marking a bill paid:
+Every due date of every bill is tracked on its own: **paid**, **partly paid**, **skipped**, **overdue**, or still to come. A payment always belongs to one due date. Marking a bill paid:
 
 - withdraws the money from the chosen source account (or charges a credit card if you pay with one),
-- records the payment in the bill's history,
-- carries any **underpayment** forward to the next period (shown as "+$X carryover").
+- records the payment against that due date (by default the oldest one still owed, otherwise the next one),
+- leaves the due date **partly paid** if you pay less than it owes. The rest is still owed, and the plan pays only the rest.
 
-Paid bills are **reset automatically** once their next due date passes (this runs each time the API server starts, and on demand with **🔄 Auto-Reset** on the Bills page).
+A new month's bill is simply unpaid; nothing needs resetting. You can **pay ahead**: mark next month's (or any due date up to a year out) paid and the plan leaves it out. **Skip** a due date that isn't owed (waived, or paid some way the app doesn't track).
 
-In projections, a bill already marked paid is skipped for the *current* period only — every later period is paid normally. A bill paid on (or after) its due date is still owed again next period. Paying an **overdue** bill counts for the missed due date, so the next one still shows as owed.
+In projections, every due date already paid or skipped is left out, and partly paid ones only cost what's left. **Overdue** due dates (passed without being fully paid) are paid on the projection's first day, because that money is already owed. Your balances never look bigger than they are. Paying an overdue bill counts for the missed due date, so the next one is still owed.
+
+For monthly (and longer) bills a payment belongs to its month, so changing a bill's due day keeps the month paid. A due date only counts as overdue if the bill existed then. For bills you had before due dates were tracked, the month before the update is the furthest back that counts.
 
 **Record only.** If your balances are already up to date (for example, synced with SimpleFIN), the payment has already left your account — taking it out again would count it twice. The Pay / Mark paid dialog has a checkbox, *Take the money out of the account in this app now*; leave it off to just record the payment. It's off by default when you use SimpleFIN. Bill payments recognized in your transactions (§8) are always recorded this way.
 
@@ -210,7 +212,7 @@ One line, colored by how things look:
 |---|---|
 | ✅ **All bills through *date* are covered** | Every bill and your everyday spending fit, and checking stays above your cushion. The date is at least a month out (through your second payday). |
 | ⚠️ **Bills are covered — if you follow the plan** | Paying everything on its due date leaves a bill short, but the plan (moving money from savings, timing payments) covers it. **See the plan** shows how. |
-| ⚠️ **Bills past due and not marked paid** | A due date has passed with no payment recorded. Mark them paid if you've paid them; until then their amount is held back from Safe to spend. |
+| ⚠️ **Bills past due and not marked paid** | A due date has passed with no payment recorded. Mark them paid if you've paid them; until then the plan pays them first, out of today's money. |
 | ⚠️ **Checking gets tight** | Everything is paid, but checking drops below your cushion. |
 | 🚨 ***Bill* can't be paid on *date*** | Even the optimized plan comes up short. **See the plan** for ways to cover it. |
 | 🚨 **Checking goes negative** | Everyday spending would overdraw checking before the next paycheck. |
@@ -225,12 +227,11 @@ The extra you can spend **on top of** your usual everyday spending without missi
 Safe to spend = lowest projected checking balance, through your second payday
                 (after every bill on its due date and your everyday spending)
               − your cushion
-              − overdue bills not marked paid
               − bills that can't be covered
               − money set aside in checking for goals
 ```
 
-It's the *lowest* point that matters, not a total: a dollar spent today lowers every later day's balance too. Below it, **$/day** spreads it over the days until your next paycheck. *How this is worked out* shows each line, including how much of the lowest point is money the plan keeps in savings or pays toward debt early (still yours). If everyday spending isn't set, a warning says so — the number would assume you spend nothing besides bills.
+Overdue bills are paid on the projection's first day, so they're already out of the lowest point. It's the *lowest* point that matters, not a total: a dollar spent today lowers every later day's balance too. Below it, **$/day** spreads it over the days until your next paycheck. *How this is worked out* shows each line, including how much of the lowest point is money the plan keeps in savings or pays toward debt early (still yours). If everyday spending isn't set, a warning says so — the number would assume you spend nothing besides bills.
 
 ### 🧾 Bills before your next paycheck
 
@@ -244,7 +245,7 @@ A checklist of what's due this pay period (plus anything overdue), each with a s
 | **Short $X** | There won't be enough; X is how much is missing. |
 | **Overdue** | The due date passed with no payment recorded. |
 
-**Mark paid** opens a quick dialog (amount, date, account, and whether to take the money out in the app — see "Record only" in §2). Your next paychecks are listed underneath.
+**Mark paid** opens a quick dialog for that due date (amount, date, account, and whether to take the money out in the app — see "Record only" in §2). Your next paychecks are listed underneath.
 
 ### 🔗 Bill payments found in your transactions
 
@@ -433,28 +434,53 @@ To get a **PDF**, print any page and choose *Save as PDF* — the sidebar, menus
 
 ## 5. Bills & Payments
 
-**Route:** `/bills` · Everything you pay, in one table, and where you record payments.
+**Route:** `/bills` · Everything you pay, month by month, and where you record payments. Two tabs: **By month** (the default) and **All bills**.
 
-### The table
+### By month
 
-Rows include regular bills, credit card payments (cards with a balance that aren't in a loan group), mortgage and HELOC payments, and loan groups. Unpaid items are listed first, then by due day.
+Switch months with **‹ ›** (or **This month**). You can go back a year, and forward as far as the plan looks (the *how far ahead* choice on Timeline / Plan). The month is in the address (`/bills?month=2026-12`), so it survives a refresh.
+
+Every due date in the month is listed: a weekly bill has several rows, and card, mortgage, HELOC and loan group payments are included. Each row shows the due date, the amount it owes (a variable bill shows whether that's the estimate or the actual amount), and its status:
+
+| Badge | Means |
+|---|---|
+| **Paid** | Paid in full (with the amount and date paid underneath). |
+| **Partly paid** | Some was paid; what's left is shown underneath and still owed. |
+| **Overdue** | The due date passed without being fully paid. |
+| **Due today / Due in N days / Upcoming** | Still to come. |
+| **Skipped** | Marked as not owed. |
+| **Not tracked** | Before the bill was added (or before due dates were tracked), so never counted as owed. |
+| **Nothing due** | A card or loan with no payment that month. |
+
+Cards across the top total the month: **due**, **paid**, **left to pay**, and **overdue**. If money is still owed from earlier months, a note says so, with **Go back a month**.
+
+| Action | What it does |
+|---|---|
+| **Pay** / **Pay rest** | Opens the payment dialog for that due date. |
+| ⋯ **Set this month's amount** | Variable bills: the real amount for this due date only; the others keep the estimate. |
+| ⋯ **Undo payment** | Removes what was recorded for that due date. Money the app took out goes back to the account it came from, and a card or loan owes it again. |
+| ⋯ **Skip (not owed)** / **Owed after all** | Leave the due date out of everything (or bring it back). |
+
+### All bills — the table
+
+Rows include regular bills, credit card payments (cards with a balance that aren't in a loan group), mortgage and HELOC payments, and loan groups. Overdue items are listed first, then unpaid ones, then by due day.
 
 | Column | Meaning |
 |---|---|
-| Status | **DUE** or **PAID** (paid card rows also show the amount and date). |
+| Next due | **Overdue** (from the oldest missed due date), **Due** (with the date a payment goes to), or **Paid** (the next due date is already paid). |
 | Name | Bill name; card/mortgage/HELOC rows show "Bank · Account". |
 | Type | Fixed, Variable, 💳 Credit, 🏠 Mortgage, 🏦 HELOC, 🎓 Group. |
 | Frequency / Due Day | Schedule. |
-| Amount | Amount due this period, **including carryover**. Card rows show the minimum payment with the full balance underneath. |
-| Details | Card: utilization + APR · Group: member count + total balance · Mortgage: principal + APR · HELOC: balance + phase · Bill: carryover, or the actual amount / expected range for Variable bills. |
+| Amount | What's still owed on the due date a payment goes to now. Card rows show the minimum payment with the full balance underneath. |
+| Details | Card: utilization + APR · Group: member count + total balance · Mortgage: principal + APR · HELOC: balance + phase · Bill: anything left unpaid from earlier due dates, or the actual amount / expected range for Variable bills. |
 | Source | Preferred payment source, or "Auto". |
 
-**Filter chips** across the top: All, Fixed, Variable, 💳 Credit, 🎓 Groups, 🏠 Mortgage, 🏦 HELOC, Unpaid, Paid. The footer totals the visible rows.
+**Filter chips** across the top: All, Fixed, Variable, 💳 Credit, 🎓 Groups, 🏠 Mortgage, 🏦 HELOC, Overdue. The footer totals the visible rows.
 
 **Summary cards:**
 
 - **Est. Monthly Obligations** – every item converted to a monthly amount (weekly × 4.33, bi-weekly × 2.17, quarterly ÷ 3, semi-annual ÷ 6, yearly ÷ 12, one-time excluded).
-- **Paid This Period** – paid items / total items.
+- **Overdue due dates** – how many due dates have passed without being fully paid.
 - **Est. Annual Obligations** – monthly × 12.
 
 ### Adding a bill — **+ Add Bill**
@@ -478,9 +504,8 @@ Rows include regular bills, credit card payments (cards with a balance that aren
 
 | Action | Shown for | What it does |
 |---|---|---|
-| **Pay** | unpaid bills, cards, mortgages, HELOCs, groups | Opens the payment dialog (below). |
-| **$** | unpaid Variable bills | **Set Actual Amount** – record this period's real amount (shows the expected range). |
-| **Reset** | paid items | Marks it unpaid again (e.g. you recorded a payment by mistake — note this does *not* refund the money; use Accounts → Update to correct balances). |
+| **Pay** | unpaid bills, cards, mortgages, HELOCs, groups | Opens the payment dialog (below) for the due date a payment goes to now. |
+| **Set amount** | unpaid Variable bills | The real amount of the next bill (shows the expected range). Other due dates keep the estimate. |
 | **Edit** / **Del** | regular bills | Edit or delete the bill. Editing a variable bill keeps its estimate. `[Auto]` payment bills can't be deleted; they follow their card, mortgage, HELOC or group. |
 | **Details →** | groups | Opens Loan Groups. |
 
@@ -488,7 +513,7 @@ Rows include regular bills, credit card payments (cards with a balance that aren
 
 | Field | Default |
 |---|---|
-| Amount Paid | The amount due (bills: amount + carryover; cards: the minimum payment). |
+| Amount Paid | What's still owed on that due date (cards: the minimum payment). The dialog says which due date it pays. |
 | Source Bank / Account | The preferred source (cards: the first checking account if none). Credit cards are listed as "(credit card)" — paying with a card **charges** that card. |
 | Payment Date | Today. |
 | Take the money out of the account in this app now | On, unless you use SimpleFIN. Turn it off when your balances already include this payment ("Record only", §2) — then only the paid status and history change. |
@@ -496,7 +521,7 @@ Rows include regular bills, credit card payments (cards with a balance that aren
 On confirm (with money taken out):
 
 - the money leaves the source account (rejected with a message if funds or credit are insufficient — nothing changes),
-- **bills:** the bill is marked paid; paying less than due shows "$X will carry over to next period",
+- **bills:** that due date is marked paid; paying less than it owes shows "$X will still be owed for this due date",
 - **credit cards:** the card balance drops by the amount paid,
 - **mortgages:** the payment is split into interest, escrow, then principal,
 - **HELOCs:** the balance drops by the amount paid,
@@ -504,10 +529,6 @@ On confirm (with money taken out):
 - the payment is recorded and appears under **Recent payments** at the bottom of the Bills page.
 
 **Pay** and **Mark paid** only record a payment once: pressing the button twice, or recording the exact same payment again right after, is refused.
-
-### 🔄 Auto-Reset
-
-Marks paid items unpaid when their next due date (after the last payment) has arrived. This also runs automatically every time the server starts, so you normally don't need it.
 
 ### 🔁 Repeating charges that aren't bills yet
 
@@ -799,7 +820,7 @@ The page has four tabs (the one you pick is remembered and kept in the address, 
 | Column | Meaning |
 |---|---|
 | Due / Bill | Due date, name, kind (bill, variable bill, card payment, mortgage, HELOC payment, loan group) and the account it comes from. `~` marks an estimated amount. |
-| Status | **On time**, **Paid** (already paid this period), **Short** (not enough money on the due date), or **On time with plan** (short if paid on the due date, fine if you follow the optimized plan). |
+| Status | **On time**, **Paid** (that due date is already paid), **Short** (not enough money on the due date), or **On time with plan** (short if paid on the due date, fine if you follow the optimized plan). |
 | Pay early? | What paying on the paycheck before the due date would save, e.g. *"Saves $4.37 on Nov 6 (12d early)"*. Otherwise **No benefit**. |
 | What to do | Plain advice, including which paycheck covers the bill. For a **Short** bill it lists ways to fix it. |
 
@@ -837,7 +858,7 @@ If the group payment doesn't even cover the monthly interest, the card says the 
 
 **When will I be debt-free?** (this used to be the Debt Payoff page) – a long-run estimate, month by month until everything is paid off. Drag **Extra each month** ($0 – $2,000, in $25 steps; default $200); results update half a second after you stop.
 
-- **Debts included:** credit cards with a balance (not in a group), HELOCs with a balance, and each loan group as one debt (balance-weighted APR, group payment as its minimum). Mortgages are excluded. Debts already marked paid this period are left out.
+- **Debts included:** credit cards with a balance (not in a group), HELOCs with a balance, and each loan group as one debt (balance-weighted APR, group payment as its minimum). Mortgages are excluded. Debts whose next payment is already marked paid are left out.
 - **Every strategy uses the same monthly budget** = sum of all minimums + the extra amount. When a debt is paid off, its minimum rolls into the next target.
 
 | Strategy | Extra money goes to |
@@ -1000,7 +1021,7 @@ While the server runs it checks every couple of minutes for work, and this card 
 
 | Job | What it does |
 |---|---|
-| Daily upkeep | Rolls bill periods over (paid flags reset for the new period) and records today's net worth for Reports |
+| Daily upkeep | Records today's net worth for Reports |
 | Automatic backup | The daily backup above |
 | SimpleFIN sync | If *Sync automatically* is on |
 | Email digest, Phone notifications, Morning summary | If set up under Alerts |
@@ -1086,7 +1107,7 @@ On that day, no checking account had enough money for it. Look at the Timeline c
 It includes enough to pay off each 0% promo before it expires (see §2). Pay at least your statement minimum in real life; the app's figure is what keeps you clear of deferred interest.
 
 **I marked something paid by mistake.**
-Use **Reset** to mark it unpaid, then correct the source account's balance with Accounts → **Update** (Reset doesn't refund the payment).
+On Bills → **By month**, find the due date and choose ⋯ → **Undo payment**. If the app took the money out, it's put back.
 
 **Can I import my data from a spreadsheet?**
 Yes: *Settings → Data & backup* → **Blank template**, fill it in, then **Import from Excel** (the command-line menu, `python cli.py`, can do the same). Template example rows are marked `EXAMPLE` and skipped. Importing skips items that already exist.

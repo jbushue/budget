@@ -104,11 +104,14 @@ class TestBillGroupModel:
         next_due = student_loan_group.get_next_due_date(ref)
         assert next_due == date(2026, 5, 15)
 
-    def test_mark_paid_and_reset(self, student_loan_group):
-        student_loan_group.mark_paid(date(2026, 4, 15))
+    def test_paid_status_follows_the_group_bill(self, student_loan_group):
+        bill = student_loan_group.as_bill()
+        due = bill.get_next_due_date(date.today() - timedelta(days=1))
+        assert not student_loan_group.is_paid_this_period
+        bill.mark_paid("", "", amount_paid=student_loan_group.total_payment, due=due)
         assert student_loan_group.is_paid_this_period
         assert len(student_loan_group.payment_history) == 1
-        student_loan_group.reset_period()
+        bill.reset_period()
         assert not student_loan_group.is_paid_this_period
 
     def test_grouped_account_keys(self, student_loan_group):

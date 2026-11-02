@@ -252,8 +252,8 @@ def create_sinking_fund(manager, bill_name: str, bank_name: str = "", account_na
 
 def roll_sinking_funds(manager, today: date | None = None) -> int:
     """
-    When a sinking fund's bill has been paid (its next due date moved past the
-    fund's date), use up the fund and aim it at the next due date.
+    When the due date a sinking fund saves for has been paid, use up the fund
+    and aim it at the next due date.
     """
     if manager is None:
         return 0
@@ -265,17 +265,15 @@ def roll_sinking_funds(manager, today: date | None = None) -> int:
             bill = _find_bill(manager, g.linked_bill)
             if bill is None or not g.target_date:
                 continue
-            paid_on = [h.get("date") for h in bill.payment_history]
-            paid_on = [d if isinstance(d, date) else date.fromisoformat(str(d)[:10]) for d in paid_on if d]
-            # Paid within a month before the fund's date (or any time after it)
             # (A missed due date with no payment recorded is left for the user to sort out)
-            if not any(d >= g.target_date - timedelta(days=31) for d in paid_on):
+            from models import occurrences as occ
+            if occ.status(bill, g.target_date, today) not in ("paid", "skipped"):
                 continue
             nxt = bill.get_next_due_date(max(today, g.target_date))
             if nxt == date.max or nxt <= g.target_date:
                 continue
             g.saved_amount = round(max(0.0, g.saved_amount - g.target_amount), 2)
-            g.target_amount = round(bill.effective_amount, 2)
+            g.target_amount = round(occ.scheduled_amount(bill, nxt), 2)
             g.target_date = nxt
             rolled += 1
         if rolled:

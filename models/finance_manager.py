@@ -58,26 +58,22 @@ class FinanceManager:
     # ========== Planning settings ==========
 
     def record_bill_paid(self, bill, amount: float = None, payment_date: date = None,
-                         source_bank: str = "", source_account: str = "") -> None:
+                         source_bank: str = "", source_account: str = "", due: date = None) -> dict:
         """
-        Mark a bill paid WITHOUT moving any money — for payments that already
-        happened in real life (your balances already reflect them, e.g. via
-        SimpleFIN sync or a transaction match). Card/loan balances are left alone.
+        Mark one due date of a bill paid WITHOUT moving any money — for payments
+        that already happened in real life (your balances already reflect them,
+        e.g. via SimpleFIN sync or a transaction match). Card/loan balances are
+        left alone. ``due`` defaults to the oldest due date still owed, else the next.
         """
         from models.fixed_bill import Bill as _Bill, FloatingBill as _Floating
-        from models.dashboard import overdue_due_date, settle_paid_flag
         payment_date = payment_date or date.today()
-        was_overdue = overdue_due_date(bill, payment_date) is not None
-        if amount is None:
-            amount = bill.effective_amount
         if isinstance(bill, _Floating):
-            bill.mark_paid(source_bank, source_account, amount, payment_date)
+            entry = bill.mark_paid(source_bank, source_account, amount, payment_date, due=due, moved_money=False)
         else:
-            _Bill.mark_paid(bill, source_bank, source_account, amount, payment_date)
-        if isinstance(bill, GroupLinkedBill):
-            bill.linked_group.mark_paid(payment_date)
-        settle_paid_flag(bill, was_overdue)
+            entry = _Bill.mark_paid(bill, source_bank, source_account, amount, payment_date, due=due,
+                                    moved_money=False)
         self.invalidate_plan_cache()
+        return entry
 
     def sim_options(self) -> dict:
         """Keyword arguments every TimelineSimulator/PaymentOptimizer should get."""
@@ -261,7 +257,10 @@ class FinanceManager:
                         # Swapping in the real account (e.g. after a DB load):
                         # carry the bill's paid flag over to it
                         bill.linked_account = acc
-                        bill.is_paid_this_period = bill._is_paid_this_period
+                    # The old paid flag (no payment behind it) needs the real
+                    # account's amount to know which due date it skips
+                    if bill.__dict__.pop('_legacy_paid', False):
+                        bill.is_paid_this_period = True
                     bill.linked_bank_name = bank_name
                     bill.linked_account_type = acc_type
                     bill.due_date = getattr(acc, 'payment_due_date', None) or 1
@@ -830,10 +829,8 @@ class FinanceManager:
         # Now we only iterate self.bills — linked bills cover credit/mortgage/HELOC/groups
         committed = 0.0
         
+        from models import occurrences as occ
         for bill in self.bills:
-            if bill.is_paid_this_period:
-                continue
-
             # Skip linked bills whose account is in a bill group
             if isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'credit':
                 if (bill.linked_bank_name, bill.linked_account.account_name) in grouped_keys:
@@ -843,9 +840,9 @@ class FinanceManager:
                     continue
 
             try:
-                next_due = bill.get_next_due_date(today - timedelta(days=1))
-                if next_due <= horizon:
-                    committed += bill.effective_amount
+                # Every due date still owed: overdue ones and those before the horizon
+                committed += sum(left for _, left in occ.overdue(bill, today))
+                committed += sum(occ.remaining(bill, d) for d in occ.due_dates(bill, today, horizon))
             except Exception:
                 pass
 
@@ -869,39 +866,10 @@ class FinanceManager:
 
     def auto_reset_periods(self) -> int:
         """
-        Auto-reset bills/mortgages whose billing period has rolled over.
-        Returns count of bills reset.
-        
-        Since all payments are now tracked as bills (including linked bills),
-        we only need to iterate self.bills.
+        Nothing to reset any more: paid status is kept per due date, so a new
+        month's bill is simply unpaid. Kept so older callers still work.
         """
-        today = date.today()
-        reset_count = 0
-        
-        for bill in self.bills:
-            if not bill.is_paid_this_period:
-                continue
-            try:
-                history = bill.payment_history
-                if not history and isinstance(bill, GroupLinkedBill):
-                    history = bill.linked_group.payment_history
-                if history:
-                    last_paid = history[-1].get('date', today)
-                    if isinstance(last_paid, str):
-                        last_paid = date.fromisoformat(last_paid)
-                    # The payment covers the first due date on or after the day it was
-                    # made; once that date has passed, the next one is owed
-                    covered = bill.get_next_due_date(last_paid - timedelta(days=1))
-                    if covered < today:
-                        bill.is_paid_this_period = False
-                        reset_count += 1
-            except Exception:
-                pass
-        
-        if reset_count > 0:
-            self.save_to_database()
-        
-        return reset_count
+        return 0
 
     def record_net_worth_snapshot(self) -> dict | None:
         """Record current net worth to the database. Returns the snapshot data."""

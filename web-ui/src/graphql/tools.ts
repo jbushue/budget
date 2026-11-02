@@ -33,8 +33,8 @@ export const UPDATE_BALANCES = gql`
 `
 
 export const RESET_BILL_TO_ESTIMATE = gql`
-  mutation ResetBillToEstimate($billName: String!) {
-    resetBillToEstimate(billName: $billName) { success message }
+  mutation ResetBillToEstimate($billName: String!, $dueDate: String) {
+    resetBillToEstimate(billName: $billName, dueDate: $dueDate) { success message }
   }
 `
 
