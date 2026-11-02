@@ -10,16 +10,16 @@ export const NAV = [
     { path: '/income', icon: 'income', label: 'Income' },
     { path: '/bill-groups', icon: 'loans', label: 'Loan groups' },
   ] },
+  // One plan: what it does (Plan), day by day (Timeline), and what if something changes
   { label: 'Plan', items: [
+    { path: '/optimizer', icon: 'zap', label: 'Plan' },
+    { path: '/timeline', icon: 'calendar', label: 'Timeline' },
+    { path: '/scenarios', icon: 'sparkles', label: 'What-if' },
+  ] },
+  { label: 'Spending', items: [
     { path: '/budgets', icon: 'budgets', label: 'Budgets' },
     { path: '/goals', icon: 'goals', label: 'Goals' },
     { path: '/subscriptions', icon: 'repeat', label: 'Subscriptions' },
-    { path: '/timeline', icon: 'calendar', label: 'Timeline' },
-  ] },
-  { label: 'Optimize', items: [
-    { path: '/optimizer', icon: 'zap', label: 'Optimizer' },
-    { path: '/debt-payoff', icon: 'trendingDown', label: 'Debt payoff' },
-    { path: '/scenarios', icon: 'sparkles', label: 'What-If' },
   ] },
   { label: 'Insights', items: [
     { path: '/reports', icon: 'chart', label: 'Reports' },

@@ -161,7 +161,19 @@ class TestMoves:
     def test_promo_with_a_payment_still_to_come_is_not_imminent(self):
         out = PaymentInsightsAnalyzer(self._promo_card(due_day=25), start_date=date(2026, 3, 1), days=20).analyze()
         base = out["comparison"]["on_due_date"]
-        assert base["pending_deferred_interest"] > 0 and base["imminent_promo_interest"] == 0
+        # The Mar 25 payment (after this 20-day view, before the Mar 31 expiry)
+        # clears it, so nothing is at risk
+        assert base["imminent_promo_interest"] == 0 and base["pending_deferred_interest"] == 0
+        assert out["promos"][0]["on_track"] is True
+
+    def test_deferred_interest_is_charged_the_day_a_promo_ends(self):
+        from models.timeline_simulator import TimelineSimulator
+        m = self._promo_card(due_day=5)
+        m.income_sources, m.bills = [], []
+        m.banks[0].accounts["Chk"].balance = 0.0
+        r = TimelineSimulator(m.banks, [], []).project_balances(date(2026, 3, 20), date(2026, 4, 3))
+        promo = [cf for cf in r["cash_flow"] if cf.get("promo")]
+        assert [cf["date"] for cf in promo] == [date(2026, 3, 31)] and promo[0]["amount"] > 300
 
 
 class TestAverageDailyBalance:

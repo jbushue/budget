@@ -29,7 +29,13 @@ from models import activity, auth, jobs, web_routes
 def create_app():
     """Create and configure the Flask application."""
     app = Flask(__name__)
-    CORS(app)  # Enable CORS
+    # The web app (and the Vite dev server, through its proxy) is same-origin,
+    # so cross-origin requests are off unless origins are listed: an open CORS
+    # policy would let any website in your browser read this API before the
+    # first account is set up.
+    origins = [o.strip() for o in os.environ.get('BUDGET_CORS_ORIGINS', '').split(',') if o.strip()]
+    if origins:
+        CORS(app, origins=origins)
 
     # Behind a reverse proxy: believe its X-Forwarded-For / -Proto / -Host (only that many hops)
     proxies = int(os.environ.get('BUDGET_TRUSTED_PROXIES') or 0)

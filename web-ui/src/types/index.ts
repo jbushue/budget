@@ -234,6 +234,14 @@ export interface Projection {
   totalIncome: number
   totalExpenses: number
   netChange: number
+  otherAssets?: number
+  lowestChecking?: number | null
+  lowestCheckingDate?: string | null
+  lowestSpendable?: number | null
+  lowestSpendableDate?: string | null
+  cushion?: number
+  planGoal?: string
+  planTarget?: string | null
 }
 
 export interface PaymentPlan {
@@ -424,6 +432,8 @@ export interface DashboardSummary {
   nearLowest?: number
   heldForLater?: number
   heldFor?: string | null
+  planSeries?: string | null
+  parkedAtLowest?: number
   lookaheadDays?: number
   planGoal?: string
   planTarget?: string | null

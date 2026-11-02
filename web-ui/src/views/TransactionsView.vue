@@ -101,7 +101,7 @@
                   <button v-if="t.splits?.length" class="split-btn" :title="splitSummary(t)" @click="openDetails(t)">
                     ⑂ Split · {{ t.splits.length }} categories
                   </button>
-                  <select v-else :value="t.category ?? ''" :class="{ uncat: !t.category }" @change="setCategory(t, ($event.target as HTMLSelectElement).value)">
+                  <select v-else :value="t.category ?? ''" :class="{ uncat: !t.category }" @change="setCategory(t, $event.target as HTMLSelectElement)">
                     <option value="">Uncategorized</option>
                     <option v-for="c in categories" :key="c.name" :value="c.name">{{ c.name }}</option>
                   </select>
@@ -300,7 +300,7 @@ import { apolloClient } from '../graphql/client'
 import { UNMATCH_TRANSACTION } from '../graphql/goals'
 import BillMatchSuggestions from '../components/BillMatchSuggestions.vue'
 import { runMutation } from '../utils/mutation'
-import { currency, fmtDateShort } from '../utils/format'
+import { currency, fmtDateShort, todayISO, splitKey } from '../utils/format'
 import type {
   Bank, Category, CsvPreview, ImportResult, LedgerTransaction, MutationPayload, TagCount, TransactionPage,
 } from '../types'
@@ -378,7 +378,7 @@ async function exportCsv() {
     const blob = new Blob([res.data?.transactionsCsv ?? ''], { type: 'text/csv' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `transactions-${todayISO()}.csv`
     a.click()
     URL.revokeObjectURL(a.href)
   } catch (e) {
@@ -443,7 +443,9 @@ async function saveDetails() {
       variables: { id: d.txn.id, notes: d.notes, tags: splitTags(d.tags) },
     }), 'updateLedgerTransaction', { failMessage: 'Could not save' })
     if (!ok) return
-    if (d.parts.length && !sameSplit(d.txn, d.parts)) {
+    // Every part removed: back to one category (an empty split)
+    const unsplit = !d.parts.length && !!d.txn.splits?.length
+    if (unsplit || (d.parts.length && !sameSplit(d.txn, d.parts))) {
       const res = await runMutation(() => setSplitsM({ variables: {
         id: d.txn.id, splits: d.parts.map(p => ({ category: p.category, amount: Number(p.amount), note: p.note })),
       } }), 'setTransactionSplits', { failMessage: 'Could not save the split' })
@@ -477,11 +479,13 @@ const { mutate: addTxn } = useMutation<{ addLedgerTransaction: MutationPayload }
 const { mutate: importCsv } = useMutation<{ importCsvTransactions: { result: ImportResult | null; previewData: CsvPreview | null } }>(IMPORT_CSV_TRANSACTIONS)
 const { mutate: importSfin } = useMutation<{ importSimplefinTransactions: { result: ImportResult } }>(IMPORT_SIMPLEFIN_TRANSACTIONS)
 
-async function setCategory(t: LedgerTransaction, category: string) {
+async function setCategory(t: LedgerTransaction, el: HTMLSelectElement) {
+  const category = el.value
   const res = await runMutation(() => updateTxn({
     variables: { id: t.id, category, createRule: rememberChoice.value && !!category },
   }), 'updateLedgerTransaction', { failMessage: 'Could not update category' })
   if (res) refetch()
+  else el.value = t.category ?? ''  // didn't save: show what's really stored
 }
 
 const { mutate: unmatchM } = useMutation<{ unmatchTransaction: MutationPayload }>(UNMATCH_TRANSACTION)
@@ -511,7 +515,7 @@ const showAdd = ref(false)
 const addForm = reactive({ date: '', direction: 'out', description: '', amount: 0, category: '', account: '', notes: '', tags: '' })
 
 function openAdd() {
-  Object.assign(addForm, { date: new Date().toISOString().slice(0, 10), direction: 'out', description: '',
+  Object.assign(addForm, { date: todayISO(), direction: 'out', description: '',
     amount: 0, category: '', account: '', notes: '', tags: '' })
   showAdd.value = true
 }
@@ -519,7 +523,7 @@ function openAdd() {
 onRouteAction({ add: () => openAdd(), search: q => { filters.text = q } })
 
 async function saveAdd() {
-  const [bankName, accountName] = addForm.account ? addForm.account.split(':') : ['', '']
+  const [bankName, accountName] = addForm.account ? splitKey(addForm.account) : ['', '']
   const res = await runMutation(() => addTxn({ variables: {
     date: addForm.date, description: addForm.description,
     amount: addForm.direction === 'out' ? -Math.abs(addForm.amount) : Math.abs(addForm.amount),
@@ -574,7 +578,7 @@ function currentMapping() {
 async function refreshPreview(auto = false) {
   if (!fileContent.value) return
   importError.value = ''
-  const [bankName, accountName] = (importForm.account || ':').split(':')
+  const [bankName, accountName] = splitKey(importForm.account || ':')
   try {
     const res = await importCsv({ variables: {
       content: fileContent.value, bankName, accountName, preview: true, invert: importForm.invert,
@@ -598,7 +602,7 @@ async function refreshPreview(auto = false) {
 }
 
 async function doImport() {
-  const [bankName, accountName] = importForm.account.split(':')
+  const [bankName, accountName] = splitKey(importForm.account)
   importing.value = true
   const res = await importResult(() => importCsv({ variables: {
     content: fileContent.value, bankName, accountName, invert: importForm.invert,

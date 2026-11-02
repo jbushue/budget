@@ -5,6 +5,7 @@ import { router } from './router'
 import App from './App.vue'
 import { startTableLabels } from './utils/stackTables'
 import { startTheme } from './utils/theme'
+import { startOverlayGuard } from './utils/overlay'
 import '@fontsource-variable/inter'
 import './style.css'
 
@@ -20,6 +21,7 @@ const app = createApp({
 app.use(router)
 app.mount('#app')
 startTableLabels()
+startOverlayGuard()
 
 // Installable app (PWA). Browsers only allow service workers on localhost or HTTPS.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

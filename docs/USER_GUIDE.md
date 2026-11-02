@@ -22,8 +22,8 @@ This guide covers every page of the web interface, what each number means, and h
 12. [Net Worth & Assets](#12-net-worth--assets)
 13. [Financial Health Check](#13-financial-health-check)
 14. [Timeline & Projection](#14-timeline--projection)
-15. [Payment Optimizer](#15-payment-optimizer)
-16. [Debt Payoff Estimator](#16-debt-payoff-estimator)
+15. [Plan (Payment Optimizer)](#15-plan-payment-optimizer)
+16. [Debt Payoff Estimator (now on the Plan page)](#16-debt-payoff-estimator)
 17. [What-If Scenarios](#17-what-if-scenarios)
 18. [Reports](#18-reports)
 19. [Alerts](#19-alerts)
@@ -90,6 +90,7 @@ Work through the pages in this order — each step builds on the previous one:
 | Environment variable | Default | Effect |
 |---|---|---|
 | `BUDGET_HOST` | `127.0.0.1` | Address the API listens on. Leave as-is: the web interface reaches the API through its proxy, including from your phone (§22). |
+| `BUDGET_CORS_ORIGINS` | none | Comma-separated list of other web addresses allowed to call the API from a browser (e.g. `https://budget.example.com`). Leave unset: the web interface and its proxy are on the same address as the API, so cross-site access is off by default. |
 | `BUDGET_DEBUG` | off | Set to `1` for auto-reload and detailed errors while developing. **Never** enable this on a shared network — the debugger allows running code on your machine. |
 
 ---
@@ -144,7 +145,7 @@ The minimum payment is **2% of the regular (non-promo) balance, or $25, whicheve
 
 ### 0% promotional offers and deferred interest
 
-Every card payment in the plan gives each 0% promo its share first: what's left on the promo divided by the payments remaining before it ends (all of it on the last one). The rest goes to the regular balance. That way a promo is always paid off by the payment before it expires, even when the card also carries a regular balance. When you record a card payment in the app, it's split the same way. (Ask your card issuer to apply the extra to the promo; many let you choose.) The Optimizer's promo table shows whether each promo is on track, and you get an alert if the plan can't pay one off in time.
+Every card payment in the plan gives each 0% promo its share first: what's left on the promo divided by the payments remaining before it ends (all of it on the last one). The rest goes to the regular balance. That way a promo is always paid off by the payment before it expires, even when the card also carries a regular balance. When you record a card payment in the app, it's split the same way. (Ask your card issuer to apply the extra to the promo; many let you choose.) The promo deadlines on the Plan page (Debt tab) show whether each promo is on track, and you get an alert if the plan can't pay one off in time.
 
 A promo carves out part of the card's existing balance as interest-free until the promo's end date. Interest is only charged on the **regular** balance. If a promo **expires with a balance remaining**, the app charges **deferred (retroactive) interest** as if the promo never existed — `remaining × ((1 + APR/12)^months − 1)` — and the leftover amount becomes regular, interest-bearing debt. Projections apply this on the simulated expiry date, so you can see the hit coming.
 
@@ -158,7 +159,7 @@ Each bill tracks whether it has been **paid this period**. Marking a bill paid:
 
 Paid bills are **reset automatically** once their next due date passes (this runs each time the API server starts, and on demand with **🔄 Auto-Reset** on the Bills page).
 
-In projections, a bill already marked paid is skipped for the *current* period only — every later period is paid normally. Paying an **overdue** bill counts for the missed due date, so the next one still shows as owed.
+In projections, a bill already marked paid is skipped for the *current* period only — every later period is paid normally. A bill paid on (or after) its due date is still owed again next period. Paying an **overdue** bill counts for the missed due date, so the next one still shows as owed.
 
 **Record only.** If your balances are already up to date (for example, synced with SimpleFIN), the payment has already left your account — taking it out again would count it twice. The Pay / Mark paid dialog has a checkbox, *Take the money out of the account in this app now*; leave it off to just record the payment. It's off by default when you use SimpleFIN. Bill payments recognized in your transactions (§8) are always recorded this way.
 
@@ -170,7 +171,7 @@ The **cushion** is money you always want left in checking for surprises. Safe to
 
 ### Fees
 
-Projections charge the fees you'd really pay: a **late fee** when a payment can't be made on its due date (set app-wide in *Settings → Planning*, for cards/HELOCs and for other bills, and per bill on the bill form), and an **overdraft fee** each time checking would go below $0. Fees show up in the Optimizer and What-If comparisons.
+Projections charge the fees you'd really pay: a **late fee** when a payment can't be made on its due date (set app-wide in *Settings → Planning*, for cards/HELOCs and for other bills, and per bill on the bill form), and an **overdraft fee** each time checking would go below $0. Fees show up in the Plan and What-If comparisons.
 
 ### Payment sources
 
@@ -178,10 +179,12 @@ Every bill, group, mortgage, and HELOC can have a **preferred source** (bank + a
 
 ### Projections
 
-The **Timeline**, **Dashboard chart**, and **Optimizer** run a day-by-day simulation starting today. Each day, in order: income deposits, optimizer moves that bring money back to checking, bill/loan payments, then other optimizer moves and interest. Interest is applied monthly:
+**One plan for the whole app.** The app works out your plan once, day by day for the next **year** (365 days), and keeps it until something changes (a balance, bill, paycheck, setting, or the date). The Dashboard, Timeline, Plan page, What-if, alerts and the daily email all read that same plan, so they agree about every day they show. A 30-day view is just the first 30 days of the same plan, not a different one. Period pickers only change how much you see. The plan never lets checking drop below **your cushion** (there's no hidden minimum). "Lowest checking" always means all your checking accounts added together.
+
+The simulation starts today. Each day, in order: income deposits, optimizer moves that bring money back to checking, bill/loan payments, then other optimizer moves and interest. Interest is applied monthly:
 
 - **Savings/checking:** on the account's *Interest Day* at APY/12 (the end of each month if no Interest Day is set).
-- **Credit cards:** on the statement day at APR/12 on the regular (non-promo) balance; expired promos trigger deferred interest on their expiry date.
+- **Credit cards:** on the statement day (or the due day, if the card has no statement day) at APR/12 on the regular (non-promo) balance. A 0% promo that still owes money at the end of its last day is charged its deferred interest that day, not at the next statement.
 - **HELOCs:** on the payment due day at APR/12, just before that day's payment — so an interest-only payment keeps the balance flat.
 - Mortgage payments are split into interest, escrow, then principal.
 
@@ -206,7 +209,7 @@ One line, colored by how things look:
 | Banner | Means |
 |---|---|
 | ✅ **All bills through *date* are covered** | Every bill and your everyday spending fit, and checking stays above your cushion. The date is at least a month out (through your second payday). |
-| ⚠️ **Bills are covered — if you follow the plan** | Paying everything on its due date leaves a bill short, but the Optimizer's plan (moving money from savings, timing payments) covers it. **See the plan** shows how. |
+| ⚠️ **Bills are covered — if you follow the plan** | Paying everything on its due date leaves a bill short, but the plan (moving money from savings, timing payments) covers it. **See the plan** shows how. |
 | ⚠️ **Bills past due and not marked paid** | A due date has passed with no payment recorded. Mark them paid if you've paid them; until then their amount is held back from Safe to spend. |
 | ⚠️ **Checking gets tight** | Everything is paid, but checking drops below your cushion. |
 | 🚨 ***Bill* can't be paid on *date*** | Even the optimized plan comes up short. **See the plan** for ways to cover it. |
@@ -227,7 +230,7 @@ Safe to spend = lowest projected checking balance, through your second payday
               − money set aside in checking for goals
 ```
 
-It's the *lowest* point that matters, not a total: a dollar spent today lowers every later day's balance too. Below it, **$/day** spreads it over the days until your next paycheck. *How this is worked out* shows each line. If everyday spending isn't set, a warning says so — the number would assume you spend nothing besides bills.
+It's the *lowest* point that matters, not a total: a dollar spent today lowers every later day's balance too. Below it, **$/day** spreads it over the days until your next paycheck. *How this is worked out* shows each line, including how much of the lowest point is money the plan keeps in savings or pays toward debt early (still yours). If everyday spending isn't set, a warning says so — the number would assume you spend nothing besides bills.
 
 ### 🧾 Bills before your next paycheck
 
@@ -237,7 +240,7 @@ A checklist of what's due this pay period (plus anything overdue), each with a s
 |---|---|
 | **Paid** | Marked paid for this due date. |
 | **Covered** | There will be enough on the due date. |
-| **Covered with plan** | Covered if you follow the Optimizer's plan. |
+| **Covered with plan** | Covered if you follow the plan. |
 | **Short $X** | There won't be enough; X is how much is missing. |
 | **Overdue** | The due date passed with no payment recorded. |
 
@@ -249,18 +252,18 @@ When imported transactions look like bill payments but aren't certain enough to 
 
 ### 🧭 What to do next
 
-The three most important recommendations for the next 30 days, from the same analysis as the Payment Optimizer (§15). They're ranked: 🚨 urgent (a bill that can't be paid), ⚠️ warnings, then 💡 money-saving moves, then 📈 tips. **See the full payment plan →** opens the Optimizer.
+The three most important recommendations for the next 30 days, from the same plan as the Plan page (§15). They're ranked: 🚨 urgent (a bill that can't be paid), ⚠️ warnings, then 💡 money-saving moves, then 📈 tips. **Full payment plan →** opens the Plan page.
 
-### Details
+### 📉 Checking over the next *N* days
 
-Below the summary:
+A chart of checking for the look-ahead period, following your plan. It uses the same numbers as Safe to spend: money the plan parks in savings or puts toward debt early is counted as yours. The dashed line is your cushion and the lowest point is marked. **Day by day →** opens the Timeline.
 
-- **Total Assets / Total Liabilities / Net Worth / Banks** – checking + savings; card, mortgage and HELOC balances; the difference (home value isn't included).
-- **Banks & Accounts** – every account grouped by bank. Debts are shown as negative. 🔄 marks accounts kept in sync by SimpleFIN.
-- **Upcoming Bills (30 days)** and **Upcoming Income (30 days)**.
-- **📈 Net Worth Over Time** – from daily snapshots (recorded at server start and the first Dashboard visit each day); appears after two days of history.
-- **90-Day Balance Projection** – checking + savings over the next 90 days (the optimized projection, §15).
-- **💳 Recent Bill Payments** – the latest payments recorded.
+### Where things stand
+
+- **Total assets / Total liabilities / Net worth / Health score** – net worth opens the Net worth page (with its history chart), the score opens the Health check.
+- **Banks & accounts** – every account grouped by bank. Debts are shown as negative. 🔄 marks accounts kept in sync by SimpleFIN.
+
+Upcoming bills and paychecks are in the pay-period checklist above (and day by day on the Timeline). Recent bill payments are on the Bills page.
 
 The 🔔 bell at the top right of every page lists alerts (§19). **Refresh** reloads everything.
 
@@ -351,7 +354,7 @@ The **Promos** dialog shows the card's total and regular (interest-bearing) bala
 | Start Date | When the promo began. |
 | End Date (optional) | Calculated from start + months if blank. |
 
-**Edit** changes any of a promo's fields: name, months, purchase limit, balance and dates (changing the months or start date recalculates the end date unless you give one). **Remove** removes the promo and returns its balance to the regular balance.
+**Edit** changes any of a promo's fields: name, months, purchase limit, balance and dates (changing the months or start date recalculates the end date unless you give one). End dates count calendar months: a 12-month promo from Jan 31 ends Jan 31 next year (or the month's last day). Lowering the card's balance with **Update** below what its promos hold shrinks the promos to match. **Remove** removes the promo and returns its balance to the regular balance.
 
 Each promo's **⋯** menu also has:
 
@@ -390,6 +393,18 @@ Actions: **Edit** (limit, rate, draw period, total term, start date, due day, pa
 
 ---
 
+## Finding your way around
+
+The sidebar groups the pages:
+
+- **Money** – Accounts, Transactions, Bills, Income, Loan groups
+- **Plan** – Plan (formerly the Optimizer), Timeline, What-if
+- **Spending** – Budgets, Goals, Subscriptions
+- **Insights** – Reports, Net worth, Health check
+- **Manage** – Activity, Settings (alerts are under the bell at the top)
+
+Pressing a button keeps your place on the page; opening another page starts at the top, and **Back** returns to where you were. Dialogs close with **Cancel** or a click outside them (a drag that starts inside a dialog, such as selecting text, doesn't close it).
+
 ## Search and quick actions
 
 Press **Ctrl+K** (⌘K on a Mac) or **/** anywhere, or click **Search or jump to...** at the top. Type to find:
@@ -408,7 +423,7 @@ Use ↑ ↓ and Enter, or click. Esc closes it.
 |---|---|
 | Month by month | Projected income, bills and payments, everyday spending, fees, interest, net change, and cash and debt at each month's end |
 | Every payment and paycheck | Each projected event by date, with its account |
-| Payment plan | When to pay each bill and from which account (the Optimizer's plan) |
+| Payment plan | When to pay each bill and from which account (the Plan page) |
 | Daily balances | Every account's projected end-of-day balance |
 | Accounts today | Every account with its balance, limit and rate |
 
@@ -466,7 +481,7 @@ Rows include regular bills, credit card payments (cards with a balance that aren
 | **Pay** | unpaid bills, cards, mortgages, HELOCs, groups | Opens the payment dialog (below). |
 | **$** | unpaid Variable bills | **Set Actual Amount** – record this period's real amount (shows the expected range). |
 | **Reset** | paid items | Marks it unpaid again (e.g. you recorded a payment by mistake — note this does *not* refund the money; use Accounts → Update to correct balances). |
-| **Edit** / **Del** | regular bills | Edit or delete the bill. |
+| **Edit** / **Del** | regular bills | Edit or delete the bill. Editing a variable bill keeps its estimate. `[Auto]` payment bills can't be deleted; they follow their card, mortgage, HELOC or group. |
 | **Details →** | groups | Opens Loan Groups. |
 
 ### The Pay dialog
@@ -486,7 +501,9 @@ On confirm (with money taken out):
 - **mortgages:** the payment is split into interest, escrow, then principal,
 - **HELOCs:** the balance drops by the amount paid,
 - **groups:** the payment is distributed across the group's loans (see §6),
-- the payment is recorded and appears in **Recent Bill Payments** on the Dashboard.
+- the payment is recorded and appears under **Recent payments** at the bottom of the Bills page.
+
+**Pay** and **Mark paid** only record a payment once: pressing the button twice, or recording the exact same payment again right after, is refused.
 
 ### 🔄 Auto-Reset
 
@@ -502,7 +519,7 @@ When your transactions show the same payee charging you on a steady schedule (we
 
 **Route:** `/bill-groups` · Bundle several loans that you pay with **one** payment — typically federal student loans serviced together.
 
-When a card or loan is in a group, it no longer gets its own payment row; the group appears as a single payment instead, everywhere (Bills, Timeline, Optimizer, Debt Payoff).
+When a card or loan is in a group, it no longer gets its own payment row; the group appears as a single payment instead, everywhere (Bills, Timeline, Plan).
 
 ### Group cards
 
@@ -518,7 +535,7 @@ The members table lists each loan's bank, account, APR, balance, allocation meth
 
 ### Actions
 
-- **+ New Group** / **Edit**: Group Name (unique), Total Monthly Payment, Due Day, Frequency (Monthly / Bi-weekly / Quarterly), Group Type, Payment Source Bank/Account.
+- **+ New Group** / **Edit**: Group Name (unique; a name already in use is refused), Total Monthly Payment, Due Day, Frequency (Monthly / Bi-weekly / Quarterly), Group Type, Payment Source Bank/Account.
 - **+ Member**: pick a bank, then a credit/loan account (each account can be in only one group), and an Allocation Method (Proportional / Equal split / Fixed amount + amount).
 - **Remove** a member, or **Delete** the group (its loans go back to having individual payments).
 - **Mark Paid**: opens the pay dialog (amount, source, date). The money leaves the source and is split across the loans as described above.
@@ -550,7 +567,7 @@ In the row's ⋯ menu. Controls which accounts a paycheck lands in. Choose **Dol
 - **Amount** – a set dollar amount (or a percentage of each paycheck) sent to that account.
 - **Blank** – "the rest": everything left over. Only one account may get the rest.
 
-A preview shows how a paycheck would be split. Examples: $500 → Savings, blank → Checking; or 20% → Savings, blank → Checking. Switching between dollars and percentages converts what you've entered. With no split set, the whole paycheck goes to the first checking account.
+A preview shows how a paycheck would be split. Examples: $500 → Savings, blank → Checking; or 20% → Savings, blank → Checking. Switching between dollars and percentages converts what you've entered. With no split set, or if the account it named has been deleted, the whole paycheck goes to the first checking account.
 
 ---
 
@@ -561,7 +578,7 @@ A preview shows how a paycheck would be split. Examples: $500 → Savings, blank
 ### Getting transactions in
 
 - **⟳ Download from SimpleFIN** (when SimpleFIN is connected) – fetches the last 90 days for every mapped account. Run it again any time; transactions already downloaded are skipped.
-- **⬆ Import CSV** – download a CSV from your bank's website (usually "Download" or "Export" on the account activity page), pick which account it belongs to, and choose the file. The date, description, and amount columns are detected for you — or pick them yourself, including files with separate *money out* / *money in* columns. Check the preview: money spent should show with a "−"; if it doesn't, tick *Purchases show as positive numbers*. Re-importing the same file skips what's already there.
+- **⬆ Import CSV** – download a CSV from your bank's website (usually "Download" or "Export" on the account activity page), pick which account it belongs to, and choose the file. The date, description, and amount columns are detected for you — or pick them yourself, including files with separate *money out* / *money in* columns. Check the preview: money spent should show with a "−"; if it doesn't, tick *Purchases show as positive numbers*. Re-importing the same file skips what's already there, but identical rows in one file (two $2.90 bus fares on the same day) are both imported. Amounts like `$-5.00`, `(5.00)`, `5.00-` and `5.00 DR` are read as money out.
 - **+ Add** – enter one by hand.
 
 ### Categories
@@ -667,114 +684,117 @@ The three weakest areas are listed at the top as tips.
 
 ## 14. Timeline & Projection
 
-**Route:** `/timeline` · A day-by-day forecast of every account.
+**Route:** `/timeline` · Your plan, day by day, for every account.
 
-Choose the period (30, 60, 90, 180 days, or 1 year) and **Refresh**. The forecast is the **optimized** projection — it includes the money moves recommended by the Optimizer (see §15).
+Choose how far ahead to look (30, 60, 90, 180 days, or 1 year; the choice is shared with the Plan and What-if pages) and **Refresh**. It's the same year-long plan every page uses (§2 *Projections*), including the plan's money moves (§15). The subtitle says which plan it follows; click it to change the plan.
 
 ### Stat cards
 
 | Card | Meaning |
 |---|---|
-| Total Income | All paychecks in the period. |
-| Total Expenses | All bill, card, mortgage, HELOC, group, extra, and promo payments. |
-| Net Change | Change in your total cash (checking + savings) from today to the end of the period. This can be negative even when income exceeds expenses: when the optimizer parks spare cash in a HELOC (see §15), cash goes down but your HELOC debt goes down by the same amount. |
-| Projected Net Worth | Final cash − card, mortgage, and HELOC balances (with assets/debt shown underneath). |
+| Money in | Paychecks, plus deposits that don't come from your accounts (benefits, contributions). |
+| Money out | Everything else that left your cash: bills, card and loan payments, everyday spending and fees. **Money in − money out = the change in your cash**, shown underneath. Moves between your own accounts cancel out. |
+| Lowest checking | Your tightest point (all checking accounts together), its date, and your cushion. When the plan parks money in savings, a second line shows the low point counting that money, which is what Safe to spend uses. |
+| Net worth at the end | Cash − card, mortgage and HELOC balances + homes, cars and other assets, the same way as the Net worth page. |
 
 ### Balance Over Time chart
 
-**Net Balance** (filled), **Cash (Checking/Savings)** (dashed), and **Total Debt** (shown below zero). Tick **Per-account lines** to add a line for each bank account, card, and HELOC.
+**Net worth** (filled), **Cash (Checking/Savings)** (dashed), and **Total Debt** (shown below zero). Tick **Per-account lines** to add a line for each bank account, card, and HELOC.
 
-### Projected Final Balances
+### Calendar, list, by month, or end balances
 
-Every account's balance at the end of the period, grouped by type, with a Net Worth total.
-
-### Calendar, list, or by month
-
-The bottom card switches between three views (your choice is remembered):
+The bottom card switches between four views (your choice is remembered):
 
 - **Calendar** — described below.
 - **List** — every event in the period grouped by day, with the cash in checking and savings after each day. Filter to **Income**, **Bills**, **Cards & loans** or **Transfers**.
 - **By month** — income, bills and payments, everyday spending, the net change, and cash and debt at the end of each month (at least 60 days are shown).
+- **End balances** — every account's balance on the last day, grouped by type, with other assets and a Net worth total.
 
 **Download** (top right) saves the events, the month-by-month table or the daily balances as CSV/Excel, the bills & paydays calendar file, or prints the page.
 
 ### Financial Calendar
 
-A month grid with ‹ / › navigation. Each day shows colored dots — **green** income, **red** payments, **blue** optimizer transfers, **amber** deferred payments — and today is outlined. Click a day to see:
+A month grid with ‹ / › navigation. Each day shows colored dots — **green** income, **red** payments, **blue** plan transfers, **amber** deferred payments — and today is outlined. Click a day to see:
 
 - **Transactions** – each event with its source account and amount. A deferred payment shows "⚠️ Insufficient funds — payment deferred": the projection found no account able to cover it that day.
 - **Expected Account Balances (End of Day)** – every account after that day's events, plus the net total.
 
 ---
 
-## 15. Payment Optimizer
+## 15. Plan (Payment Optimizer)
 
-> **Go further** (a card on this page) has three more tools. Each answer is checked with the same full day-by-day simulation:
->
-> - **Pay down debt faster** – the most you can put toward debt each month without checking dropping below your cushion (or the lowest point paying minimums would reach) and with nothing late. It tries amounts and narrows in to the nearest $10. Pick **Highest interest first** (avalanche) or **Smallest balance first** (snowball) and how far ahead (3 months – 2 years). It shows the interest saved, debt at the end, your lowest checking balance, each debt's extra payments and payoff date, and how the other order compares. Type an amount in **Try** to test your own; too much is flagged.
-> - **Better due dates** – for each monthly bill, tries due days just after your paydays and lists the moves that fix a late payment or raise your lowest balance (measured after the first month, once the new date settles in). Ask the company to move it, then click **I moved it** to update the bill.
-> - **When can I buy it?** – a chart of how much you could spend on each day ahead and still stay above your cushion, plus the earliest day a purchase of the amount you type fits (checked so no bill is pushed late).
+**Route:** `/optimizer` · Your plan for paying every bill and using your money. In the sidebar it's **Plan** (it used to be called the Optimizer). The Dashboard, Timeline, What-if, alerts and the daily email all follow it.
 
-**Route:** `/optimizer` · Answers *"what's the best way to get every bill paid?"* for the chosen period (30 days – 1 year, pick it top-right). It compares two versions of the same period and explains the difference in plain language:
+The picker at the top right sets how far ahead to show (30 days – 1 year, shared with the Timeline and What-if). It doesn't change the plan, only how much of it you see. The page compares two versions of the same period and explains the difference in plain language:
 
 - **On due date**: every bill comes out of its usual account on the day it's due, and nothing else moves.
-- **Optimized**: the same bills, plus the optimizer's moves (below).
+- **The plan**: the same bills, plus the plan's moves (below).
 
-**The optimized plan is never worse than paying on due dates.** Every move is tested in a full day-by-day simulation of your accounts, and it's only kept if it leaves you better off. A plan also may not add a late payment or a fee, or take checking below your cushion (Settings → Planning, at least $300), or below the lowest point paying on due dates would reach. If nothing helps, the plan *is* "pay everything on its due date".
+**The plan is never worse than paying on due dates.** Every move is tested in a full day-by-day simulation of your accounts over the next year, and it's only kept if it leaves you better off. A plan also may not add a late payment or a fee, or take checking below your cushion (Settings → Planning), or below the lowest point paying on due dates would reach. If nothing helps, the plan *is* "pay everything on its due date".
 
-Nothing is changed: it's advice. The Timeline and the Dashboard chart already assume the optimized plan.
+Nothing is changed: it's advice.
 
 ### Choosing the goal
 
-**Aim for** picks the plan **the whole app follows**: the Dashboard (Safe to spend, the bills checklist, the status), the Timeline and its chart, alerts, and the email digest all use it. It's saved on the server (it's also in Settings → Planning as *Plan to follow*), so every device sees the same plan. The Dashboard's Safe to spend card shows which plan it's following.
+**Aim for** picks the plan **the whole app follows**. It's saved on the server (it's also in Settings → Planning as *Plan to follow*), so every device sees the same plan. The Dashboard's Safe to spend card and the Timeline show which plan they follow.
 
 - **Most cash** (the default) — keep as much money on hand as possible; bills are paid on their due dates unless moving money is worth it.
 - **Least interest** — pay interest-bearing debt as early as makes sense after each paycheck.
 - **Pay off a card** — pick a card with a balance; spare cash goes to it a couple of days after each paycheck.
 
-Every goal keeps the same safety rules (no extra late payments or fees, checking never below your cushion). **Compare goals** runs all of them for the period and shows, side by side, the cash you'd end with, interest paid and earned, fees, and how much extra would go to the chosen card. **Use** switches to that goal.
+Every goal keeps the same safety rules (no extra late payments or fees, checking never below your cushion). **Compare goals** shows each goal's plan for the period side by side: late payments, lowest checking, cash and debt at the end, interest paid, fees, and how much extra would go to cards. **Use** switches to that goal.
 
-### What the optimizer does
+### What the plan does
 
 - **Pay down costly debt** – money checking won't need for the rest of the period goes onto your highest-rate card (just before its statement day) or HELOC, which costs more than the money earns sitting in checking or savings.
 - **Savings sweeps** – parks spare checking money in savings to earn interest, and **recalls** it before bills need it.
 - **HELOC parking** – if you have a HELOC in its draw period, temporarily pays it down with spare cash (cutting interest) and draws it back before bills are due.
-- **Promo payoffs** – pays off a 0% promo before it expires when its regular payments won't clear it in time, so deferred interest never hits.
+- **Promo payoffs** – each card payment gives every 0% promo its share first (what's left, split over the payments before it expires). If that isn't enough, the plan pays the promo off before it expires, so deferred interest never hits.
 - **Covering a missed payment** – when a bill can't be paid on its due date, moves the money from savings or draws on a HELOC, if that beats paying it late and the late fee.
-- **Extra payments toward a chosen card** – with the "pay off a specific card" goal (Python API/CLI only).
+- **Extra payments toward a chosen card** – with the *Pay off a card* goal.
 
-"Spare" means money a checking account never needs again in the period, after its lowest point and your cushion, so a move can't leave a later bill short.
+"Spare" means money a checking account never needs again in the year ahead, after its lowest point and your cushion, so a move can't leave a later bill short.
 
 Interest everywhere is worked out on the **average daily balance**, like banks and card issuers do. Moving money the day before interest is paid doesn't earn (or save) a whole month: what counts is how long the money sits there.
 
-### The page, top to bottom
+### The tabs
+
+The page has four tabs (the one you pick is remembered and kept in the address, so you can link to it). Old links (`/debt-payoff`, `?tool=...`) open the matching tab. A red count on **Bills** or **Debt** means something there needs attention.
+
+#### Overview
 
 **Headline**: one sentence on where you stand, for example *"All 11 upcoming payments are covered on time. Following the optimized plan leaves you $86.52 better off over 90 days."* or *"1 payment can't be covered as things stand: the first is Roof on Oct 28."* Below it is a bullet list of what the plan changes. The left border is red if something is urgent, amber for warnings, and green otherwise.
 
-**⚖️ Paying on due dates vs. the optimized plan**: a side-by-side table. The **Difference** column is green when the plan is better and red when it's worse.
+**🧭 What to do**: a ranked list of cards with a dollar badge (**saves $X** is money gained or avoided; **risk $X** is money at risk):
+
+| | Kind | Example |
+|---|---|---|
+| 🚨 | Urgent | A bill that can't be paid on its due date, how short you are, and how to fix it. Also a loan group whose payment doesn't cover its interest. |
+| ⚠️ | Warning | A bill that's only on time if you follow the plan; checking getting thin (below your cushion); a promo the plan can't clear in time. |
+| 💡 | Saves money | Pay interest-bearing debts on payday; point a loan group at its highest-rate loan; let idle cash work between paychecks. |
+| 📈 | Tip | An extra $50/month on a loan group; plan ahead for a promo that expires after this period. |
+| ✅ | Good | A promo that's on track; *"Every bill is covered on time."* |
+
+**🔁 What the plan does**: summary tiles for each kind of move (total, count, and why). **Every move, by date** opens the full list. If there are none: *"paying each bill on its due date is already the best plan for this period."*
+
+**⚖️ Paying on due dates vs. the plan**: a side-by-side table. The **Difference** column is green when the plan is better and red when it's worse. **How the plan is made** explains the two columns.
 
 | Row | Meaning |
 |---|---|
 | Late or missed payments | Bills there isn't enough money for on their due date. |
-| Lowest checking balance | Your tightest point in the period, with the account and date. The plan often lowers this on purpose: it puts idle cash to work, but always keeps a buffer (about $300). |
+| Lowest checking balance | Your tightest point in the period, with the account and date. All checking accounts together. The plan often lowers this on purpose: it puts idle cash to work, but never below your cushion. |
 | Cash at the end / Debt at the end | Bank balances / cards + loans + HELOC + mortgage at the end of the period. |
 | Interest charged / earned | On cards and HELOCs / on savings and checking. |
 | Late & overdraft fees | Shown when either plan would pay any (rates from Settings → Planning and each bill's late fee). |
 | Deferred promo interest at risk | Shown only when a 0% promo still has money owed at the end. It's the most that could be charged if that balance isn't paid before the promo expires. If the card has another payment due before the promo ends, that payment can still clear it, so it's a risk rather than a cost. If not, the interest is counted in the bottom line. |
 | Unpaid bills | Shown when a bill can't be paid in the period. It's still owed, so it counts against the bottom line. Skipping a bill isn't saving money. |
-| **Overall** | **The bottom line:** cash − debt − unpaid bills (and promo interest no payment is left to prevent). Moving cash onto a debt lowers both cash and debt, so judge the plan by this row. It's never lower for the optimized plan. |
+| **Overall** | **The bottom line:** cash − debt − unpaid bills (and promo interest no payment is left to prevent). Moving cash onto a debt lowers both cash and debt, so judge the plan by this row. It's never lower for the plan. |
 
-**🧭 Recommendations**: a ranked list of cards with a dollar badge (**saves $X** is money gained or avoided; **risk $X** is money at risk):
+**🔧 Plan checks** (collapsed): the plan's raw technical messages (❌ problems, ⚠ warnings, ⓘ notes) for anyone who wants the detail.
 
-| | Kind | Example |
-|---|---|---|
-| 🚨 | Urgent | A bill that can't be paid on its due date, how short you are, and how to fix it. Also a loan group whose payment doesn't cover its interest. |
-| ⚠️ | Warning | A bill that's only on time if you follow the plan; checking getting thin (under $100); a promo the plan can't clear in time. |
-| 💡 | Saves money | Pay interest-bearing debts on payday; point a loan group at its highest-rate loan; let idle cash work between paychecks. |
-| 📈 | Tip | An extra $50/month on a loan group; plan ahead for a promo that expires after this period. |
-| ✅ | Good | A promo that's on track; *"Every bill is covered on time."* |
+#### Bills
 
-**🗓️ When to pay each bill**: every payment due in the next 45 days, plus any late payment later in the period. Tick **Only show bills that need attention** to hide the routine ones.
+**🗓️ When to pay each bill**: every payment due in the next 45 days, plus any late payment later in the period. Tick **Only bills that need attention** to hide the routine ones.
 
 | Column | Meaning |
 |---|---|
@@ -799,6 +819,14 @@ Fixes offered for a **Short** bill:
 
 Late payments can bring late fees, and loans or cards 30+ days late can hurt your credit.
 
+**Better due dates** – for each monthly bill, tries due days just after your paydays and lists the moves that fix a late payment or raise your lowest balance (measured after the first month, once the new date settles in). Ask the company to move it, then click **I moved it** to update the bill.
+
+#### Debt
+
+**🏷️ 0% promo deadlines**: each promo's balance, expiry date, monthly amount needed to clear it in time, and the deferred interest at stake if it isn't. Status is checked against the whole year-long plan: **On track** (the plan clears it), **Short $X**, or **After this window** (expires more than a year out). A promo the plan can't clear also raises an urgent alert.
+
+**Pay down debt faster** – the most you can put toward debt each month, on top of your bills, without checking dropping below your cushion (or the lowest point paying minimums would reach) and with nothing late. It tries amounts and narrows in to the nearest $10. Pick **Highest interest first** (avalanche) or **Smallest balance first** (snowball) and how far ahead (3 months – 2 years). It shows the interest saved, debt at the end, your lowest checking balance, each debt's extra payments and payoff date, and how the other order compares. Type an amount in **Try** to test your own; too much is flagged.
+
 **📦 Loan group cards** (one per group): how the next group payment is split across its loans (balance, APR, monthly interest, share of the payment). Next to that, a comparison of three choices: payoff time and total interest.
 
 - **Keep the current split**: your group's allocation settings.
@@ -807,39 +835,36 @@ Late payments can bring late fees, and loans or cards 30+ days late can hurt you
 
 If the group payment doesn't even cover the monthly interest, the card says the balance will grow.
 
-**🏷️ 0% promo deadlines**: each promo's balance, expiry date, monthly amount needed to clear it in time, and the deferred interest at stake if it isn't. Status is **On track** (the plan clears it), **Short $X**, or **After this window** (expires later and isn't fully scheduled yet: plan ahead).
+**When will I be debt-free?** (this used to be the Debt Payoff page) – a long-run estimate, month by month until everything is paid off. Drag **Extra each month** ($0 – $2,000, in $25 steps; default $200); results update half a second after you stop.
 
-**🔁 What the optimized plan does**: summary tiles for each kind of move (total, count, and why), then every move with its date and amount. If there are none: *"paying each bill on its due date is already the best plan for this period."*
+- **Debts included:** credit cards with a balance (not in a group), HELOCs with a balance, and each loan group as one debt (balance-weighted APR, group payment as its minimum). Mortgages are excluded. Debts already marked paid this period are left out.
+- **Every strategy uses the same monthly budget** = sum of all minimums + the extra amount. When a debt is paid off, its minimum rolls into the next target.
 
-**🔧 Optimizer checks** (collapsed): the optimizer's raw technical messages (❌ problems, ⚠ warnings, ⓘ notes) for anyone who wants the detail.
+| Strategy | Extra money goes to |
+|---|---|
+| Minimum only | Nowhere — minimums only (the extra amount is not used). |
+| Highest interest first | The highest-APR debt first (avalanche) — usually the least interest. |
+| Smallest balance first | The smallest balance first (snowball) — quickest wins. |
+
+Each card shows the time to debt-free, total interest, total paid, savings vs. minimum only, and (under **Payoff order**) the order debts are cleared. If a strategy **never pays off** at that budget (minimums barely cover interest), it says so and shows the balance remaining. The chart plots the remaining debt for all three by month. Unlike the rest of the page, this is a simple estimate at fixed payments, not the day-by-day plan.
+
+#### Can I afford it?
+
+**When can I buy it?** – read from the plan the same way as Safe to spend: **Safe to spend today** is the Dashboard's figure. A chart shows how much you could spend on each day ahead (the lowest point the plan reaches over the look-ahead from that day, minus your cushion and what's already spoken for), and the earliest day a purchase of the amount you type fits.
 
 ---
 
 ## 16. Debt Payoff Estimator
 
-**Route:** `/debt-payoff` · Compares three ways to pay off your debts.
-
-Drag **Extra Monthly Payment** ($0 – $2,000, in $25 steps; default $200) — results update half a second after you stop.
-
-**Debts included:** credit cards with a balance (not in a group), HELOCs with a balance, and each loan group as one debt (balance-weighted APR, group payment as its minimum). Mortgages are excluded. Debts already marked paid this period are left out.
-
-**Every strategy uses the same monthly budget** = sum of all minimums + the extra amount. When a debt is paid off, its minimum rolls into the next target.
-
-| Strategy | Extra money goes to |
-|---|---|
-| 💤 Minimum Only | Nowhere — minimums only (the extra amount is not used). |
-| 🏔️ Avalanche | The highest-APR debt first — usually the least interest. |
-| ⛄ Snowball | The smallest balance first — quickest wins. |
-
-Each card shows months to payoff, total interest, total paid, savings vs. minimum-only, and the payoff order. If a strategy **never pays off** at that budget (minimums barely cover interest), it says so and shows the balance remaining at the 10-year limit.
-
-The **Remaining Debt Over Time** chart plots all three strategies by month.
+Now part of the Plan page: **Plan → Debt → When will I be debt-free?** (§15). The old `/debt-payoff` address opens it.
 
 ---
 
 ## 17. What-If Scenarios
 
 **Route:** `/scenarios` · Test a change before you make it. Nothing you do here is saved.
+
+Both sides follow your plan: **Your plan now** is the same plan as every other page, and the scenario re-makes the plan for the changed situation (same goal, same rules). How far ahead to compare comes from the picker at the top right, shared with the Timeline and Plan pages.
 
 ### Building a scenario (left panel)
 
@@ -848,8 +873,7 @@ The **Remaining Debt Over Time** chart plots all three strategies by month.
   - **10% Raise** – raises the chosen income by 10%.
   - **New $200 Bill** – adds a $200 monthly bill due on the 15th.
   - **Cut Bills 20%** – reduces every regular bill by 20%.
-- **Projection Period** – 30 days to 1 year.
-- **Add Bill** – name, amount, due day (monthly).
+- **Add Bill** – name, amount, due day (1–31, monthly).
 - **Remove Payments** – drop a bill, card, mortgage, HELOC, or loan group (cards/HELOCs/mortgages are treated as paid off).
 - **Adjust Income** – set a source's amount (0 = no income).
 - **Remove Income** – drop an income source.
@@ -862,12 +886,10 @@ The **Modifications** list shows every change; click × to undo one. **Run Scena
   - **Red**: *"2 bills couldn't be paid on time in this scenario"*, or *"Checking would be overdrawn"*.
   - **Green**: *"You'd be $X better off"*.
   - **Amber**: *"Every bill still gets paid, but you'd be $X worse off"*.
-- **What changes**: plain-language bullets on how the scenario differs from your current plan. They cover being better or worse off, more or fewer late payments, how far your lowest checking balance moves (and when), and interest charged and earned.
-- **Comparison table**, current plan vs. scenario: late or missed payments, lowest checking balance, cash and debt at the end, interest charged, late & overdraft fees, and **Overall (cash − debt)**. Green means better and red means worse.
+- **What changes**: plain-language bullets on how the scenario differs from your plan now. They cover being better or worse off, more or fewer late payments, how far your lowest checking balance moves (and when), and interest charged and earned.
+- **Comparison table**, your plan now vs. the scenario: late or missed payments, lowest checking balance, cash and debt at the end, interest charged, late & overdraft fees, and **Overall (cash − debt)**. Green means better and red means worse.
 - **Payments that would be late or missed**: the specific bills and dates the scenario breaks.
-- A **chart** of both projections day by day.
-
-> The what-if comparison uses the plain (non-optimized) simulation for both sides so the difference reflects only your changes. Its baseline can therefore differ slightly from the Timeline, which includes optimizer moves.
+- A **chart**, *Your plan now vs. with the change*, day by day.
 
 ---
 
@@ -1042,10 +1064,10 @@ Every change anyone makes to the budget, newest first, grouped by day: who did i
 **Monthly:**
 1. **Record actual amounts** for Variable bills when statements arrive (Bills → **$**).
 2. **Review Budgets** and adjust them; check **Reports** for trends.
-3. **Open the Optimizer** and work through the recommendations: fix anything **Short**, pay card/loan payments on payday where it saves money, check promo deadlines.
+3. **Open the Plan page** and work through *What to do*: fix anything **Short**, pay card/loan payments on payday where it saves money, check promo deadlines.
 4. Add any **repeating charges** suggested on the Bills page.
 5. **Download a backup** (Settings → Data & backup).
-6. Occasionally revisit **Debt Payoff** and **What-If** for bigger decisions.
+6. Occasionally revisit **Plan → Debt** and **What-if** for bigger decisions.
 
 ---
 

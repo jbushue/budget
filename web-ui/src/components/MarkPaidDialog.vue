@@ -28,7 +28,7 @@
       </label>
       <div class="modal-actions">
         <button class="btn btn-outline" @click="emit('close')">Cancel</button>
-        <button class="btn btn-primary" :disabled="saving || !(amount >= 0)" @click="save">{{ saving ? 'Saving...' : 'Mark paid' }}</button>
+        <button class="btn btn-primary" :disabled="saving || !(num(amount)! >= 0)" @click="save">{{ saving ? 'Saving...' : 'Mark paid' }}</button>
       </div>
     </div>
   </div>
@@ -39,7 +39,7 @@ import { ref, computed, watch } from 'vue'
 import { useMutation, useQuery } from '@vue/apollo-composable'
 import { GET_ALL_BANKS, GET_SIMPLEFIN_SYNCED_ACCOUNTS, MARK_BILL_PAID } from '../graphql/queries'
 import { runMutation } from '../utils/mutation'
-import { todayISO } from '../utils/format'
+import { todayISO, num } from '../utils/format'
 import type { Bank, MutationPayload, SimplefinSyncedAccount } from '../types'
 
 /** Minimal bill info the dialog needs. */
@@ -85,12 +85,12 @@ watch(() => props.bill, b => {
 }, { immediate: true })
 
 async function save() {
-  if (!props.bill) return
+  if (!props.bill || saving.value || num(amount.value) == null) return
   saving.value = true
   const [sourceBank, sourceAccount] = source.value ? source.value.split(/:(.*)/s) : [null, null]
   const ok = await runMutation(() => markPaid({ variables: {
     billName: props.bill!.billName,
-    amountPaid: amount.value,
+    amountPaid: num(amount.value),
     paymentDate: paidOn.value,
     sourceBank, sourceAccount,
     moveMoney: moveMoney.value,

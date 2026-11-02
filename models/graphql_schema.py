@@ -526,6 +526,14 @@ class ProjectionType(graphene.ObjectType):
     total_income = graphene.Float()
     total_expenses = graphene.Float()
     net_change = graphene.Float()
+    other_assets = graphene.Float()
+    lowest_checking = graphene.Float()
+    lowest_checking_date = graphene.String()
+    lowest_spendable = graphene.Float()
+    lowest_spendable_date = graphene.String()
+    cushion = graphene.Float()
+    plan_goal = graphene.String()
+    plan_target = graphene.String()
 
 
 class PaymentPlanType(graphene.ObjectType):
@@ -1185,9 +1193,12 @@ class Query(ExtQuery, graphene.ObjectType):
         if not manager:
             return None
 
+        days = max(1, min(int(days), 365))  # the plan is a year long (models/plan.py)
         end_date = date.today() + timedelta(days=days)
         start_bank_total = sum(acc.balance for bank in manager.banks for acc in bank.get_all_accounts())
         result = manager.project_balances(end_date=end_date)
+        from models.assets import other_assets_total
+        assets_total = other_assets_total(manager)
 
         snapshots = []
         for snap in result['snapshots']:
@@ -1195,7 +1206,7 @@ class Query(ExtQuery, graphene.ObjectType):
             credit_total = sum(snap.get('credit_balances', {}).values())
             mortgage_total = sum(snap.get('mortgage_balances', {}).values())
             heloc_total = sum(snap.get('heloc_balances', {}).values())
-            net = bank_total - credit_total - mortgage_total - heloc_total
+            net = bank_total - credit_total - mortgage_total - heloc_total + assets_total
             snapshots.append(BalanceSnapshotType(
                 date=snap['date'].isoformat(),
                 balances=snap['balances'],
@@ -1244,7 +1255,7 @@ class Query(ExtQuery, graphene.ObjectType):
                 credit_total = sum(snap.get('credit_balances', {}).values())
                 mortgage_total = sum(snap.get('mortgage_balances', {}).values())
                 heloc_total = sum(snap.get('heloc_balances', {}).values())
-                net = bank_total - credit_total - mortgage_total - heloc_total
+                net = bank_total - credit_total - mortgage_total - heloc_total + assets_total
                 calendar_days.append(CalendarDayType(
                     date=snap_date,
                     events=day_events,
@@ -1256,12 +1267,11 @@ class Query(ExtQuery, graphene.ObjectType):
                     net_total=net,
                 ))
 
-        # Calculate totals
-        total_income = sum(cf['amount'] for cf in result['cash_flow'] if cf['type'] == 'INCOME')
-        expense_types = ('BILL_PAYMENT', 'MORTGAGE_PAYMENT', 'CREDIT_PAYMENT', 'HELOC_PAYMENT',
-                         'BILL_GROUP_PAYMENT', 'EXTRA_CREDIT_PAYMENT', 'PROMO_PAYOFF')
-        total_expenses = sum(-cf['amount'] for cf in result['cash_flow']
-                             if cf['type'] in expense_types)
+        # Money in: paychecks and deposits that don't come from your accounts
+        # (benefits, contributions). Money out is everything else that left
+        # (bills, card and loan payments, everyday spending, fees), so
+        # in − out = the change in cash. Moves between your own accounts net out.
+        total_income = sum(cf['amount'] for cf in result['cash_flow'] if cf['type'] in ('INCOME', 'ACCOUNT_REFILL'))
 
         # Final balances for all account types
         final_bank = result['final_balances']
@@ -1272,10 +1282,21 @@ class Query(ExtQuery, graphene.ObjectType):
         total_credit = sum(final_credit.values())
         total_mortgage = sum(final_mortgage.values())
         total_heloc = sum(final_heloc.values())
-        net_final = total_bank - total_credit - total_mortgage - total_heloc
+        # Net worth the same way as the Net worth page: plus homes, cars, ...
+        from models.plan import checking_keys, checking_series
+        other_assets = assets_total
+        net_final = total_bank - total_credit - total_mortgage - total_heloc + other_assets
         # Change in cash (checking + savings). Summing cash-flow entries would
         # count internal transfers (sweeps, HELOC parking) as income.
         net_change = total_bank - start_bank_total
+        total_expenses = total_income - net_change
+        series = checking_series(result, checking_keys(manager.banks))
+        low_date, low = min(series, key=lambda x: x[1]) if series else (None, None)
+        goal, target = manager.plan_goal()
+        # Counting money the plan only parks (what Safe to spend uses)
+        from models.dashboard import spendable_series
+        spendable = spendable_series(manager, result, goal)
+        sp_date, sp_low = min(spendable, key=lambda x: x[1]) if spendable else (None, None)
 
         return ProjectionType(
             start_date=result['start_date'].isoformat(),
@@ -1293,7 +1314,15 @@ class Query(ExtQuery, graphene.ObjectType):
             net_final_balance=net_final,
             total_income=total_income,
             total_expenses=total_expenses,
-            net_change=net_change
+            net_change=net_change,
+            other_assets=other_assets,
+            lowest_checking=low,
+            lowest_checking_date=low_date.isoformat() if low_date else None,
+            lowest_spendable=sp_low,
+            lowest_spendable_date=sp_date.isoformat() if sp_date else None,
+            cushion=manager.cushion,
+            plan_goal=goal,
+            plan_target=target,
         )
 
     def resolve_payment_plan(self, info, days):
@@ -1302,8 +1331,9 @@ class Query(ExtQuery, graphene.ObjectType):
         if not manager:
             return None
 
-        end_date = date.today() + timedelta(days=days)
-        plan = manager.optimize_payments(end_date=end_date)
+        # The plan the app follows (models/plan.py)
+        from models.plan import plan_runs
+        plan = plan_runs(manager).plan
 
         # Convert any date objects in strategy to ISO strings for JSON
         serializable_strategy = {}
@@ -1620,6 +1650,26 @@ def _find_bank(manager, name):
     return next((b for b in manager.banks if b.name == name), None)
 
 
+_RECENT_PAYMENTS: dict = {}
+
+
+def _repeat_payment(key: tuple, amount: float, pay_date, src_bank: str, src_acct: str) -> bool:
+    """
+    True if this exact payment was recorded seconds ago: a double click or a
+    retried request, which would otherwise take the money twice. Call
+    _remember_payment after a payment succeeds.
+    """
+    import time
+    seen = _RECENT_PAYMENTS.get(key)
+    return bool(seen and time.monotonic() - seen[0] < 30
+                and seen[1:] == (round(amount, 2), pay_date, src_bank, src_acct))
+
+
+def _remember_payment(key: tuple, amount: float, pay_date, src_bank: str, src_acct: str) -> None:
+    import time
+    _RECENT_PAYMENTS[key] = (time.monotonic(), round(amount, 2), pay_date, src_bank, src_acct)
+
+
 def _take_payment(manager, src_bank: str, src_acct: str, amount: float, description: str, pay_date):
     """
     Move money out of a payment source. A checking/savings source is withdrawn
@@ -1807,6 +1857,12 @@ class CreateBill(graphene.Mutation):
                 if late_fee < 0:
                     return CreateBill(success=False, message="Late fee can't be negative")
                 bill.late_fee = late_fee
+            from models.types import BillFrequency as _BF
+            # Weekly/biweekly/one-time bills without a start date: fix their cycle now,
+            # so it doesn't depend on the day the server happens to start
+            if getattr(bill, 'start_date', None) is None and (
+                    bill.frequency == _BF.ONCE or bill.frequency in Bill._DAY_STEPS):
+                bill.start_date = bill._get_implicit_anchor(date.today() - timedelta(days=1))
             manager.bills.append(bill)
             manager.save_to_database()
             return CreateBill(bill=_bill_to_type(bill), success=True, message=f"Bill '{bill_name}' created")
@@ -1837,9 +1893,15 @@ class CreateIncomeSource(graphene.Mutation):
         try:
             if any(i.source_name == source_name for i in manager.income_sources):
                 return CreateIncomeSource(success=False, message=f"An income source named '{source_name}' already exists")
+            if not pay_dates or any(not 1 <= int(d) <= 31 for d in pay_dates):
+                return CreateIncomeSource(success=False, message="Pay days must be between 1 and 31")
             anchor = _parse_date(start_date, "start date")
             extra = {'start_date': anchor} if anchor else {}
             income = IncomeSource(source_name, amount, frequency, pay_dates, distribution or None, **extra)
+            # Anchored frequencies without a start date: fix the cycle now (see CreateBill)
+            from models.income_source import IncomeFrequency as _IF
+            if income.start_date is None and income.frequency not in (_IF.MONTHLY, _IF.SEMIMONTHLY):
+                income.start_date = income._get_implicit_anchor(date.today() - timedelta(days=1))
             manager.income_sources.append(income)
             manager.save_to_database()
             return CreateIncomeSource(income=_income_to_type(income), success=True,
@@ -1963,6 +2025,10 @@ class DeleteBill(graphene.Mutation):
         bill = next((b for b in manager.bills if b.bill_name == bill_name), None)
         if not bill:
             return DeleteBill(success=False, message=f"Bill '{bill_name}' not found")
+        if isinstance(bill, (AccountLinkedBill, GroupLinkedBill)):
+            # It's rebuilt from its card, loan or group on the next refresh
+            return DeleteBill(success=False, message=(
+                f"'{bill_name}' comes from its account or loan group. Delete or pay off that instead."))
         manager.bills.remove(bill)
         manager.save_to_database()
         return DeleteBill(success=True, message=f"Bill '{bill_name}' deleted")
@@ -2040,44 +2106,55 @@ class UpdateBill(graphene.Mutation):
         if linked and any(v is not None for v in (amount, due_date, frequency, due_month, min_amount, max_amount)):
             return UpdateBill(success=False, message=(
                 f"'{bill_name}' is generated from its account/group — change the amount and due day there"))
+        # Check everything before changing anything, so a rejected edit leaves the bill as it was
+        from models.types import BillFrequency
+        if amount is not None and amount <= 0:
+            return UpdateBill(success=False, message="Amount must be positive")
+        if due_date is not None and not (1 <= due_date <= 31):
+            return UpdateBill(success=False, message="Due day must be between 1 and 31")
+        if due_month is not None and not (0 <= due_month <= 12):
+            return UpdateBill(success=False, message="Due month must be between 1 and 12")
         try:
-            if amount is not None:
-                if amount <= 0:
-                    return UpdateBill(success=False, message="Amount must be positive")
-                if isinstance(bill, FloatingBill):
-                    bill.estimated_amount = amount
-                    if not bill.has_actual_amount:
-                        bill.amount = amount
-                else:
-                    bill.amount = amount
-            if due_date is not None:
-                if not (1 <= due_date <= 31):
-                    return UpdateBill(success=False, message="Due day must be between 1 and 31")
-                bill.due_date = due_date
-            if frequency is not None:
-                from models.types import BillFrequency
-                bill.frequency = BillFrequency[frequency.upper()]
-            if due_month is not None:
-                if not (1 <= due_month <= 12):
-                    return UpdateBill(success=False, message="Due month must be between 1 and 12")
-                bill.due_month = due_month
-            if start_date is not None:
-                bill.start_date = _parse_date(start_date, "start date")
-            if late_fee is not None:
-                bill.late_fee = late_fee if late_fee >= 0 else None
-            if isinstance(bill, FloatingBill):
-                if min_amount is not None:
-                    bill.min_amount = min_amount
-                if max_amount is not None:
-                    bill.max_amount = max_amount
-            if preferred_source_bank is not None:
-                bill.preferred_source_bank = preferred_source_bank or None
-            if preferred_source_account is not None:
-                bill.preferred_source_account = preferred_source_account or None
+            new_frequency = BillFrequency[frequency.upper()] if frequency is not None else None
         except KeyError:
             return UpdateBill(success=False, message=f"Unknown frequency '{frequency}'")
+        try:
+            # "" clears the start date
+            new_start = _parse_date(start_date, "start date") if start_date else None
         except ValueError as e:
             return UpdateBill(success=False, message=str(e))
+        if isinstance(bill, FloatingBill):
+            lo = min_amount if min_amount is not None else bill.min_amount
+            hi = max_amount if max_amount is not None else bill.max_amount
+            if lo is not None and hi is not None and lo > hi:
+                return UpdateBill(success=False, message="The lowest amount can't be more than the highest")
+
+        if amount is not None:
+            if isinstance(bill, FloatingBill):
+                bill.estimated_amount = amount
+                if not bill.has_actual_amount:
+                    bill.amount = amount
+            else:
+                bill.amount = amount
+        if due_date is not None:
+            bill.due_date = due_date
+        if new_frequency is not None:
+            bill.frequency = new_frequency
+        if due_month is not None:
+            bill.due_month = due_month or None  # 0 clears it
+        if start_date is not None:
+            bill.start_date = new_start
+        if late_fee is not None:
+            bill.late_fee = late_fee if late_fee >= 0 else None
+        if isinstance(bill, FloatingBill):
+            if min_amount is not None:
+                bill.min_amount = min_amount
+            if max_amount is not None:
+                bill.max_amount = max_amount
+        if preferred_source_bank is not None:
+            bill.preferred_source_bank = preferred_source_bank or None
+        if preferred_source_account is not None:
+            bill.preferred_source_account = preferred_source_account or None
         manager.save_to_database()
         return UpdateBill(success=True, message=f"Bill '{bill_name}' updated")
 
@@ -2102,28 +2179,38 @@ class UpdateIncome(graphene.Mutation):
         income = next((i for i in manager.income_sources if i.source_name == source_name), None)
         if not income:
             return UpdateIncome(success=False, message=f"Income '{source_name}' not found")
+        # Check everything before changing anything, so a rejected edit leaves the income as it was
+        from models.income_source import IncomeFrequency
+        if amount is not None and amount <= 0:
+            return UpdateIncome(success=False, message="Income amount must be positive")
+        if pay_dates is not None and (not pay_dates or any(not 1 <= int(d) <= 31 for d in pay_dates)):
+            return UpdateIncome(success=False, message="Pay days must be between 1 and 31")
         try:
-            if amount is not None:
-                if amount <= 0:
-                    return UpdateIncome(success=False, message="Income amount must be positive")
-                income.amount = amount
-            if frequency is not None:
-                from models.income_source import IncomeFrequency
-                income.frequency = IncomeFrequency[frequency.upper()]
-            if pay_dates is not None:
-                income.pay_date = pay_dates
-            if start_date is not None:
-                income.start_date = _parse_date(start_date, "start date")
+            new_frequency = IncomeFrequency[frequency.upper()] if frequency is not None else None
+        except KeyError:
+            return UpdateIncome(success=False, message=f"Unknown frequency '{frequency}'")
+        try:
+            new_start = _parse_date(start_date, "start date") if start_date is not None else None
+            new_distribution = None
             if distribution is not None:
                 # distribution is a dict like {"Account Name": 500.0, "Other Account": null}
                 if isinstance(distribution, str):
                     import json
                     distribution = json.loads(distribution)
-                income.distribution = DistributionType.__fromdict__(distribution) if distribution else None
-        except KeyError:
-            return UpdateIncome(success=False, message=f"Unknown frequency '{frequency}'")
+                new_distribution = DistributionType.__fromdict__(distribution) if distribution else None
         except ValueError as e:
             return UpdateIncome(success=False, message=str(e))
+
+        if amount is not None:
+            income.amount = amount
+        if new_frequency is not None:
+            income.frequency = new_frequency
+        if pay_dates is not None:
+            income.pay_date = pay_dates
+        if start_date is not None:
+            income.start_date = new_start
+        if distribution is not None:
+            income.distribution = new_distribution
         manager.save_to_database()
         return UpdateIncome(success=True, message=f"Income '{source_name}' updated")
 
@@ -2213,6 +2300,9 @@ class MarkBillPaid(graphene.Mutation):
             return MarkBillPaid(success=False, message=(
                 f"Payment exceeds the balance owed (${bill.linked_account_balance:,.2f})"))
 
+        key = ("bill", bill_name)
+        if _repeat_payment(key, pay_amount, pay_date, src_bank, src_acct):
+            return MarkBillPaid(success=False, message=f"That payment for '{bill_name}' was just recorded")
         from models.dashboard import overdue_due_date, settle_paid_flag
         was_overdue = overdue_due_date(bill, pay_date) is not None
         try:
@@ -2232,6 +2322,7 @@ class MarkBillPaid(graphene.Mutation):
 
         # Persist all state changes (balances, paid flag, payment history)
         manager.save_to_database()
+        _remember_payment(key, pay_amount, pay_date, src_bank, src_acct)
 
         return MarkBillPaid(success=True, message=f"Bill '{bill_name}' marked as paid")
 
@@ -2324,6 +2415,9 @@ class MarkCreditPaymentPaid(graphene.Mutation):
         src_bank = source_bank or (linked_bill.preferred_source_bank if linked_bill else None) or ''
         src_acct = source_account or (linked_bill.preferred_source_account if linked_bill else None) or ''
 
+        key = ("credit", bank_name, account_name)
+        if _repeat_payment(key, amount_paid, pay_date, src_bank, src_acct):
+            return MarkCreditPaymentPaid(success=False, message=f"That payment to {account_name} was just recorded")
         try:
             undo = _take_payment(manager, src_bank, src_acct, amount_paid,
                                  f"Credit card payment: {account_name}", pay_date)
@@ -2342,6 +2436,7 @@ class MarkCreditPaymentPaid(graphene.Mutation):
 
         # Persist all state changes
         manager.save_to_database()
+        _remember_payment(key, amount_paid, pay_date, src_bank, src_acct)
 
         return MarkCreditPaymentPaid(
             success=True,
@@ -2646,6 +2741,9 @@ class CreateBillGroup(graphene.Mutation):
         manager = info.context.get('manager')
         if not manager:
             return CreateBillGroup(success=False, message="Manager not available")
+        # Names identify groups in the database: a second one would merge into the first
+        if any(g.group_name == group_name for g in manager.bill_groups):
+            return CreateBillGroup(success=False, message=f"A loan group named '{group_name}' already exists")
         try:
             from models.bill_group import BillGroup
             group = BillGroup(
@@ -2690,6 +2788,17 @@ class UpdateBillGroup(graphene.Mutation):
         group = next((g for g in manager.bill_groups if g.group_name == group_name), None)
         if not group:
             return UpdateBillGroup(success=False, message=f"Bill group '{group_name}' not found")
+        # Check everything before changing anything
+        from models.types import BillFrequency
+        if kwargs.get('total_payment') is not None and kwargs['total_payment'] < 0:
+            return UpdateBillGroup(success=False, message="The payment can't be negative")
+        if kwargs.get('due_date') is not None and not 1 <= kwargs['due_date'] <= 31:
+            return UpdateBillGroup(success=False, message="Due day must be between 1 and 31")
+        if kwargs.get('frequency') is not None:
+            try:
+                BillFrequency(kwargs['frequency'])
+            except ValueError:
+                return UpdateBillGroup(success=False, message=f"Unknown frequency '{kwargs['frequency']}'")
         try:
             if 'total_payment' in kwargs and kwargs['total_payment'] is not None:
                 group.total_payment = kwargs['total_payment']
@@ -2849,6 +2958,9 @@ class MarkBillGroupPaid(graphene.Mutation):
         src_bank = source_bank or group.preferred_source_bank or ''
         src_acct = source_account or group.preferred_source_account or ''
 
+        key = ("group", group_name)
+        if _repeat_payment(key, pay_amount, pay_date, src_bank, src_acct):
+            return MarkBillGroupPaid(success=False, message=f"That payment for '{group_name}' was just recorded")
         try:
             undo = _take_payment(manager, src_bank, src_acct, pay_amount, f"Group payment: {group_name}", pay_date)
         except ValueError as e:
@@ -2860,6 +2972,7 @@ class MarkBillGroupPaid(graphene.Mutation):
             return MarkBillGroupPaid(success=False, message=f"Payment error: {e}")
 
         manager.save_to_database()
+        _remember_payment(key, pay_amount, pay_date, src_bank, src_acct)
         return MarkBillGroupPaid(
             bill_group=_group_to_type(group, manager.banks),
             success=True,
@@ -3104,11 +3217,14 @@ class AddPromoOffer(graphene.Mutation):
 
         if any(p.promo_name == promo_name for p in acc.active_promos):
             return AddPromoOffer(success=False, message=f"Promo '{promo_name}' already exists")
+        if promo_balance is not None and not 0 <= promo_balance <= acc.balance + 0.005:
+            return AddPromoOffer(success=False, message="Promo balance must be between 0 and the card's balance")
 
         try:
             from datetime import date as date_cls
             sd = date_cls.fromisoformat(start_date) if start_date else None
-            ed = date_cls.fromisoformat(end_date) if end_date else None
+            ed = date_cls.fromisoformat(end_date) if end_date else _promo_end(sd or date_cls.today(),
+                                                                             months_interest_free)
             from models.credit_card_account import PromoOffer
             promo = PromoOffer(
                 promo_name=promo_name,
@@ -3127,6 +3243,13 @@ class AddPromoOffer(graphene.Mutation):
             return AddPromoOffer(success=True, message=f"Promo '{promo_name}' added with balance ${bal:.2f}")
         except Exception as e:
             return AddPromoOffer(success=False, message=str(e))
+
+
+def _promo_end(start: date, months: int) -> date:
+    """A promo of ``months`` calendar months from ``start`` (Jan 15 + 12 months = Jan 15 next year)."""
+    from models.date_utils import add_months, clamped_date
+    y, m = add_months(start.year, start.month, int(months))
+    return clamped_date(y, m, start.day)
 
 
 class UpdatePromoOffer(graphene.Mutation):
@@ -3179,7 +3302,7 @@ class UpdatePromoOffer(graphene.Mutation):
             return UpdatePromoOffer(success=False, message=f"This card already has a promo named '{new_name}'")
         redate = bool(start_date or end_date or months_interest_free is not None)
         if redate:
-            end = end or start + timedelta(days=30 * (months_interest_free or promo.months_interest_free))
+            end = end or _promo_end(start, months_interest_free or promo.months_interest_free)
             if end <= start:
                 return UpdatePromoOffer(success=False, message="The end date must be after the start date")
 

@@ -18,7 +18,7 @@
       </label>
     </div>
 
-    <div v-if="loading" class="loading">Simulating amounts to find the most you can safely pay...</div>
+    <div v-if="loading && !result" class="loading">Simulating amounts to find the most you can safely pay...</div>
     <div v-else-if="error" class="callout danger">{{ error.message }}</div>
     <div v-else-if="r && !r.available" class="empty-state" style="padding:1rem"><p>{{ r.reason }}.</p></div>
     <template v-else-if="r">

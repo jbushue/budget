@@ -262,9 +262,13 @@ def credit_targets(manager) -> list[str]:
 
 
 def compare_strategies(manager, days: int = 90, target_account: str = "") -> list[dict]:
-    """Run the optimizer once per goal and summarize each plan."""
+    """
+    Each goal's year-long plan (the same runs the app uses, see models/plan.py)
+    over the first ``days``, measured the same way as the Optimizer page.
+    """
+    from models.plan import runs_for
+    from models.payment_insights import summarize_simulation
     days = max(14, min(int(days or 90), 365))
-    end = date.today() + timedelta(days=days)
     goals = ["maximize_discretionary", "minimize_interest"]
     if target_account:
         if target_account not in credit_targets(manager):
@@ -272,19 +276,24 @@ def compare_strategies(manager, days: int = 90, target_account: str = "") -> lis
         goals.append("payoff_credit_account")
     out = []
     for goal in goals:
-        plan = manager.optimize_payments(end_date=end, optimization_goal=goal,
-                                         target_credit_account=target_account if goal == "payoff_credit_account" else None)
-        extra = [{"date": p["date"].isoformat() if hasattr(p["date"], "isoformat") else str(p["date"]),
-                  "account": p.get("credit_account", ""), "amount": round(p["amount"], 2)}
-                 for p in plan.extra_credit_payments]
+        runs, _, opt = runs_for(manager, days, goal,
+                                target_account if goal == "payoff_credit_account" else None)
+        s = summarize_simulation(opt, manager.banks)
+        extra = [{"date": cf["date"].isoformat(), "account": cf.get("to_account") or cf.get("account", ""),
+                  "amount": round(-cf["amount"], 2)}
+                 for cf in opt["cash_flow"] if cf.get("type") in ("EXTRA_CREDIT_PAYMENT", "PROMO_PAYOFF")]
         out.append({
             "goal": goal,
             "label": STRATEGIES[goal],
-            "final_cash": round(plan.final_discretionary, 2),
-            "interest_paid": round(plan.total_interest_paid, 2),
-            "interest_earned": round(plan.estimated_interest_earned, 2),
-            "fees": round(plan.total_fees, 2),
-            "problems": len(plan.violations),
+            "final_cash": s["ending_cash"],
+            "ending_debt": s["ending_debt"],
+            "outcome": s["outcome"],
+            "lowest_checking": s["lowest_checking"],
+            "late": len(s["late_payments"]),
+            "interest_paid": s["interest_charged"],
+            "interest_earned": s["interest_earned"],
+            "fees": s["fees"],
+            "problems": len([v for v in runs.plan.violations if not v.startswith("INFO")]),
             "extra_payments": extra,
             "extra_total": round(sum(p["amount"] for p in extra), 2),
         })

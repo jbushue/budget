@@ -31,6 +31,8 @@ export async function runMutation<TData, K extends keyof TData & string>(
       return null
     }
     if (opts.showSuccess && payload.message) notify(payload.message)
+    // Something changed: the alert bell (and anything else listening) refreshes
+    window.dispatchEvent(new Event('budget:changed'))
     return payload
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)

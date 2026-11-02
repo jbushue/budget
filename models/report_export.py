@@ -145,7 +145,7 @@ BUILDERS = {"timeline": _timeline, "monthly": _monthly, "balances": _balances, "
 def build(manager, kind: str, days: int = 90) -> tuple[list[str], list[list]]:
     if kind not in BUILDERS:
         raise KeyError(kind)
-    return BUILDERS[kind](manager, max(7, min(int(days), 730)))
+    return BUILDERS[kind](manager, max(7, min(int(days), 365)))
 
 
 def to_csv(headers, rows) -> bytes:

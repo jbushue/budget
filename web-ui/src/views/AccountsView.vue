@@ -13,7 +13,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading accounts...</div>
+    <div v-if="loading && !result" class="loading">Loading accounts...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else>
@@ -753,7 +753,7 @@ import {
   UPDATE_BANK,
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
-import { currency, pct, fmtDate, statusBadge, todayISO, accountTypeLabel } from '../utils/format'
+import { currency, pct, fmtDate, statusBadge, todayISO, accountTypeLabel, num } from '../utils/format'
 import { GROUP_BADGE, KIND_GROUPS, isBankKind, kindInfo, rateLabel } from '../utils/accountKinds'
 import AccountExtrasFields, { type AccountExtras } from '../components/AccountExtrasFields.vue'
 import { runMutation } from '../utils/mutation'
@@ -941,22 +941,22 @@ async function createAccount() {
     ok = await runMutation(() => doCreateHELOC({ variables: {
       bankName: a.bankName,
       accountName: a.name,
-      creditLimit: a.creditLimit,
-      interestRate: a.interestRate,
-      drawPeriodMonths: a.drawPeriodYears * 12,
-      totalTermMonths: a.totalTermYears * 12,
+      creditLimit: num(a.creditLimit),
+      interestRate: num(a.interestRate) ?? 0,
+      drawPeriodMonths: (num(a.drawPeriodYears) ?? 15) * 12,
+      totalTermMonths: (num(a.totalTermYears) ?? 30) * 12,
       startDate: a.startDate || undefined,
-      currentBalance: a.balance,
+      currentBalance: num(a.balance) ?? 0,
       paymentDueDate: optDay(a.paymentDueDate) ?? 1,
     }}), 'createHelocAccount', { failMessage: 'Failed to create HELOC' })
   } else if (a.type === 'mortgage') {
     ok = await runMutation(() => doCreateMortgage({ variables: {
       bankName: a.bankName,
       accountName: a.name,
-      originalPrincipal: a.originalPrincipal,
+      originalPrincipal: num(a.originalPrincipal),
       currentPrincipal: optAmount(a.balance) || null,
-      interestRate: a.interestRate,
-      loanTermMonths: Math.round(a.loanTermYears * 12),
+      interestRate: num(a.interestRate) ?? 0,
+      loanTermMonths: Math.round((num(a.loanTermYears) ?? 30) * 12),
       paymentDueDate: optDay(a.paymentDueDate) ?? 1,
       startDate: a.startDate || null,
       escrowPropertyTax: optAmount(a.escrowPropertyTax),
@@ -979,9 +979,9 @@ async function createAccount() {
       bankName: a.bankName,
       accountName: a.name,
       accountType: a.type,
-      balance: a.balance,
-      interestRate: a.interestRate,
-      creditLimit: isCredit ? a.creditLimit : undefined,
+      balance: num(a.balance) ?? 0,
+      interestRate: num(a.interestRate) ?? 0,
+      creditLimit: isCredit ? num(a.creditLimit) : undefined,
       paymentDueDate: isCredit ? optDay(a.paymentDueDate) : null,
       statementDate: isCredit ? optDay(a.statementDate) : null,
       interestAccrualDate: !isCredit ? optDay(a.interestAccrualDate) : null,
@@ -1012,9 +1012,11 @@ function openUpdateBalance(bankName: string, accountName: string, current: numbe
   showBalanceModal.value = true
 }
 const { mutate: doRecordUpdate } = useMutation<{ recordBalanceUpdate: MutationPayload }>(RECORD_BALANCE_UPDATE)
-function recordUpdate(bankName: string, accountName: string, newBalance: number, accountType: string) {
+async function recordUpdate(bankName: string, accountName: string, newBalance: number | string, accountType: string) {
+  const balance = num(newBalance)
+  if (balance == null) { notify('Enter the balance', 'error'); return null }
   return runMutation(
-    () => doRecordUpdate({ variables: { bankName, accountName, newBalance, accountType }}),
+    () => doRecordUpdate({ variables: { bankName, accountName, newBalance: balance, accountType }}),
     'recordBalanceUpdate', { failMessage: 'Failed to update balance' },
   )
 }
@@ -1229,8 +1231,10 @@ function closePromoForm() {
   newPromo.value = emptyPromo()
 }
 
+const editingPromoMonths = ref(0)
 function openEditPromo(p: PromoOffer) {
   editingPromoName.value = p.promoName
+  editingPromoMonths.value = p.monthsInterestFree
   newPromo.value = {
     promoName: p.promoName,
     monthsInterestFree: p.monthsInterestFree,
@@ -1249,9 +1253,9 @@ async function addPromo() {
     bankName: promoTarget.value.bankName,
     accountName: promoTarget.value.accountName,
     promoName: newPromo.value.promoName,
-    monthsInterestFree: newPromo.value.monthsInterestFree,
-    purchaseLimit: newPromo.value.purchaseLimit || undefined,
-    promoBalance: newPromo.value.promoBalance || 0,
+    monthsInterestFree: num(newPromo.value.monthsInterestFree) ?? 12,
+    purchaseLimit: num(newPromo.value.purchaseLimit) || undefined,
+    promoBalance: num(newPromo.value.promoBalance) ?? 0,
     startDate: newPromo.value.startDate || undefined,
     endDate: newPromo.value.endDate || undefined,
   }}), 'addPromoOffer', { failMessage: 'Failed to add promo' })
@@ -1266,16 +1270,19 @@ const { mutate: doUpdatePromo } = useMutation<{ updatePromoOffer: MutationPayloa
 const editingPromoName = ref('')
 async function updatePromo() {
   const p = newPromo.value
+  const months = num(p.monthsInterestFree) ?? editingPromoMonths.value
+  // New length: let the server work out the end date from the start and the months
+  const endDate = months !== editingPromoMonths.value ? undefined : (p.endDate || undefined)
   const ok = await runMutation(() => doUpdatePromo({ variables: {
     bankName: promoTarget.value.bankName,
     accountName: promoTarget.value.accountName,
     promoName: editingPromoName.value,
     newName: p.promoName,
-    promoBalance: p.promoBalance || 0,
-    monthsInterestFree: p.monthsInterestFree,
-    purchaseLimit: p.purchaseLimit || 0,
+    promoBalance: num(p.promoBalance) ?? 0,
+    monthsInterestFree: months,
+    purchaseLimit: num(p.purchaseLimit) || 0,
     startDate: p.startDate || undefined,
-    endDate: p.endDate || undefined,
+    endDate,
   }}), 'updatePromoOffer', { failMessage: 'Failed to update promo' })
   if (!ok) return
   closePromoForm()

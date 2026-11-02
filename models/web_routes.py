@@ -407,6 +407,8 @@ def register(app, state: dict, lock) -> None:
                 created = sum(v for k, v in results.items() if k.endswith("_created") and isinstance(v, int))
                 if created:
                     manager.save_to_database()
+        except Exception as e:  # a damaged or unexpected workbook
+            return jsonify({"success": False, "message": f"Couldn't read that file: {e}"}), 400
         finally:
             shutil.rmtree(os.path.dirname(tmp), ignore_errors=True)
         results["created_total"] = created if "error" not in results else 0

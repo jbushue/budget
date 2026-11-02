@@ -72,7 +72,10 @@ class TestEverydaySpending:
         r = sim.project_balances(TODAY, TODAY + timedelta(days=5))
         fee = next(cf for cf in r["cash_flow"] if cf["type"] == "FEE")
         assert fee["fee_kind"] == "late" and fee["account"] == "Visa"
-        assert r["credit_final_balances"]["B:Visa"] == pytest.approx(1030)
+        # $30 fee, plus a month's interest: with no statement day the card charges it on its due day
+        interest = sum(cf["amount"] for cf in r["cash_flow"] if cf["type"] == "INTEREST")
+        assert interest == pytest.approx(1000 * 0.20 / 12, abs=0.01)
+        assert r["credit_final_balances"]["B:Visa"] == pytest.approx(1030 + interest)
 
     def test_bill_specific_late_fee_wins(self):
         bank = _bank(10)

@@ -8,7 +8,7 @@ from models.bank import Bank
 from models.date_utils import is_clamped_day
 from models.fixed_bill import Bill
 from models.income_source import IncomeSource
-from models.timeline_simulator import TimelineSimulator, TimelineEvent
+from models.timeline_simulator import TimelineSimulator, TimelineEvent, card_interest_day
 
 
 from models.types import is_savings_like
@@ -596,10 +596,10 @@ class PaymentOptimizer:
         # 3. Pay down the costliest debt with spare cash
         for bank in self.banks:
             for cname, card in bank.credit_accounts.items():
-                if card.interest_rate <= best_savings_rate or not card.statement_date:
+                if card.interest_rate <= best_savings_rate:
                     continue
                 rate = card.interest_rate + (100 if cname == target_credit_account else 0)
-                add_paydown(rate, f"{bank.name}:{cname}", 'credit_balances', card.statement_date,
+                add_paydown(rate, f"{bank.name}:{cname}", 'credit_balances', card_interest_day(card),
                             lambda day, amount, fb, fa, cname=cname, bank=bank, card=card: TimelineEvent(
                                 event_date=day, event_type="EXTRA_CREDIT_PAYMENT", amount=amount,
                                 description=f"Pay down {cname} before its statement ({card.interest_rate:g}% APR)",

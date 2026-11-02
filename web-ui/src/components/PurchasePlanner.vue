@@ -17,9 +17,9 @@
     <template v-else-if="r">
       <div class="answers">
         <div class="answer">
-          <span class="a-label">You could spend today</span>
+          <span class="a-label">Safe to spend today</span>
           <strong :class="r.today > 0 ? 'positive' : 'negative'">{{ currency(r.today) }}</strong>
-          <small>and stay above your {{ currency(r.cushion) }} cushion</small>
+          <small>same as the dashboard: above your {{ currency(r.cushion) }} cushion and every bill covered</small>
         </div>
         <div v-if="r.amount > 0" class="answer" :class="r.earliest ? 'good' : 'bad'">
           <span class="a-label">{{ currency(r.amount) }} fits</span>

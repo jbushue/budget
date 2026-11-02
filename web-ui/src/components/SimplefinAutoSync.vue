@@ -42,10 +42,15 @@ watch(result, r => {
 }, { immediate: true })
 
 async function save() {
-  const res = await mutate({ variables: { changes: JSON.stringify({ simplefin_auto_sync_hours: hours.value, simplefin_auto_import: importTx.value }) } })
-  const p = res?.data?.updateSettings
-  ok.value = !!p?.success
-  message.value = p?.success ? 'Saved' : (p?.message || 'Could not save')
+  try {
+    const res = await mutate({ variables: { changes: JSON.stringify({ simplefin_auto_sync_hours: hours.value, simplefin_auto_import: importTx.value }) } })
+    const p = res?.data?.updateSettings
+    ok.value = !!p?.success
+    message.value = p?.success ? 'Saved' : (p?.message || 'Could not save')
+  } catch (e) {
+    ok.value = false
+    message.value = e instanceof Error ? e.message : 'Could not save'
+  }
   setTimeout(() => { message.value = '' }, 2500)
 }
 </script>

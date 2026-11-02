@@ -215,6 +215,10 @@ class StrategyType(graphene.ObjectType):
     goal = graphene.String()
     label = graphene.String()
     final_cash = graphene.Float()
+    ending_debt = graphene.Float()
+    outcome = graphene.Float()
+    lowest_checking = graphene.Float()
+    late = graphene.Int()
     interest_paid = graphene.Float()
     interest_earned = graphene.Float()
     fees = graphene.Float()
@@ -293,7 +297,7 @@ class ToolsQuery(graphene.ObjectType):
     def resolve_monthly_projection(self, info, days=180):
         from models.report_export import monthly_summary
         m = _manager(info)
-        return monthly_summary(m, max(30, min(days or 180, 730))) if m else []
+        return monthly_summary(m, max(30, min(days or 180, 365))) if m else []
 
     def resolve_database_info(self, info):
         from models import auth, web_routes

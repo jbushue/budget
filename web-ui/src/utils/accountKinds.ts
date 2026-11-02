@@ -52,3 +52,6 @@ export const hasSpending = (v: string) => ['ebt', 'hsa', 'fsa', 'prepaid', 'wall
 export const GROUP_BADGE: Record<AccountGroup, string> = {
   cash: 'badge-info', savings: 'badge-success', benefits: 'badge-warning', invested: 'badge-violet', other: '',
 }
+
+/** Kinds a paycheck can be split into (EBT is filled by benefits, a CD is locked). */
+export const takesPaycheck = (v: string) => !['ebt', 'cd'].includes(v)

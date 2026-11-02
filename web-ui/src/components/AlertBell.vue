@@ -30,6 +30,7 @@ import { useRouter } from 'vue-router'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import { GET_ALERTS, DISMISS_ALERT, GET_SETTINGS } from '../graphql/queries'
 import Icon from './Icon.vue'
+import { notify } from '../utils/dialog'
 import type { AlertItem, AppSettings } from '../types'
 
 defineProps<{ dark?: boolean }>()
@@ -50,7 +51,11 @@ const settings = computed<AppSettings | null>(() => {
 })
 
 async function dismiss(a: AlertItem, days?: number) {
-  await dismissM({ variables: { key: a.key, days: days ?? null } })
+  try {
+    await dismissM({ variables: { key: a.key, days: days ?? null } })
+  } catch (e) {
+    notify(e instanceof Error ? e.message : 'Could not hide the alert', 'error')
+  }
   refetch()
 }
 
@@ -72,19 +77,25 @@ watch(alerts, list => {
   localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...seen].slice(-200)))
 })
 
-// Refresh every 5 minutes, and when the tab comes back into view
+// Refresh every 5 minutes, when the tab comes back into view, and after any change
+// (marking a bill paid clears its "overdue" alert right away)
 let timer: ReturnType<typeof setInterval> | undefined
+let changedTimer: ReturnType<typeof setTimeout> | undefined
 const onVisible = () => { if (document.visibilityState === 'visible') refetch() }
+const onChanged = () => { clearTimeout(changedTimer); changedTimer = setTimeout(() => refetch(), 400) }
 const onClickAway = () => { open.value = false }
 onMounted(() => {
   timer = setInterval(() => refetch(), 5 * 60 * 1000)
   document.addEventListener('visibilitychange', onVisible)
   document.addEventListener('click', onClickAway)
+  window.addEventListener('budget:changed', onChanged)
 })
 onUnmounted(() => {
   clearInterval(timer)
   document.removeEventListener('visibilitychange', onVisible)
   document.removeEventListener('click', onClickAway)
+  window.removeEventListener('budget:changed', onChanged)
+  clearTimeout(changedTimer)
 })
 
 defineExpose({ refetch })

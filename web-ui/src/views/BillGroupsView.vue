@@ -8,7 +8,7 @@
       <button class="btn btn-primary" @click="openCreateGroup()"><Icon name="plus" :size="16" /> New group</button>
     </div>
 
-    <div v-if="loading" class="loading">Loading bill groups...</div>
+    <div v-if="loading && !result" class="loading">Loading bill groups...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else>
@@ -254,7 +254,7 @@
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markGroupPaid" :disabled="!payForm.amountPaid || payForm.amountPaid <= 0">Mark paid</button>
+          <button class="btn btn-success" @click="markGroupPaid" :disabled="paying || !(num(payForm.amountPaid)! > 0)">{{ paying ? 'Saving...' : 'Mark paid' }}</button>
         </div>
       </div>
     </div>
@@ -271,10 +271,10 @@ import {
   ADD_BILL_GROUP_MEMBER, REMOVE_BILL_GROUP_MEMBER,
   MARK_BILL_GROUP_PAID,
 } from '../graphql/queries'
-import { currency, pct, frequencyLabel, todayISO } from '../utils/format'
+import { currency, pct, frequencyLabel, todayISO, num } from '../utils/format'
 import { runMutation } from '../utils/mutation'
 import type { BillGroup, BillGroupMember, Bank, CreditAccount, MutationPayload } from '../types'
-import { ask } from '../utils/dialog'
+import { ask, notify } from '../utils/dialog'
 
 // ── Data ──
 const { result, loading, error, refetch } = useQuery<{ allBillGroups: BillGroup[] }>(GET_ALL_BILL_GROUPS)
@@ -407,10 +407,13 @@ const { mutate: doUpdateGroup } = useMutation<{ updateBillGroup: MutationPayload
 const { mutate: doDeleteGroup } = useMutation<{ deleteBillGroup: MutationPayload }>(DELETE_BILL_GROUP)
 
 async function saveGroup() {
+  const totalPayment = num(groupForm.value.totalPayment), dueDate = num(groupForm.value.dueDate)
+  if (totalPayment == null || totalPayment < 0) { notify('Enter the monthly payment', 'error'); return }
+  if (dueDate == null || dueDate < 1 || dueDate > 31) { notify('The due day must be 1-31', 'error'); return }
   const vars = {
     groupName: groupForm.value.groupName,
-    totalPayment: groupForm.value.totalPayment,
-    dueDate: groupForm.value.dueDate,
+    totalPayment,
+    dueDate,
     frequency: groupForm.value.frequency,
     groupType: groupForm.value.groupType,
     preferredSourceBank: groupForm.value.preferredSourceBank || null,
@@ -448,7 +451,7 @@ async function addMember() {
     bankName: memberForm.value.bankName,
     accountName: memberForm.value.accountName,
     allocationMethod: memberForm.value.allocationMethod,
-    fixedAmount: memberForm.value.fixedAmount,
+    fixedAmount: num(memberForm.value.fixedAmount) ?? 0,
   }}), 'addBillGroupMember', { failMessage: 'Failed to add member' })
   if (!ok) return
   showMemberModal.value = false
@@ -482,13 +485,22 @@ function openPayGroup(g: BillGroup) {
   showPayModal.value = true
 }
 
+// One payment save at a time: a double click used to take the money twice
+const paying = ref(false)
 async function markGroupPaid() {
+  if (paying.value) return
   const f = payForm.value
-  const ok = await runMutation(() => doMarkPaid({ variables: {
-    groupName: f.groupName, amountPaid: f.amountPaid,
-    sourceBank: f.sourceBank || null, sourceAccount: f.sourceAccount || null,
-    paymentDate: f.paymentDate || null,
-  }}), 'markBillGroupPaid', { failMessage: 'Failed to mark group as paid' })
+  paying.value = true
+  let ok
+  try {
+    ok = await runMutation(() => doMarkPaid({ variables: {
+      groupName: f.groupName, amountPaid: num(f.amountPaid),
+      sourceBank: f.sourceBank || null, sourceAccount: f.sourceAccount || null,
+      paymentDate: f.paymentDate || null,
+    }}), 'markBillGroupPaid', { failMessage: 'Failed to mark group as paid' })
+  } finally {
+    paying.value = false
+  }
   if (!ok) return
   showPayModal.value = false
   refetch()

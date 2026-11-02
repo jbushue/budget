@@ -53,7 +53,7 @@ export const GET_MORTGAGE_DETAILS = gql`
 export const COMPARE_STRATEGIES = gql`
   query CompareStrategies($days: Int, $targetAccount: String) {
     compareStrategies(days: $days, targetAccount: $targetAccount) {
-      goal label finalCash interestPaid interestEarned fees problems extraTotal
+      goal label finalCash endingDebt outcome lowestChecking late interestPaid interestEarned fees problems extraTotal
       extraPayments { date account amount }
     }
   }

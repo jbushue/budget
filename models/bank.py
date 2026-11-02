@@ -237,8 +237,14 @@ class Bank:
             account = self.credit_accounts[account_name]
             account.balance = new_balance
             # Keep the sub-balances consistent: whatever is not on a promo
-            # is regular (interest-bearing) balance.
+            # is regular (interest-bearing) balance. Promos can't owe more
+            # than the card does, so they shrink with it.
             promo_total = sum(account.promo_balance.values())
+            if promo_total > new_balance + 0.005 and promo_total > 0:
+                scale = max(0.0, new_balance) / promo_total
+                for name in account.promo_balance:
+                    account.promo_balance[name] = round(account.promo_balance[name] * scale, 2)
+                promo_total = sum(account.promo_balance.values())
             account.regular_balance = max(0.0, new_balance - promo_total)
             account._record_transaction("ADJUSTMENT", 0, description)
             return account

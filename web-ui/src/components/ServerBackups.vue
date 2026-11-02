@@ -114,6 +114,9 @@ async function run(method: string, url: string) {
     show(good, data.message || (good ? 'Done' : 'Failed'))
     if (good) await load()
     return good ? data : null
+  } catch (e) {
+    show(false, e instanceof Error ? e.message : 'Could not reach the server')
+    return null
   } finally {
     busy.value = false
   }
@@ -125,6 +128,8 @@ async function saveSettings() {
     const res = await updateSettings({ variables: { changes: JSON.stringify({ auto_backup: auto.value, backup_hour: hour.value, backup_keep: keep.value }) } })
     const p = res?.data?.updateSettings
     show(!!p?.success, p?.success ? 'Backup settings saved' : (p?.message || 'Could not save'))
+  } catch (e) {
+    show(false, e instanceof Error ? e.message : 'Could not save')
   } finally {
     busy.value = false
   }

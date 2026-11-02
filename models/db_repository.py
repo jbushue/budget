@@ -428,13 +428,33 @@ class DatabaseRepository:
         ).first()
 
     def _sync_bill_payments(self, db_bill: BillModel, bill: Bill):
-        """Append payment history entries that aren't in the DB yet."""
+        """
+        Make the DB rows match the bill's payment history. Usually that's just
+        appending new payments; if one was removed (e.g. a match undone), the
+        rows are rewritten so the removal sticks and later payments aren't lost.
+        """
         from datetime import date as date_type
-        existing = len(db_bill.payments)
-        for entry in bill.payment_history[existing:]:
+
+        def day(entry):
             paid_on = entry.get('date') or date_type.today()
-            if isinstance(paid_on, str):
-                paid_on = date_type.fromisoformat(paid_on)
+            return date_type.fromisoformat(paid_on) if isinstance(paid_on, str) else paid_on
+
+        def sig(paid_on, amount):
+            # Date and amount only: renaming an account rewrites the source columns in SQL
+            return (paid_on, round(float(amount or 0.0), 2))
+
+        rows = sorted(db_bill.payments, key=lambda r: r.id or 0)
+        in_db = [sig(r.payment_date, r.amount_paid) for r in rows]
+        wanted = [sig(day(e), e.get('amount_paid')) for e in bill.payment_history]
+        if wanted[:len(in_db)] == in_db:
+            new_entries = bill.payment_history[len(in_db):]
+        else:
+            for r in rows:
+                self.session.delete(r)
+            self.session.flush()
+            new_entries = bill.payment_history
+        for entry in new_entries:
+            paid_on = day(entry)
             self.session.add(BillPaymentModel(
                 bill_id=db_bill.id,
                 amount_paid=entry.get('amount_paid') or 0.0,

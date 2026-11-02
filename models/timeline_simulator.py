@@ -35,6 +35,35 @@ class TimelineEvent:
         return self.event_date < other.event_date
 
 
+def card_interest_day(card) -> int:
+    """Day a card charges interest: its statement day, else its due day, else month end."""
+    return card.statement_date or card.payment_due_date or 31
+
+
+def _paid_flag_covers(bill, day: date) -> bool:
+    """
+    A bill marked paid covers the first due date on or after its last payment.
+    A flag left over from an earlier period (paid on the due date, then not
+    reset yet) must not skip the next occurrence.
+    """
+    history = getattr(bill, "payment_history", None) or getattr(getattr(bill, "linked_group", None),
+                                                                "payment_history", None)
+    if not history:
+        return True
+    last = history[-1].get("date")
+    if isinstance(last, str):
+        try:
+            last = date.fromisoformat(last)
+        except ValueError:
+            return True
+    if not isinstance(last, date):
+        return True
+    try:
+        return day <= bill.get_next_due_date(last - timedelta(days=1))
+    except Exception:
+        return True
+
+
 class TimelineSimulator:
     """
     Simulates account balances and transactions over a date range.
@@ -132,14 +161,9 @@ class TimelineSimulator:
                 if isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'credit':
                     if (bill.linked_bank_name, bill.linked_account.account_name) in self._grouped_account_keys:
                         continue
-                    # Skip zero-balance credit cards
-                    if bill.linked_account.balance <= 0 and bill.amount_on(current_date) <= 0:
-                        continue
-
-                # Skip linked HELOC bills with zero balance
-                if isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'heloc':
-                    if bill.linked_account.balance <= 0 and bill.amount_on(current_date) <= 0:
-                        continue
+                # Cards and HELOCs at $0 today still get their payment days: the
+                # plan may charge or draw on them later (a $0 payment is skipped
+                # when the day comes)
 
                 next_due = bill.get_next_due_date(current_date - timedelta(days=1))
                 if next_due == current_date:
@@ -196,8 +220,7 @@ class TimelineSimulator:
                             ))
 
                     for credit_account in bank.get_all_credit_accounts():
-                        if (credit_account.statement_date
-                                and is_clamped_day(current_date, credit_account.statement_date)
+                        if (is_clamped_day(current_date, card_interest_day(credit_account))
                                 and credit_account.interest_rate > 0):
                             monthly_rate = credit_account.interest_rate / 12 / 100
                             interest = credit_account.balance * monthly_rate
@@ -298,6 +321,8 @@ class TimelineSimulator:
         # day before interest is charged doesn't earn (or save) a whole month.
         self._balance_tracker = {}
         self._start_balances = {key: bal for key, (bal, _) in self._interest_balances().items()}
+        self._interest_days = {key: day for key, (_, day) in self._interest_balances().items()}
+        self._cycled = set()
 
         current_date = start_date
         while current_date <= end_date:
@@ -309,8 +334,9 @@ class TimelineSimulator:
                     for income in self.income_sources:
                         if event.description == f"Income: {income.source_name}":
                             if not income.distribution:
-                                target_bank = self.banks[0]
-                                account_name = next(iter(target_bank.accounts))
+                                target_bank, account_name = self._default_deposit_account()
+                                if target_bank is None:
+                                    break  # nowhere to put it (no checking or savings yet)
                                 target_bank.accounts[account_name].deposit(
                                     income.amount,
                                     description=f"Income: {income.source_name}",
@@ -342,6 +368,9 @@ class TimelineSimulator:
                                         else:
                                             deposit_amount = value
                                         target_bank = self._find_bank_with_account(account_name)
+                                        if not target_bank:
+                                            # Its account was deleted: the money still arrives
+                                            target_bank, account_name = self._default_deposit_account()
                                         if target_bank:
                                             target_bank.accounts[account_name].deposit(
                                                 deposit_amount,
@@ -362,6 +391,8 @@ class TimelineSimulator:
                                     remainder = income.amount - total_fixed
                                     if remainder > 1e-6:
                                         target_bank = self._find_bank_with_account(remainder_account)
+                                        if not target_bank:
+                                            target_bank, remainder_account = self._default_deposit_account()
                                         if target_bank:
                                             target_bank.accounts[remainder_account].deposit(
                                                 remainder,
@@ -400,7 +431,7 @@ class TimelineSimulator:
                             # Skip if already paid this period (first occurrence only)
                             is_first = id(bill) not in first_occurrence_seen
                             first_occurrence_seen.add(id(bill))
-                            if is_first and bill.is_paid_this_period:
+                            if is_first and bill.is_paid_this_period and _paid_flag_covers(bill, current_date):
                                 bill.is_paid_this_period = False
                                 cash_flow.append({
                                     "date": current_date,
@@ -571,7 +602,7 @@ class TimelineSimulator:
                             # Real-world paid flag applies to the first occurrence only
                             is_first = id(bill) not in first_occurrence_seen
                             first_occurrence_seen.add(id(bill))
-                            if is_first and bill.is_paid_this_period:
+                            if is_first and bill.is_paid_this_period and _paid_flag_covers(bill, current_date):
                                 bill.is_paid_this_period = False
                                 cash_flow.append({
                                     "date": current_date,
@@ -682,6 +713,21 @@ class TimelineSimulator:
                 self._apply_daily_spending(current_date, cash_flow, covered)
             # Overdraft fee each time a checking account newly drops below $0
             self._charge_overdraft_fees(current_date, cash_flow, overdrawn)
+
+            # A 0% promo still owing at the end of its last day is charged its
+            # deferred interest that day (not at the next statement)
+            for bank in self.banks:
+                for credit in bank.get_all_credit_accounts():
+                    if not any(p.has_expired(current_date) and not p.interest_charged for p in credit.active_promos):
+                        continue
+                    charged = credit.process_expired_promos(current_date)
+                    if charged > 0:
+                        cash_flow.append({
+                            "date": current_date, "type": "INTEREST",
+                            "description": f"Deferred promo interest: {credit.account_name}",
+                            "amount": charged, "account": credit.account_name, "bank": bank.name,
+                            "account_kind": "credit", "promo": True,
+                        })
 
             # End-of-day balances for average-daily-balance interest
             for key, (bal, _) in self._interest_balances().items():
@@ -830,8 +876,8 @@ class TimelineSimulator:
                 if acc.interest_rate > 0:
                     out[("bank", bank.name, acc.account_name)] = (acc.balance, acc.interest_accrual_date or 31)
             for card in bank.get_all_credit_accounts():
-                if card.interest_rate > 0 and card.statement_date:
-                    out[("credit", bank.name, card.account_name)] = (card.regular_balance, card.statement_date)
+                if card.interest_rate > 0:
+                    out[("credit", bank.name, card.account_name)] = (card.regular_balance, card_interest_day(card))
             for heloc in bank.get_all_heloc_accounts():
                 if heloc.interest_rate > 0:
                     out[("heloc", bank.name, heloc.account_name)] = (heloc.balance, heloc.payment_due_date)
@@ -847,8 +893,14 @@ class TimelineSimulator:
         if key not in self._start_balances:
             return None
         total, days = self._balance_tracker.pop(key, (0.0, 0))
+        if key in self._cycled and days:
+            return total / days  # a full cycle tracked since the last interest day
+        self._cycled.add(key)
+        # First cycle: measured from the configured day (a day-31 account's
+        # cycle ending Feb 28 started Jan 31, not Jan 28)
         y, m = add_months(current_date.year, current_date.month, -1)
-        cycle = (current_date - clamped_date(y, m, current_date.day)).days or 30
+        day = self._interest_days.get(key, current_date.day)
+        cycle = (current_date - clamped_date(y, m, day)).days or 30
         if days >= cycle:
             return total / days
         return (total + self._start_balances[key] * (cycle - days)) / cycle
@@ -1067,6 +1119,17 @@ class TimelineSimulator:
                 2,
             )
         return bill.linked_account_balance
+
+    def _default_deposit_account(self):
+        """(bank, account name) a paycheck lands in when it has no split, or its account is gone:
+        the first checking account, else the first account that can pay bills, else None."""
+        from models.types import pays_bills
+        for test in (lambda a: a.account_type.value == "checking", pays_bills):
+            for bank in self.banks:
+                for name, acc in bank.accounts.items():
+                    if test(acc):
+                        return bank, name
+        return None, None
 
     def _find_bank_with_account(self, account_name: str) -> Bank | None:
         """Find which bank contains a specific account."""

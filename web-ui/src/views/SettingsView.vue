@@ -34,7 +34,7 @@
       </p>
 
       <!-- Loading state -->
-      <div v-if="sfinLoading" style="color:var(--text-muted);font-size:0.85rem">Loading SimpleFIN status...</div>
+      <div v-if="sfinLoading && !sfinStatusResult" style="color:var(--text-muted);font-size:0.85rem">Loading SimpleFIN status...</div>
 
       <!-- Not connected -->
       <template v-else-if="!sfinStatus?.isConnected">

@@ -3,45 +3,54 @@
     <div class="view-header">
       <div class="view-title">
         <h2>Timeline</h2>
-        <p class="view-sub">Every bill and paycheck ahead, and your projected balances.</p>
+        <p class="view-sub">
+          Every bill, paycheck and move ahead, day by day, following your
+          <router-link to="/optimizer" class="plan-link">{{ planLabel }} plan</router-link>.
+        </p>
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center">
-        <select v-model.number="days" style="width:auto">
-          <option :value="30">30 days</option>
-          <option :value="60">60 days</option>
-          <option :value="90">90 days</option>
-          <option :value="180">6 months</option>
-          <option :value="365">1 year</option>
-        </select>
+        <PeriodSelect />
         <RowMenu text="Download" icon="download" :items="downloadItems" />
         <button class="btn btn-outline" @click="refetch()"><Icon name="refresh" :size="15" /> Refresh</button>
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Calculating projection...</div>
+    <div v-if="loading && !result" class="loading">Calculating projection...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else-if="proj">
-      <!-- Summary cards -->
+      <!-- Summary cards: money in − money out = change in cash -->
       <div class="grid grid-4" style="margin-bottom:1.5rem">
         <div class="card stat-card">
           <div class="stat-value positive">{{ currency(proj.totalIncome) }}</div>
-          <div class="stat-label">Total income</div>
+          <div class="stat-label">Money in</div>
+          <div class="stat-sub">Paychecks and deposits</div>
         </div>
         <div class="card stat-card">
           <div class="stat-value negative">{{ currency(proj.totalExpenses) }}</div>
-          <div class="stat-label">Total expenses</div>
+          <div class="stat-label">Money out</div>
+          <div class="stat-sub">
+            Bills, payments, spending and fees ·
+            cash {{ proj.netChange >= 0 ? 'up' : 'down' }} {{ currency(Math.abs(proj.netChange)) }}
+          </div>
         </div>
         <div class="card stat-card">
-          <div class="stat-value" :class="proj.netChange >= 0 ? 'positive' : 'negative'">{{ currency(proj.netChange) }}</div>
-          <div class="stat-label">Net change</div>
+          <div class="stat-value" :class="(proj.lowestChecking ?? 0) < (proj.cushion ?? 0) ? 'negative' : 'neutral'">{{ currency(proj.lowestChecking ?? 0) }}</div>
+          <div class="stat-label">Lowest checking</div>
+          <div class="stat-sub">
+            <template v-if="proj.lowestCheckingDate">{{ fmtDateShort(proj.lowestCheckingDate) }} · </template>cushion {{ currency(proj.cushion ?? 0) }}
+          </div>
+          <div v-if="(proj.lowestSpendable ?? 0) > (proj.lowestChecking ?? 0) + 1" class="stat-sub">
+            {{ currency(proj.lowestSpendable ?? 0) }} counting money the plan parks in savings (what Safe to spend uses)
+          </div>
         </div>
         <div class="card stat-card">
           <div class="stat-value" :class="proj.netFinalBalance >= 0 ? 'positive' : 'negative'">{{ currency(proj.netFinalBalance) }}</div>
-          <div class="stat-label">Projected net worth</div>
-          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.25rem">
-            Assets {{ currency(proj.totalFinalBalance) }}
+          <div class="stat-label">Net worth at the end</div>
+          <div class="stat-sub">
+            Cash {{ currency(proj.totalFinalBalance) }}
             <span v-if="totalDebt > 0"> · Debt {{ currency(totalDebt) }}</span>
+            <span v-if="(proj.otherAssets ?? 0) > 0"> · Other {{ currency(proj.otherAssets ?? 0) }}</span>
           </div>
         </div>
       </div>
@@ -59,9 +68,45 @@
         </div>
       </div>
 
-      <!-- Final balances breakdown -->
-      <div class="card" style="margin-bottom:1.5rem">
-        <div class="card-header"><span class="card-title">Projected final balances</span></div>
+      <!-- Financial Calendar / event list / month by month -->
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:0.75rem">
+          <div class="segmented" role="tablist" aria-label="View">
+            <button v-for="v in VIEWS" :key="v.key" role="tab" :aria-selected="calView === v.key" :class="{ active: calView === v.key }" @click="calView = v.key">
+              <Icon :name="v.icon" :size="15" /> {{ v.label }}
+            </button>
+          </div>
+          <div v-if="calView === 'list'" class="chip-group" style="margin:0">
+            <button v-for="f in FILTERS" :key="f.key" class="chip" :class="{ selected: listFilter === f.key }" @click="listFilter = f.key">{{ f.label }}</button>
+          </div>
+          <div v-if="calView === 'calendar'" style="display:flex;align-items:center;gap:0.5rem">
+            <button class="btn btn-outline btn-sm btn-icon" aria-label="Previous month" @click="prevMonth"><Icon name="chevronLeft" :size="16" /></button>
+            <span style="font-weight:700;min-width:140px;text-align:center">{{ calendarMonthLabel }}</span>
+            <button class="btn btn-outline btn-sm btn-icon" aria-label="Next month" @click="nextMonth"><Icon name="chevronRight" :size="16" /></button>
+          </div>
+        </div>
+
+        <!-- Every event, filterable -->
+        <div v-if="calView === 'list'">
+          <div v-if="!listGroups.length" class="empty-state"><p>Nothing in this period.</p></div>
+          <div v-for="g in listGroups" :key="g.date" class="ev-day">
+            <div class="ev-date">
+              <strong>{{ fmtDayShort(g.date) }}</strong>
+              <span>{{ currency(g.endCash) }} in checking &amp; savings after</span>
+            </div>
+            <div v-for="(e, i) in g.events" :key="i" class="ev-row" :class="eventClass(e)">
+              <span class="ev-icon"><Icon :name="eventIcon(e.eventType)" :size="15" /></span>
+              <span class="ev-desc">
+                {{ billName(e.description) }}
+                <small>{{ eventTypeLabel(e.eventType) }}<template v-if="e.sourceAccount"> · {{ e.sourceAccount }}</template><template v-if="e.status === 'deferred'"> · can't be paid yet</template></small>
+              </span>
+              <span class="ev-amt" :class="e.eventType === 'INCOME' ? 'positive' : ''">{{ e.eventType === 'INCOME' ? '+' : '' }}{{ currency(Math.abs(e.amount)) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Balances on the last day -->
+        <div v-else-if="calView === 'end'">
         <div class="table-wrap">
           <table>
             <thead>
@@ -117,9 +162,13 @@
                   <td style="text-align:right;font-weight:600" class="negative">-{{ currency(bal) }}</td>
                 </tr>
               </template>
+              <tr v-if="(proj.otherAssets ?? 0) > 0">
+                <td>Homes, cars and other assets</td>
+                <td style="text-align:right;font-weight:600" class="positive">{{ currency(proj.otherAssets ?? 0) }}</td>
+              </tr>
               <!-- Net total -->
               <tr style="border-top:2px solid var(--border-strong);font-weight:700">
-                <td>Net Worth</td>
+                <td>Net worth</td>
                 <td style="text-align:right" :class="proj.netFinalBalance >= 0 ? 'positive' : 'negative'">
                   {{ currency(proj.netFinalBalance) }}
                 </td>
@@ -127,43 +176,6 @@
             </tbody>
           </table>
         </div>
-      </div>
-
-      <!-- Financial Calendar / event list / month by month -->
-      <div class="card">
-        <div class="card-header" style="flex-wrap:wrap;gap:0.75rem">
-          <div class="segmented" role="tablist" aria-label="View">
-            <button v-for="v in VIEWS" :key="v.key" role="tab" :aria-selected="calView === v.key" :class="{ active: calView === v.key }" @click="calView = v.key">
-              <Icon :name="v.icon" :size="15" /> {{ v.label }}
-            </button>
-          </div>
-          <div v-if="calView === 'list'" class="chip-group" style="margin:0">
-            <button v-for="f in FILTERS" :key="f.key" class="chip" :class="{ selected: listFilter === f.key }" @click="listFilter = f.key">{{ f.label }}</button>
-          </div>
-          <div v-if="calView === 'calendar'" style="display:flex;align-items:center;gap:0.5rem">
-            <button class="btn btn-outline btn-sm btn-icon" aria-label="Previous month" @click="prevMonth"><Icon name="chevronLeft" :size="16" /></button>
-            <span style="font-weight:700;min-width:140px;text-align:center">{{ calendarMonthLabel }}</span>
-            <button class="btn btn-outline btn-sm btn-icon" aria-label="Next month" @click="nextMonth"><Icon name="chevronRight" :size="16" /></button>
-          </div>
-        </div>
-
-        <!-- Every event, filterable -->
-        <div v-if="calView === 'list'">
-          <div v-if="!listGroups.length" class="empty-state"><p>Nothing in this period.</p></div>
-          <div v-for="g in listGroups" :key="g.date" class="ev-day">
-            <div class="ev-date">
-              <strong>{{ fmtDayShort(g.date) }}</strong>
-              <span>{{ currency(g.endCash) }} in checking &amp; savings after</span>
-            </div>
-            <div v-for="(e, i) in g.events" :key="i" class="ev-row" :class="eventClass(e)">
-              <span class="ev-icon"><Icon :name="eventIcon(e.eventType)" :size="15" /></span>
-              <span class="ev-desc">
-                {{ billName(e.description) }}
-                <small>{{ eventTypeLabel(e.eventType) }}<template v-if="e.sourceAccount"> · {{ e.sourceAccount }}</template><template v-if="e.status === 'deferred'"> · can't be paid yet</template></small>
-              </span>
-              <span class="ev-amt" :class="e.eventType === 'INCOME' ? 'positive' : ''">{{ e.eventType === 'INCOME' ? '+' : '' }}{{ currency(Math.abs(e.amount)) }}</span>
-            </div>
-          </div>
         </div>
 
         <!-- Month by month -->
@@ -344,6 +356,8 @@
 
 <script setup lang="ts">
 import RowMenu from '../components/RowMenu.vue'
+import PeriodSelect from '../components/PeriodSelect.vue'
+import { PLAN_LABELS, planDays } from '../utils/plan'
 import { GET_MONTHLY_PROJECTION } from '../graphql/tools'
 import Icon from '../components/Icon.vue'
 import { ref, computed, watch } from 'vue'
@@ -361,12 +375,13 @@ import {
   Legend,
 } from 'chart.js'
 import { GET_PROJECTION } from '../graphql/queries'
-import { currency, todayISO, billName } from '../utils/format'
+import { currency, todayISO, billName, fmtDateShort } from '../utils/format'
 import type { Projection, CalendarDay } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler, Legend)
 
-const days = ref(90)
+// How far ahead to show (shared with Plan and What-if; it's the same plan either way)
+const days = planDays
 const showPerAccount = ref(true)
 
 // ── Calendar / list / month-by-month
@@ -374,6 +389,7 @@ const VIEWS = [
   { key: 'calendar', label: 'Calendar', icon: 'calendar' },
   { key: 'list', label: 'List', icon: 'menu' },
   { key: 'months', label: 'By month', icon: 'chart' },
+  { key: 'end', label: 'End balances', icon: 'accounts' },
 ]
 const FILTERS = [
   { key: 'all', label: 'Everything' },
@@ -438,6 +454,7 @@ const downloadItems = computed(() => [
 const { result, loading, error, refetch } = useQuery<{ projection: Projection }>(GET_PROJECTION, () => ({ variables: { days: days.value } }))
 
 const proj = computed(() => result.value?.projection)
+const planLabel = computed(() => PLAN_LABELS[proj.value?.planGoal ?? ''] ?? 'Most cash')
 
 /** Keep only accounts with a positive balance, typed as numbers. */
 function positiveEntries(parsed: unknown): Record<string, number> {
@@ -495,7 +512,7 @@ const chartData = computed(() => {
 
   const datasets: any[] = [
     {
-      label: 'Net Balance',
+      label: 'Net worth',
       data: sampled.map(s => s.netTotal ?? s.total),
       borderColor: '#3b82f6',
       backgroundColor: 'rgba(59,130,246,0.08)',
@@ -882,6 +899,8 @@ watch([calendarMonth, calendarYear], () => {
 </script>
 
 <style scoped>
+.stat-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem; }
+.plan-link { font-weight: 600; text-decoration: none; }
 /* ── Event list ─────────────────────────────────────────────────── */
 .ev-day + .ev-day { margin-top: 0.9rem; }
 .ev-date { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;

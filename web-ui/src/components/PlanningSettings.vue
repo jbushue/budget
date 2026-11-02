@@ -87,6 +87,7 @@ import { ref, computed, watch } from 'vue'
 import { useApolloClient, useMutation, useQuery } from '@vue/apollo-composable'
 import { GET_ALL_BANKS, GET_SETTINGS, UPDATE_SETTINGS } from '../graphql/queries'
 import { runMutation } from '../utils/mutation'
+import { evictPlan } from '../utils/plan'
 import { currency } from '../utils/format'
 import type { AppSettings, Bank, MutationPayload } from '../types'
 
@@ -126,11 +127,9 @@ async function save() {
   saving.value = false
   if (ok) {
     saved.value = true
-    refetch()
     // Plans and Safe to spend depend on these
-    const cache = resolveClient().cache
-    for (const f of ['dashboardSummary', 'projection', 'alerts', 'paymentPlan', 'paymentInsights']) cache.evict({ fieldName: f })
-    cache.gc()
+    evictPlan(resolveClient().cache)
+    refetch()
   }
 }
 </script>

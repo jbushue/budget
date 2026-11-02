@@ -359,7 +359,7 @@ def recategorize(only_uncategorized: bool = True, pattern: str | None = None) ->
 def add_transaction(txn_date: date, description: str, amount: float, bank_name: str = "",
                     account_name: str = "", category: str | None = None, notes: str = "",
                     source: str = "manual", external_id: str | None = None, payee: str = "",
-                    session=None, tags=None) -> dict | None:
+                    session=None, tags=None, check_duplicate: bool = True) -> dict | None:
     """Add one transaction. Returns None if it's a duplicate."""
     description = (description or "").strip()
     if not description:
@@ -369,7 +369,7 @@ def add_transaction(txn_date: date, description: str, amount: float, bank_name: 
     try:
         if external_id and session.query(db.LedgerTransactionModel).filter_by(external_id=external_id).first():
             return None
-        if source == "csv":
+        if source == "csv" and check_duplicate:
             dup = session.query(db.LedgerTransactionModel).filter_by(
                 txn_date=txn_date, amount=round(amount, 2), description=description,
                 bank_name=bank_name or None, account_name=account_name or None).first()
@@ -604,18 +604,23 @@ _HEADER_HINTS = {
     "credit": ["credit", "deposit", "deposits", "money in", "payment"],
 }
 _DATE_FORMATS = ["%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y", "%Y/%m/%d", "%d %b %Y", "%b %d, %Y",
-                 "%m/%d/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]
+                 "%m/%d/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]
 
 
 def _parse_amount(text: str) -> float | None:
     t = (text or "").strip()
     if not t:
         return None
-    neg = t.startswith("(") and t.endswith(")") or t.startswith("-") or t.endswith("-")
+    upper = t.upper()
+    # "(5.00)", "-5.00", "$-5.00", "5.00-" and "5.00 DR" are all money out
+    neg = (t.startswith("(") and t.endswith(")")) or "-" in t or upper.endswith("DR")
     t = re.sub(r"[^\d.]", "", t)
     if not t:
         return None
-    v = float(t)
+    try:
+        v = float(t)
+    except ValueError:  # e.g. "1.234.56": skip the row rather than fail the import
+        return None
     return -v if neg else v
 
 
@@ -700,10 +705,27 @@ def import_csv(content: str, bank_name: str, account_name: str, mapping: dict | 
     imported = duplicates = 0
     session = _session()
     try:
+        # Only rows already saved count as duplicates: two identical rows in
+        # the same file (two $2.90 bus fares on one day) are both real
+        from collections import Counter
+        existing = Counter()
+        dates = [row["date"] for row in parsed["rows"]]
+        if dates:
+            for t in session.query(db.LedgerTransactionModel).filter(
+                    db.LedgerTransactionModel.bank_name == (bank_name or None),
+                    db.LedgerTransactionModel.account_name == (account_name or None),
+                    db.LedgerTransactionModel.txn_date >= min(dates),
+                    db.LedgerTransactionModel.txn_date <= max(dates)):
+                existing[(t.txn_date, round(t.amount, 2), t.description)] += 1
         for row in parsed["rows"]:
+            key = (row["date"], round(row["amount"], 2), (row["description"] or "").strip())
+            if existing[key] > 0:
+                existing[key] -= 1
+                duplicates += 1
+                continue
             added = add_transaction(row["date"], row["description"], row["amount"], bank_name, account_name,
                                     category=categorize(row["description"], row["amount"], rules, cats),
-                                    source="csv", session=session)
+                                    source="csv", session=session, check_duplicate=False)
             if added is None:
                 duplicates += 1
             else:

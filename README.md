@@ -45,8 +45,9 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 - Bill payments are **recognized in your transactions** and marked paid automatically (no money moved twice); repeating charges that aren't bills yet are suggested
 
 **Planning and analysis**
-- **Timeline** — a day-by-day projection as a calendar, a filterable list (income, bills, cards and loans, transfers), or a month-by-month summary
-- **Payment Optimizer** — compares *paying every bill on its due date* with an *optimized plan* (paying down costly debt with spare cash, savings sweeps, HELOC parking, promo payoffs, covering missed bills). Every move is verified in a full simulation, so the plan is never worse than paying on due dates. It explains, in plain language:
+- **One plan for the whole app** — the plan is worked out once, day by day for a year, and the dashboard, timeline, Plan page, what-if, alerts and the digest all read it, so they agree on every day; period pickers only change how much you see, and checking never drops below your cushion
+- **Timeline** — the plan day by day as a calendar, a filterable list (income, bills, cards and loans, transfers), a month-by-month summary, or end balances, for up to a year
+- **Plan** (formerly the Payment Optimizer) — tabs for Overview, Bills, Debt and *Can I afford it?*; compares *paying every bill on its due date* with an *optimized plan* (paying down costly debt with spare cash, savings sweeps, HELOC parking, promo payoffs, covering missed bills). Every move is verified in a full simulation, so the plan is never worse than paying on due dates. It explains, in plain language:
   - which bills will be short and how to fix it
   - which payments are worth making early on payday (and how much that saves) — and which aren't
   - how a loan group's payment is split, and what aiming it at the highest rate or paying a little more would save
@@ -57,8 +58,8 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
   - **Pay down debt faster**: searches for the most you can put toward debt each month without checking ever dropping below your cushion or a bill going late (every amount is simulated), sends it highest-interest-first or smallest-first, and shows the interest saved and payoff dates
   - **Better due dates**: finds bills due at the wrong time for your paydays and the day to ask the company to move them to
   - **When can I buy it?**: how much you could spend on each day ahead, and the earliest day a purchase fits
-- **Debt Payoff** — minimum-only vs. avalanche vs. snowball
-- **What-If Scenarios** — job loss, a raise, new or cut bills, paid-off debts — with a plain-language verdict
+  - **When will I be debt-free?**: minimum-only vs. highest interest first vs. smallest balance first
+- **What-If Scenarios** — job loss, a raise, new or cut bills, paid-off debts — the plan is re-made for the change and compared with your plan now, with a plain-language verdict
 - **Late and overdraft fees** are modeled (app-wide defaults plus a per-bill late fee)
 - **Reports** — income vs. spending, where the money went, category trends, net worth over time, and a **year in review** (totals, savings rate, top categories and payees, biggest purchases, spending by tag)
 - **Net worth with assets** — vehicles, investments, retirement, property and valuables with value history and equity against their loans, counted in net worth everywhere
@@ -157,6 +158,7 @@ Open `http://<this computer's address>:3000` on your phone and sign in (sign-ins
 | `BUDGET_PORT` | `4000` | Port to listen on. |
 | `BUDGET_DATA_DIR` | `~/.budget_app` | Where the database, backups and the generated admin password are kept. |
 | `BUDGET_TRUSTED_PROXIES` | `0` | Number of reverse proxies in front (e.g. `1` behind Caddy or nginx). Only then are their `X-Forwarded-*` headers believed. |
+| `BUDGET_CORS_ORIGINS` | none | Comma-separated origins allowed to call the API from another site (e.g. `https://budget.example.com`). CORS is off by default: the built-in web interface and the Vite dev proxy are same-origin, so they don't need it. |
 | `BUDGET_THREADS` | `8` | Web server worker threads. |
 | `BUDGET_DEBUG` | off | Set to `1` for Flask's development server with auto-reload. Never on a network: its debugger can run code. |
 
@@ -269,9 +271,7 @@ Working end to end: accounts (including mortgages, HELOCs, promos), bills and lo
 
 Known limitations:
 - Weekly/bi-weekly items without a start date guess their schedule; set a start date for accuracy.
-- What-If compares plain simulations (without optimizer moves).
 - Excel export covers accounts, bills, and income — not payment status, transactions, budgets, goals, or settings. Use **Download backup** for a complete copy.
-- The optimizer's "pay off a specific card" goal is available from Python only, not the web interface.
 - Bill matching looks at the last 45 days of transactions; older payments can be marked paid by hand.
 - The email digest, push notifications, automatic backups and SimpleFIN auto-sync run inside the API server, so they only happen while it's running.
 - No HTTPS of its own: on your home network sign-in protects access, but traffic isn't encrypted. Don't expose it to the internet without a reverse proxy that adds HTTPS.

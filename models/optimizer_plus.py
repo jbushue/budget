@@ -197,8 +197,13 @@ def debt_boost(manager, days: int = 180, strategy: str = "avalanche", monthly: f
             break
         lo, lo_ev = x, ev
         x *= 2
-    if hi is None and x > ceiling:
-        hi = None  # everything up to the ceiling is safe (or debt is all paid off)
+    if hi is None and lo < ceiling:
+        # Every doubling was safe: try the ceiling itself, then narrow in below it
+        ev, ok = trial(ceiling)
+        if ok:
+            lo, lo_ev = ceiling, ev  # everything up to the ceiling is safe (or debt is all paid off)
+        else:
+            hi = ceiling
     while hi is not None and hi - lo > 10:
         mid = round((lo + hi) / 2 / 10) * 10
         if mid in (lo, hi):
@@ -320,42 +325,38 @@ def due_date_moves(manager, days: int = 100, min_gain: float = 25.0) -> dict:
 
 def purchase_planner(manager, amount: float = 0.0, days: int = 60) -> dict:
     """
-    How much you could spend on each day ahead and stay above your cushion
-    through the end of the window, and the earliest day ``amount`` fits —
-    checked with a full simulation (so a bill isn't pushed late by it).
+    How much you could spend on each day ahead, and the earliest day
+    ``amount`` fits. Read from the app's plan exactly like Safe to spend:
+    for each day, the lowest point the plan reaches over the look-ahead
+    from that day, minus your cushion and what's already spoken for.
+    Today's figure is the dashboard's Safe to spend.
     """
+    from models.dashboard import held_back, safe_window, spendable_series
+    from models.payment_insights import summarize_simulation
+    from models.plan import plan_runs, slice_result
+
     if amount < 0:
         raise ValueError("Amount can't be negative")
-    runner = _Runner(manager, days)
-    base_res = runner.run()
-    base = runner.evaluate(base_res)
-    series = runner.checking_series(base_res)
-    floor = runner.cushion
-    lows, low = [0.0] * len(series), float("inf")
-    for i in range(len(series) - 1, -1, -1):
-        low = min(low, series[i][1])
-        lows[i] = low
-    can_spend = [{"date": d.isoformat(), "amount": _r(max(0.0, lows[i] - floor))} for i, (d, _) in enumerate(series)]
-    out = {"days": days, "amount": _r(amount), "cushion": _r(floor), "can_spend": can_spend,
-           "today": can_spend[0]["amount"] if can_spend else 0.0,
+    today = date.today()
+    window, _, _ = safe_window(manager, today)
+    runs = plan_runs(manager)
+    series = spendable_series(manager, runs.optimized, runs.goal)
+    late = summarize_simulation(slice_result(runs.optimized, today + timedelta(days=window), manager.banks),
+                                manager.banks)["late_payments"]
+    held = held_back(manager, late, today)
+    off = held["cushion"] + held["overdue_total"] + held["short_total"] + held["reserves"]
+    values = [v for _, v in series]
+    can_spend = []
+    for i, (d, _) in enumerate(series[:days + 1]):
+        low = min(values[i:i + window + 1])
+        can_spend.append({"date": d.isoformat(), "amount": _r(max(0.0, low - off))})
+    out = {"days": days, "amount": _r(amount), "cushion": _r(held["cushion"]), "can_spend": can_spend,
+           "today": can_spend[0]["amount"] if can_spend else 0.0, "look_ahead": window,
            "best": max(can_spend, key=lambda c: c["amount"]) if can_spend else None,
            "earliest": None, "lowest_after": None}
-    if amount <= 0:
-        return out
-    source = runner.main_checking()
-    tried = 0
-    for i, (d, _) in enumerate(series):
-        if lows[i] - floor < amount - 0.005:
-            continue
-        injected = {d: [TimelineEvent(event_date=d, event_type="PURCHASE", amount=amount, description="Planned purchase",
-                                      from_bank=source[0] if source else None,
-                                      from_account=source[1] if source else None)]}
-        ev = runner.evaluate(runner.run(injected))
-        tried += 1
-        if ev["late"] <= base["late"] and ev["fees"] <= base["fees"] + 0.01 and ev["lowest"] >= floor - 0.01:
-            out.update(earliest=d.isoformat(), lowest_after=_r(ev["lowest"]),
-                       lowest_after_date=ev["lowest_date"].isoformat())
-            break
-        if tried >= 8:
-            break
+    if amount > 0:
+        for c in can_spend:
+            if c["amount"] >= amount - 0.005:
+                out.update(earliest=c["date"], lowest_after=_r(c["amount"] - amount + held["cushion"]))
+                break
     return out

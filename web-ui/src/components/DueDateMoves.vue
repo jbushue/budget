@@ -5,7 +5,7 @@
       moves that would help most, tested against your real paydays<template v-if="r?.payday_days?.length"> (the
       {{ r.payday_days.map(ordinal).join(', ') }})</template>.
     </p>
-    <div v-if="loading" class="loading">Trying each bill on the days after your paydays...</div>
+    <div v-if="loading && !result" class="loading">Trying each bill on the days after your paydays...</div>
     <div v-else-if="error" class="callout danger">{{ error.message }}</div>
     <div v-else-if="r && !r.suggestions.length" class="empty-state" style="padding:1rem">
       <p>Your due dates already line up well with your paydays. Nothing to change.</p>

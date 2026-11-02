@@ -135,7 +135,7 @@ class TestCards:
         card = reload().banks[0].credit_accounts["Visa"]
         promo = card.active_promos[0]
         assert (promo.promo_name, promo.months_interest_free, promo.purchase_limit) == ("Balance transfer", 18, 3000)
-        assert promo.start_date.isoformat() == "2026-01-01" and promo.end_date.isoformat() == "2027-06-25"
+        assert promo.start_date.isoformat() == "2026-01-01" and promo.end_date.isoformat() == "2027-07-01"  # 18 calendar months
         assert card.promo_balance == {"Balance transfer": 700}
         bad = api('mutation { updatePromoOffer(bankName: "B", accountName: "Visa", promoName: "Balance transfer", '
                   'startDate: "2026-05-01", endDate: "2026-04-01") { success message } }')["updatePromoOffer"]

@@ -91,7 +91,11 @@ def _coerce(key: str, value):
     if isinstance(default, int):
         return int(float(value))
     if isinstance(default, float):
-        return float(value)
+        import math
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(f"{key} must be a number")
+        return number
     if isinstance(default, list):
         if not isinstance(value, list):
             raise ValueError(f"{key} must be a list")

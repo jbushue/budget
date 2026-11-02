@@ -428,6 +428,14 @@ class FinanceManager:
         start_date = start_date or date.today()
         end_date = end_date or date.today() + timedelta(days=90)
 
+        if optimized and payment_strategy is None:
+            # The app's one year-long plan (models/plan.py), cut to this window,
+            # so every page agrees about every day. Read-only: copy before changing.
+            from models.plan import plan_runs, slice_result, PLAN_DAYS
+            days = (end_date - start_date).days
+            runs = plan_runs(self, start=start_date, days=max(days, PLAN_DAYS))
+            return slice_result(runs.optimized, end_date, self.banks)
+
         # Deep-copy all state as a single unit so AccountLinkedBill references
         # to their linked accounts stay connected within the copied graph.
         copied_banks, copied_income, copied_bills, copied_groups = deepcopy(
@@ -444,7 +452,7 @@ class FinanceManager:
                 optimization_goal=goal,
                 target_credit_account=target,
                 min_hold_days=self.min_hold_days,
-                discretionary_buffer=max(300.0, self.cushion),
+                discretionary_buffer=self.cushion,
             )
             return result
         else:
@@ -589,6 +597,7 @@ class FinanceManager:
         """Invalidate the cached plan (call after data changes)."""
         self._cached_plan = None
         self._cached_plan_end = None
+        self.__dict__.pop("_plan_runs", None)
 
     def optimize_payments(
         self,
@@ -630,7 +639,7 @@ class FinanceManager:
 
         return optimizer.optimize_payment_schedule(
             start_date, end_date, goal, target,
-            discretionary_buffer=max(300.0, self.cushion), min_hold_days=self.min_hold_days,
+            discretionary_buffer=self.cushion, min_hold_days=self.min_hold_days,
         )
 
     def get_multiple_strategies(
@@ -880,8 +889,10 @@ class FinanceManager:
                     last_paid = history[-1].get('date', today)
                     if isinstance(last_paid, str):
                         last_paid = date.fromisoformat(last_paid)
-                    next_after_payment = bill.get_next_due_date(last_paid)
-                    if next_after_payment <= today:
+                    # The payment covers the first due date on or after the day it was
+                    # made; once that date has passed, the next one is owed
+                    covered = bill.get_next_due_date(last_paid - timedelta(days=1))
+                    if covered < today:
                         bill.is_paid_this_period = False
                         reset_count += 1
             except Exception:
@@ -961,18 +972,14 @@ class FinanceManager:
         - negative value (e.g. -10): percentage raise (10% raise)
         - positive value: sets income to that exact amount
         """
+        from models.plan import plan_runs, slice_result, floor, PLAN_DAYS
+        days = max(7, min(int(days), PLAN_DAYS))
         end = date.today() + timedelta(days=days)
-        
-        # Run baseline and scenario in parallel-ish fashion using separate copies
-        # Deepcopy as a unit so linked bill references stay connected
-        baseline_banks, baseline_income, baseline_bills, baseline_groups = deepcopy(
-            (self.banks, self.income_sources, self.bills, self.bill_groups)
-        )
-        baseline_sim = TimelineSimulator(
-            baseline_banks, baseline_income,
-            baseline_bills, baseline_groups, **self.sim_options()
-        )
-        baseline = baseline_sim.project_balances(date.today(), end)
+
+        # Both sides follow the plan the app follows (same goal, same year-long
+        # window), so "your current plan" here is the plan on every other page
+        runs = plan_runs(self)
+        baseline = slice_result(runs.optimized, end, self.banks)
         
         # Create modified copies for scenario
         mod_banks, mod_income, mod_bills, mod_bill_groups = deepcopy(
@@ -1070,7 +1077,10 @@ class FinanceManager:
         if 'adjust_income' in modifications:
             for adj in modifications['adjust_income']:
                 source_name = adj.get('source_name', '')
-                new_amount = adj.get('new_amount', 0)
+                try:
+                    new_amount = float(adj.get('new_amount') or 0)
+                except (TypeError, ValueError):
+                    raise ValueError(f"New amount for {source_name or 'income'} must be a number")
                 
                 for inc in mod_income:
                     if inc.source_name == source_name:
@@ -1092,14 +1102,29 @@ class FinanceManager:
                     if bank.name == ep.get('bank_name'):
                         acc_name = ep.get('account_name')
                         if acc_name in bank.credit_accounts:
+                            amount = min(float(ep.get('amount') or 0), bank.credit_accounts[acc_name].balance)
+                            if amount <= 0:
+                                continue
+                            # The money comes out of checking (it isn't free)
+                            source = next(((b, a) for b in mod_banks for a in b.get_all_accounts()
+                                           if a.account_type.value == "checking"), None)
+                            if source:
+                                source[1].balance -= amount  # may go negative: the scenario shows it
                             bank.credit_accounts[acc_name].make_payment(
-                                ep.get('amount', 0),
+                                amount,
                                 transaction_date=date.today()
                             )
         
-        # Run scenario simulation WITH bill groups
-        scenario_sim = TimelineSimulator(mod_banks, mod_income, mod_bills, mod_bill_groups, **self.sim_options())
-        scenario = scenario_sim.project_balances(date.today(), end)
+        # The same plan, re-made for the changed situation
+        goal, target = runs.goal, runs.target
+        if goal == "payoff_credit_account" and not any(
+                target in b.credit_accounts and b.credit_accounts[target].balance > 0 for b in mod_banks):
+            goal, target = "maximize_discretionary", None
+        optimizer = PaymentOptimizer(mod_banks, mod_income, mod_bills, mod_bill_groups, **self.sim_options())
+        scenario_full, _ = optimizer.run_optimized_simulation(
+            runs.start, runs.end, goal, target, discretionary_buffer=floor(self),
+            min_hold_days=self.min_hold_days)
+        scenario = slice_result(scenario_full, end, mod_banks)
         
         # Calculate deltas
         baseline_final = sum(baseline['final_balances'].values())

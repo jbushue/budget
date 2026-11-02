@@ -106,3 +106,19 @@ export function todayISO(d: Date = new Date()): string {
 export function billName(name: string | null | undefined): string {
   return (name ?? '').replace(/^\[Auto\]\s*/, '')
 }
+
+/**
+ * A number from a `v-model.number` input: an emptied field gives '' (and a
+ * bad entry NaN), which the server rejects for number fields. Those become null.
+ */
+export function num(v: unknown): number | null {
+  if (v === '' || v == null) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** "Bank:Account" → [bank, account], splitting on the first colon only (names may contain ':'). */
+export function splitKey(key: string): [string, string] {
+  const i = key.indexOf(':')
+  return i < 0 ? [key, ''] : [key.slice(0, i), key.slice(i + 1)]
+}

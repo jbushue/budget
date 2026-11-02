@@ -8,7 +8,7 @@
       <button class="btn btn-primary" @click="openCreate()"><Icon name="plus" :size="16" /> Add income</button>
     </div>
 
-    <div v-if="loading" class="loading">Loading income sources...</div>
+    <div v-if="loading && !result" class="loading">Loading income sources...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else>
@@ -184,7 +184,8 @@ import Icon from '../components/Icon.vue'
 import { ref, computed } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import { GET_ALL_INCOME, GET_ALL_BANKS, CREATE_INCOME_SOURCE, UPDATE_INCOME, DELETE_INCOME } from '../graphql/queries'
-import { currency, fmtDate, frequencyLabel } from '../utils/format'
+import { currency, fmtDate, frequencyLabel, num } from '../utils/format'
+import { takesPaycheck } from '../utils/accountKinds'
 import { runMutation } from '../utils/mutation'
 import type { IncomeItem, Bank, MutationPayload } from '../types'
 import { ask, notify } from '../utils/dialog'
@@ -196,13 +197,13 @@ const incomes = computed(() => result.value?.allIncome ?? [])
 const { result: banksResult } = useQuery<{ allBanks: Bank[] }>(GET_ALL_BANKS)
 const banks = computed(() => banksResult.value?.allBanks ?? [])
 
-/** Checking/savings accounts for a given bank name (income can only be deposited there) */
+/** Accounts at a bank a paycheck can be split into (checking, savings, HSA, 401(k), apps, ...) */
 function depositAccountsForBank(bankName: string): { name: string; type: string }[] {
   if (!bankName) return []
   const bank = banks.value.find(b => b.name === bankName)
   if (!bank) return []
   return bank.bankAccounts
-    .filter(acc => acc.accountType === 'checking' || acc.accountType === 'savings')
+    .filter(acc => takesPaycheck(acc.accountType))
     .map(acc => ({ name: acc.accountName, type: acc.accountType }))
 }
 
@@ -269,15 +270,22 @@ async function saveIncome() {
   const startDate = !byDay && f.startDate ? f.startDate : null
   // Day-of-month schedules use payDates; anchored schedules keep a day-of-month
   // derived from the first pay date (if given) for backwards compatibility.
+  const d1 = num(f.payDate1), d2 = num(f.payDate2), amount = num(f.amount)
+  const badDay = (d: number | null) => d == null || d < 1 || d > 31 || !Number.isInteger(d)
+  if (amount == null || amount < 0) { notify('Enter the amount', 'error'); return }
+  if (byDay && (badDay(d1) || (f.frequency === 'semimonthly' && badDay(d2)))) {
+    notify('Pay days must be 1-31', 'error')
+    return
+  }
   const payDates = f.frequency === 'semimonthly'
-    ? [f.payDate1, f.payDate2]
+    ? [d1, d2]
     : byDay
-      ? [f.payDate1]
-      : [startDate ? Number(startDate.slice(8, 10)) : f.payDate1]
+      ? [d1]
+      : [startDate ? Number(startDate.slice(8, 10)) : (badDay(d1) ? 1 : d1)]
 
   const vars = {
     sourceName: f.sourceName,
-    amount: f.amount,
+    amount,
     frequency: f.frequency,
     payDates,
     startDate,

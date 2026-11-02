@@ -1,25 +1,18 @@
 <template>
   <div>
-    <div class="view-header">
-      <div class="view-title">
-        <h2>Debt payoff</h2>
-        <p class="view-sub">Compare payoff strategies and see when you'll be debt-free.</p>
-      </div>
+    <div class="payoff-head">
+      <p class="muted payoff-note">
+        Until every card and loan is paid off (mortgages aren't included). A month-by-month estimate at your
+        current minimums plus the extra below. The plan above is worked out day by day for the next year.
+      </p>
+      <label class="payoff-slider">
+        <span>Extra each month</span>
+        <input v-model.number="extraMonthly" type="range" min="0" max="2000" step="25" />
+        <strong>{{ currency(extraMonthly) }}</strong>
+      </label>
     </div>
 
-    <div class="card" style="margin-bottom:1.5rem">
-      <div class="form-group" style="max-width:300px">
-        <label>Extra monthly payment</label>
-        <div style="display:flex;gap:0.5rem;align-items:center">
-          <input v-model.number="extraMonthly" type="range" min="0" max="2000" step="25" style="flex:1" />
-          <span style="font-weight:600;min-width:70px;text-align:right">{{ currency(extraMonthly) }}</span>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="error" class="card" style="color:var(--danger)">
-      Could not calculate payoff strategies: {{ error.message }}
-    </div>
+    <div v-if="error" class="callout danger">Could not calculate payoff strategies: {{ error.message }}</div>
     <div v-else-if="loading && !comparison" class="loading">Calculating payoff strategies...</div>
     <div v-else-if="debtFree" class="empty-state">
       <div class="icon"><Icon name="party" :size="26" /></div>
@@ -27,54 +20,48 @@
     </div>
 
     <template v-else-if="comparison">
-      <!-- Strategy comparison cards -->
-      <div class="grid grid-3" style="margin-bottom:1.5rem">
-        <div class="card stat-card" v-for="s in strategies" :key="s.key"
+      <div class="grid grid-3" style="margin-bottom:1rem">
+        <div class="stat-card payoff-card" v-for="s in strategies" :key="s.key"
              :style="s.key === 'minimum' ? '' : 'border-top:3px solid ' + s.color">
           <div style="font-weight:700;margin-bottom:0.5rem">{{ s.label }}</div>
           <template v-if="s.data.paysOff === false">
             <div class="stat-value negative">Never</div>
             <div style="margin-top:0.5rem;font-size:0.8rem;color:var(--danger);font-weight:600">
-              Never pays off at current payments &mdash; {{ currency(s.data.remainingBalance ?? 0) }} remaining after {{ s.data.monthsToPayoff }} months
+              Never pays off at these payments &mdash; {{ currency(s.data.remainingBalance ?? 0) }} left after {{ s.data.monthsToPayoff }} months
             </div>
           </template>
           <template v-else>
-            <div class="stat-value" :style="`color:${s.color}`">{{ s.data.monthsToPayoff }} mo</div>
-            <div class="stat-label">{{ yearsMonths(s.data.monthsToPayoff) }}</div>
+            <div class="stat-value" :style="`color:${s.color}`">{{ yearsMonths(s.data.monthsToPayoff) }}</div>
+            <div class="stat-label">to debt-free</div>
           </template>
           <div style="margin-top:0.75rem;font-size:0.85rem">
-            <div>Total Interest: <strong class="negative">{{ currency(s.data.totalInterestPaid) }}</strong></div>
-            <div>Total Paid: <strong>{{ currency(s.data.totalPaid) }}</strong></div>
+            <div>Interest: <strong class="negative">{{ currency(s.data.totalInterestPaid) }}</strong></div>
+            <div>Total paid: <strong>{{ currency(s.data.totalPaid) }}</strong></div>
           </div>
           <div v-if="s.key !== 'minimum' && s.data.totalInterestPaid < comparison.minimum.totalInterestPaid"
                style="margin-top:0.5rem;font-size:0.8rem;color:var(--success);font-weight:600">
-            Saves {{ currency(comparison.minimum.totalInterestPaid - s.data.totalInterestPaid) }} in interest!
+            Saves {{ currency(comparison.minimum.totalInterestPaid - s.data.totalInterestPaid) }} in interest
           </div>
-          <div v-if="s.data.payoffOrder && s.data.payoffOrder.length" style="margin-top:0.75rem;font-size:0.75rem;color:var(--text-muted)">
-            <div style="font-weight:600;margin-bottom:0.25rem">Payoff Order:</div>
-            <ol style="margin:0;padding-left:1.25rem">
+          <details v-if="s.data.payoffOrder && s.data.payoffOrder.length" class="payoff-order">
+            <summary>Payoff order</summary>
+            <ol>
               <li v-for="(name, i) in s.data.payoffOrder" :key="i">
                 <span v-if="name.startsWith('Group:')" style="color:var(--primary)">{{ name.replace('Group:', '') }}</span>
                 <span v-else>{{ name.replace(':', ' / ') }}</span>
               </li>
             </ol>
-          </div>
+          </details>
         </div>
       </div>
-
-      <!-- Payoff chart -->
-      <div class="card">
-        <div class="card-header"><span class="card-title">Remaining debt over time</span></div>
-        <div style="height:350px">
-          <Line :data="chartData" :options="chartOptions" />
-        </div>
+      <div style="height:300px">
+        <Line :data="chartData" :options="chartOptions" />
       </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import Icon from '../components/Icon.vue'
+import Icon from './Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
@@ -118,8 +105,8 @@ const strategies = computed(() => {
   if (!comparison.value) return []
   return [
     { key: 'minimum', label: 'Minimum only', color: 'var(--text-muted)', data: comparison.value.minimum },
-    { key: 'avalanche', label: 'Avalanche', color: 'var(--primary)', data: comparison.value.avalanche },
-    { key: 'snowball', label: 'Snowball', color: 'var(--success)', data: comparison.value.snowball },
+    { key: 'avalanche', label: 'Highest interest first', color: 'var(--primary)', data: comparison.value.avalanche },
+    { key: 'snowball', label: 'Smallest balance first', color: 'var(--success)', data: comparison.value.snowball },
   ]
 })
 
@@ -210,3 +197,15 @@ const chartOptions = {
 }
 </script>
 
+
+<style scoped>
+.payoff-head { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.payoff-note { font-size: 0.8rem; margin: 0; flex: 1 1 320px; }
+.payoff-slider { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; flex: 0 1 360px; }
+.payoff-slider input { flex: 1; }
+.payoff-slider strong { min-width: 64px; text-align: right; }
+.payoff-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; text-align: left; }
+.payoff-order { margin-top: 0.6rem; font-size: 0.75rem; color: var(--text-muted); }
+.payoff-order summary { cursor: pointer; font-weight: 600; }
+.payoff-order ol { margin: 0.25rem 0 0; padding-left: 1.25rem; }
+</style>

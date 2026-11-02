@@ -120,12 +120,16 @@ def summarize_simulation(result: dict, banks) -> dict:
             + sum(result["mortgage_final_balances"].values())
             + sum(result["heloc_final_balances"].values()))
 
+    # Lowest total in checking (all checking accounts together), the same
+    # measure Safe to spend and the optimizer tools use
     keys = checking_keys(banks)
     lowest, lowest_date, lowest_account = None, None, None
     for snap in result["snapshots"]:
-        for key, bal in snap["balances"].items():
-            if key in keys and (lowest is None or bal < lowest):
-                lowest, lowest_date, lowest_account = bal, snap["date"], key
+        total = sum(bal for key, bal in snap["balances"].items() if key in keys)
+        if keys and (lowest is None or total < lowest):
+            lowest, lowest_date = total, snap["date"]
+    if len(keys) == 1:
+        lowest_account = next(iter(keys))
 
     charged = earned = fees = spending = 0.0
     paid_count = 0
@@ -252,23 +256,20 @@ class PaymentInsightsAnalyzer:
         self.goal = goal or "maximize_discretionary"
         self.target_account = target_account or None
         self.start = start_date or date.today()
-        self.days = max(7, int(days))
+        self.days = max(7, min(int(days), 365))
         self.end = self.start + timedelta(days=self.days)
+        # "Thin" checking: below your cushion (or $100 if you keep none)
+        self.low_cushion = float(getattr(manager, "cushion", 0.0) or 0.0) or LOW_CUSHION
 
     # ── public ────────────────────────────────────────────────────────
 
     def analyze(self) -> dict:
         m = self.manager
-        banks, income, bills, groups = deepcopy((m.banks, m.income_sources, m.bills, m.bill_groups))
-        baseline = TimelineSimulator(banks, income, bills, groups, **m.sim_options()).project_balances(
-            self.start, self.end)
-
-        banks2, income2, bills2, groups2 = deepcopy((m.banks, m.income_sources, m.bills, m.bill_groups))
-        optimizer = PaymentOptimizer(banks2, income2, bills2, groups2, **m.sim_options())
-        optimized, plan = optimizer.run_optimized_simulation(
-            self.start, self.end, self.goal, self.target_account,
-            discretionary_buffer=max(300.0, getattr(m, "cushion", 0.0)),
-            min_hold_days=getattr(m, "min_hold_days", 7))
+        # The first `days` of the app's year-long plan (see models/plan.py),
+        # so this agrees with every other page
+        from models.plan import runs_for
+        self.runs, baseline, optimized = runs_for(m, self.days, self.goal, self.target_account, self.start)
+        plan = self.runs.plan
 
         base_sum = summarize_simulation(baseline, m.banks)
         opt_sum = summarize_simulation(optimized, m.banks)
@@ -449,7 +450,7 @@ class PaymentInsightsAnalyzer:
                              f"{' (payday)' if early == payday else ''} to save about {_money(savings)} "
                              f"in interest" + (f"; {account} still keeps {_money(cushion)}." if cushion is not None
                                                else "."))
-            if cushion is not None and cushion < LOW_CUSHION:
+            if cushion is not None and cushion < self.low_cushion:
                 row["advice"] += " That's a thin cushion — only do it if nothing unexpected is coming."
         elif savings >= MIN_SAVINGS and not safe:
             row["advice"] = (f"Paying early would save about {_money(savings)}, but {account} would run short "
@@ -458,7 +459,7 @@ class PaymentInsightsAnalyzer:
             row["advice"] = f"Pay by {_day(due)}. Paying early saves only pennies here."
         else:
             msg = f"Pay on the due date ({_day(due)}) — paying early doesn't save money"
-            if early is not None and cushion is not None and cushion < LOW_CUSHION:
+            if early is not None and cushion is not None and cushion < self.low_cushion:
                 msg += f" and would leave {account} at {_money(cushion)}{' overdrawn' if cushion < 0 else ''}"
             row["advice"] = msg + "."
         if payday and payday < due:
@@ -616,10 +617,14 @@ class PaymentInsightsAnalyzer:
 
     def _promos(self, plan) -> list[dict]:
         out = []
-        snaps = self.optimized["snapshots"] if getattr(self, "optimized", None) else []
+        # Judged on the whole year-long plan, whatever window is shown
+        runs = getattr(self, "runs", None)
+        snaps = runs.optimized["snapshots"] if runs else (
+            self.optimized["snapshots"] if getattr(self, "optimized", None) else [])
+        plan_end = runs.end if runs else self.end
         for p in plan.promo_priorities:
             key = f"{p.bank_name}:{p.credit_account_name}:{p.promo_name}"
-            in_window = p.end_date <= self.end
+            in_window = p.end_date <= plan_end
             months_free, card = 0, None
             for b in self.manager.banks:
                 card = b.credit_accounts.get(p.credit_account_name) if b.name == p.bank_name else None
@@ -641,7 +646,7 @@ class PaymentInsightsAnalyzer:
                 pace = p.balance_owed
                 if card is not None:
                     total = card.payments_left_before(p.end_date, self.start)
-                    remaining = card.payments_left_before(p.end_date, self.end + timedelta(days=1))
+                    remaining = card.payments_left_before(p.end_date, plan_end + timedelta(days=1))
                     pace = p.balance_owed * remaining / max(1, total)
                 shortfall = max(0.0, left - pace - 1.0)
             r = p.interest_rate_after / 1200
@@ -734,11 +739,11 @@ class PaymentInsightsAnalyzer:
                         + " ".join(row["fixes"][:2]),
                         impact=-row["shortfall"], when=row["due_date"])
 
-        if opt["lowest_checking"] is not None and opt["lowest_checking"] < LOW_CUSHION \
+        if opt["lowest_checking"] is not None and opt["lowest_checking"] < self.low_cushion \
                 and not opt["late_payments"]:
             low_date = date.fromisoformat(opt["lowest_checking_date"])
             add("warning", "cushion", f"Checking gets thin around {_day(low_date)}",
-                f"{opt['lowest_checking_account']} drops to {_money(opt['lowest_checking'])}"
+                f"{opt['lowest_checking_account'] or 'Checking'} drops to {_money(opt['lowest_checking'])}"
                 f"{' (overdrawn)' if opt['lowest_checking'] < 0 else ''}. Hold off on extra spending until the "
                 "next paycheck, or keep a little more in checking.", when=opt["lowest_checking_date"])
 

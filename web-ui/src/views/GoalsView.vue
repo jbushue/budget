@@ -107,7 +107,7 @@ import { useQuery, useMutation } from '@vue/apollo-composable'
 import { GET_ALL_BANKS } from '../graphql/queries'
 import { GET_SAVINGS_GOALS, SAVE_SAVINGS_GOAL, CONTRIBUTE_TO_GOAL, DELETE_SAVINGS_GOAL, CREATE_SINKING_FUND } from '../graphql/goals'
 import { runMutation } from '../utils/mutation'
-import { currency, fmtDate } from '../utils/format'
+import { currency, fmtDate, splitKey } from '../utils/format'
 import type { Bank, MutationPayload, SavingsGoal, SinkingFundSuggestion } from '../types'
 import { ask, askValue, notify } from '../utils/dialog'
 
@@ -139,7 +139,7 @@ function openGoal(g?: SavingsGoal) {
 onRouteAction({ add: () => openGoal() })
 
 async function save() {
-  const [bankName, accountName] = form.account ? form.account.split(':') : ['', '']
+  const [bankName, accountName] = form.account ? splitKey(form.account) : ['', '']
   const res = await runMutation(() => saveM({ variables: {
     id: form.id, name: form.name, targetAmount: form.targetAmount, targetDate: form.targetDate || null,
     bankName, accountName, savedAmount: form.savedAmount || 0,

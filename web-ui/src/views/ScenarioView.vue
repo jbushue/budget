@@ -3,8 +3,9 @@
     <div class="view-header">
       <div class="view-title">
         <h2>What-if</h2>
-        <p class="view-sub">Try a change before you make it and see how it plays out.</p>
+        <p class="view-sub">Try a change before you make it. Your plan is re-made for the change and compared with the plan you have now.</p>
       </div>
+      <PeriodSelect />
     </div>
 
     <div class="grid grid-2">
@@ -37,20 +38,6 @@
           </div>
         </div>
 
-        <!-- Projection days -->
-        <div style="margin-bottom:1rem">
-          <div class="form-group" style="margin:0;max-width:160px">
-            <label style="font-size:0.7rem">Projection period</label>
-            <select v-model.number="scenarioDays">
-              <option :value="30">30 days</option>
-              <option :value="60">60 days</option>
-              <option :value="90">90 days</option>
-              <option :value="180">6 months</option>
-              <option :value="365">1 year</option>
-            </select>
-          </div>
-        </div>
-
         <!-- Add new bill -->
         <div style="border:1px solid var(--border);border-radius:var(--radius);padding:0.75rem;margin-bottom:1rem">
           <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.5rem">Add Bill</div>
@@ -67,7 +54,7 @@
               <label style="font-size:0.7rem">Due day</label>
               <input v-model.number="newBill.dueDate" type="number" min="1" max="31" />
             </div>
-            <button class="btn btn-primary btn-sm" @click="addBill" :disabled="!newBill.name || !newBill.amount">+</button>
+            <button class="btn btn-primary btn-sm" @click="addBill" :disabled="!newBill.name || !num(newBill.amount)">+</button>
           </div>
         </div>
 
@@ -157,7 +144,7 @@
           Scenario failed: {{ scenarioError }}
         </div>
         <div v-if="scenarioResult" class="card" style="margin-bottom:1rem">
-          <div class="card-header"><span class="card-title">Scenario results ({{ scenarioDays }}-day projection)</span></div>
+          <div class="card-header"><span class="card-title">Scenario results · {{ periodLabel }}</span></div>
           <!-- Plain-language verdict -->
           <div v-if="scenarioResult.changes?.length" :style="`margin:0.5rem 0 1rem;padding:0.75rem 1rem;border-radius:var(--radius);border-left:4px solid ${verdictColor};background:var(--surface-alt)`">
             <div style="font-weight:600;margin-bottom:0.35rem">{{ verdictTitle }}</div>
@@ -170,7 +157,7 @@
               <thead>
                 <tr>
                   <th></th>
-                  <th style="text-align:right">Current plan</th>
+                  <th style="text-align:right">Your plan now</th>
                   <th style="text-align:right">Scenario</th>
                   <th style="text-align:right">Change</th>
                 </tr>
@@ -194,7 +181,7 @@
         </div>
 
         <div v-if="scenarioResult" class="card">
-          <div class="card-header"><span class="card-title">Baseline vs scenario</span></div>
+          <div class="card-header"><span class="card-title">Your plan now vs. with the change</span></div>
           <div style="height:350px">
             <Line :data="scenarioChartData" :options="scenarioChartOptions" />
           </div>
@@ -214,6 +201,8 @@
 
 <script setup lang="ts">
 import Icon from '../components/Icon.vue'
+import PeriodSelect from '../components/PeriodSelect.vue'
+import { PERIODS, planDays } from '../utils/plan'
 import { ref, reactive, computed } from 'vue'
 import { useQuery } from '@vue/apollo-composable'
 import { Line } from 'vue-chartjs'
@@ -228,13 +217,16 @@ import {
   Legend,
 } from 'chart.js'
 import { GET_WHAT_IF_SCENARIO, GET_ALL_BILLS, GET_ALL_INCOME, GET_ALL_BANKS, GET_ALL_BILL_GROUPS } from '../graphql/queries'
-import { currency, fmtDateShort, billName } from '../utils/format'
+import { currency, fmtDateShort, billName, num } from '../utils/format'
+import { notify } from '../utils/dialog'
 import { apolloClient } from '../graphql/client'
 import type { BillItem, IncomeItem, Bank, BillGroup, WhatIfResult, OutcomeSummary } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
-const scenarioDays = ref(90)
+// Shared with Timeline and Plan
+const scenarioDays = planDays
+const periodLabel = computed(() => PERIODS.find(p => p.days === scenarioDays.value)?.label ?? `${scenarioDays.value} days`)
 
 // Fetch existing bills, income, banks, and groups for dropdowns
 const { result: billsResult } = useQuery<{ allBills: BillItem[] }>(GET_ALL_BILLS)
@@ -367,10 +359,14 @@ const hasModifications = computed(() =>
 )
 
 function addBill() {
+  // Never send '' (an emptied number box) to the server
+  const amount = num(newBill.amount), day = num(newBill.dueDate)
+  if (amount == null || amount <= 0) { notify('Enter the bill amount', 'error'); return }
+  if (day == null || day < 1 || day > 31 || !Number.isInteger(day)) { notify('The due day must be 1-31', 'error'); return }
   modifications.add_bills.push({
     bill_name: newBill.name,
-    amount: newBill.amount,
-    due_date: newBill.dueDate,
+    amount,
+    due_date: day,
     frequency: 'monthly',
   })
   newBill.name = ''
@@ -393,9 +389,12 @@ function onIncomeSelected() {
 }
 
 function adjustIncome() {
+  // A negative amount would be read as a % raise, and '' isn't a number
+  const amount = num(incAdj.amount)
+  if (amount == null || amount < 0) { notify('Enter the new amount ($0 or more)', 'error'); return }
   modifications.adjust_income.push({
     source_name: incAdj.name,
-    new_amount: incAdj.amount,
+    new_amount: amount,
   })
   incAdj.name = ''
   incAdj.amount = 0
@@ -574,7 +573,7 @@ const scenarioChartData = computed(() => {
     labels: bSampled.map((s: any) => s.date),
     datasets: [
       {
-        label: 'Baseline',
+        label: 'Your plan now',
         data: bSampled.map((s: any) => {
           const bals = typeof s.balances === 'string' ? JSON.parse(s.balances) : s.balances
           return Object.values(bals as Record<string, number>).reduce((a, b) => a + b, 0)
@@ -585,7 +584,7 @@ const scenarioChartData = computed(() => {
         borderWidth: 2,
       },
       {
-        label: 'Scenario',
+        label: 'With the change',
         data: sSampled.map((s: any) => {
           const bals = typeof s.balances === 'string' ? JSON.parse(s.balances) : s.balances
           return Object.values(bals as Record<string, number>).reduce((a, b) => a + b, 0)

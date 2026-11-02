@@ -11,7 +11,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading bills...</div>
+    <div v-if="loading && !result" class="loading">Loading bills...</div>
     <div v-else-if="error" class="card" style="color:var(--danger)">{{ error.message }}</div>
 
     <template v-else>
@@ -186,6 +186,7 @@
       </div>
 
       <RecurringSuggestions style="margin-top:1.5rem" @added="refetch()" />
+      <RecentPayments ref="recentRef" style="margin-top:1.5rem" />
 
     </template>
 
@@ -307,7 +308,7 @@
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markPaid">Mark paid</button>
+          <button class="btn btn-success" :disabled="paying || num(payForm.amountPaid) == null" @click="markPaid">{{ paying ? 'Saving...' : 'Mark paid' }}</button>
         </div>
       </div>
     </div>
@@ -376,7 +377,7 @@
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showCreditPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markCreditPaid">Mark paid</button>
+          <button class="btn btn-success" :disabled="paying || num(creditPayForm.amountPaid) == null" @click="markCreditPaid">{{ paying ? 'Saving...' : 'Mark paid' }}</button>
         </div>
       </div>
     </div>
@@ -412,7 +413,7 @@
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showGroupPayModal = false">Cancel</button>
-          <button class="btn btn-success" @click="markGroupPaid" :disabled="!groupPayForm.amountPaid || groupPayForm.amountPaid <= 0">Mark paid</button>
+          <button class="btn btn-success" @click="markGroupPaid" :disabled="paying || !(num(groupPayForm.amountPaid)! > 0)">{{ paying ? 'Saving...' : 'Mark paid' }}</button>
         </div>
       </div>
     </div>
@@ -435,9 +436,10 @@ import {
   AUTO_RESET_PERIODS,
   MARK_BILL_GROUP_PAID,
 } from '../graphql/queries'
-import { currency, pct, fmtDate, frequencyLabel, billTypeLabel, todayISO, billName } from '../utils/format'
+import { currency, pct, fmtDate, frequencyLabel, billTypeLabel, todayISO, billName, num } from '../utils/format'
 import { runMutation } from '../utils/mutation'
 import RecurringSuggestions from '../components/RecurringSuggestions.vue'
+import RecentPayments from '../components/RecentPayments.vue'
 import type { BillItem, Bank, CreditPaymentDue, BillGroup, MortgageAccount, HELOCAccount, MutationPayload } from '../types'
 import { ask, notify } from '../utils/dialog'
 
@@ -465,6 +467,9 @@ interface UnifiedRow {
 
 // ── Data Queries ──
 const { result, loading, error, refetch } = useQuery<{ allBills: BillItem[] }>(GET_ALL_BILLS)
+// Bills reload after every change (marking one paid included): keep recent payments in step
+const recentRef = ref<InstanceType<typeof RecentPayments> | null>(null)
+watch(result, () => recentRef.value?.refetch())
 const bills = computed(() => result.value?.allBills ?? [])
 
 // Split bills into regular and linked categories
@@ -757,7 +762,8 @@ onRouteAction({ add: () => openCreate() })
 function openEdit(b: BillItem) {
   editMode.value = true
   form.value = {
-    billName: b.billName, amount: b.amount, dueDate: b.dueDate, frequency: b.frequency,
+    billName: b.billName, amount: b.billType === 'floating' ? (b.estimatedAmount ?? b.amount) : b.amount,
+    dueDate: b.dueDate, frequency: b.frequency,
     dueMonth: b.dueMonth ?? null,
     billType: b.billType, minAmount: b.minAmount ?? null, maxAmount: b.maxAmount ?? null,
     startDate: b.startDate || '',
@@ -774,12 +780,17 @@ const { mutate: doDelete } = useMutation<{ deleteBill: MutationPayload }>(DELETE
 async function saveBill() {
   const f = form.value
   const isFloating = f.billType === 'floating'
-  if (isFloating && f.minAmount != null && f.maxAmount != null && f.minAmount > f.maxAmount) {
+  if (isFloating && num(f.minAmount) != null && num(f.maxAmount) != null && num(f.minAmount)! > num(f.maxAmount)!) {
     notify('The minimum amount can’t be more than the maximum', 'error')
     return
   }
+  const amount = num(f.amount), dueDate = num(f.dueDate)
+  if (amount == null || amount < 0) { notify('Enter the amount', 'error'); return }
+  if (dueDate == null || dueDate < 1 || dueDate > 31) { notify('The due day must be 1-31', 'error'); return }
   const yearlyish = f.frequency === 'yearly' || f.frequency === 'semi_annual'
-  const startDate = usesStartDate(f.frequency) ? (f.startDate || null) : null
+  // Editing: '' clears a start date and month 0 clears the due month (null means "leave it")
+  const startDate = usesStartDate(f.frequency) ? (f.startDate || (editMode.value ? '' : null)) : null
+  const dueMonth = yearlyish ? (f.dueMonth ?? (editMode.value ? 0 : null)) : null
   // Blank late fee = use the default from Settings
   const lateFee = f.lateFee === '' || f.lateFee == null ? null : Number(f.lateFee)
   let ok
@@ -787,19 +798,19 @@ async function saveBill() {
     // An empty string clears the preferred source on the backend
     const bank = f.preferredSourceBank || ''
     ok = await runMutation(() => doUpdate({ variables: {
-      billName: f.billName, amount: f.amount, dueDate: f.dueDate,
-      frequency: f.frequency, dueMonth: yearlyish ? f.dueMonth : null,
+      billName: f.billName, amount, dueDate,
+      frequency: f.frequency, dueMonth,
       startDate,
-      minAmount: isFloating ? f.minAmount : null, maxAmount: isFloating ? f.maxAmount : null,
+      minAmount: isFloating ? num(f.minAmount) : null, maxAmount: isFloating ? num(f.maxAmount) : null,
       preferredSourceBank: bank, preferredSourceAccount: bank ? (f.preferredSourceAccount || '') : '',
       lateFee: lateFee ?? -1,
     }}), 'updateBill', { failMessage: 'Failed to update bill' })
   } else {
     ok = await runMutation(() => doCreate({ variables: {
-      billName: f.billName, amount: f.amount, dueDate: f.dueDate, frequency: f.frequency,
-      dueMonth: yearlyish ? f.dueMonth : null,
+      billName: f.billName, amount, dueDate, frequency: f.frequency,
+      dueMonth,
       billType: f.billType,
-      minAmount: isFloating ? f.minAmount : null, maxAmount: isFloating ? f.maxAmount : null,
+      minAmount: isFloating ? num(f.minAmount) : null, maxAmount: isFloating ? num(f.maxAmount) : null,
       startDate,
       preferredSourceBank: f.preferredSourceBank || null,
       preferredSourceAccount: f.preferredSourceBank ? (f.preferredSourceAccount || null) : null,
@@ -836,12 +847,20 @@ function openMarkPaid(b: BillItem) {
   showPayModal.value = true
 }
 
+// One payment save at a time: a double click used to take the money twice
+const paying = ref(false)
+async function guarded<T>(run: () => Promise<T>): Promise<T | null> {
+  if (paying.value) return null
+  paying.value = true
+  try { return await run() } finally { paying.value = false }
+}
+
 async function markPaid() {
-  const ok = await runMutation(() => doMarkPaid({ variables: {
-    billName: payForm.value.billName, amountPaid: payForm.value.amountPaid,
+  const ok = await guarded(() => runMutation(() => doMarkPaid({ variables: {
+    billName: payForm.value.billName, amountPaid: num(payForm.value.amountPaid),
     sourceBank: payForm.value.sourceBank || null, sourceAccount: payForm.value.sourceAccount || null,
     paymentDate: payForm.value.paymentDate || null,
-  }}), 'markBillPaid', { failMessage: 'Failed to mark bill as paid' })
+  }}), 'markBillPaid', { failMessage: 'Failed to mark bill as paid' }))
   if (!ok) return
   showPayModal.value = false
   refetch()
@@ -881,7 +900,7 @@ async function resetToEstimate(b: BillItem) {
 
 async function setActualAmount() {
   const ok = await runMutation(
-    () => doSetActual({ variables: { billName: actualForm.value.billName, actualAmount: actualForm.value.amount }}),
+    () => doSetActual({ variables: { billName: actualForm.value.billName, actualAmount: num(actualForm.value.amount) }}),
     'setFloatingBillAmount', { failMessage: 'Failed to set actual amount' },
   )
   if (!ok) return
@@ -935,12 +954,12 @@ function openCreditPay(row: UnifiedRow) {
 }
 
 async function markCreditPaid() {
-  const ok = await runMutation(() => doMarkCreditPaid({ variables: {
+  const ok = await guarded(() => runMutation(() => doMarkCreditPaid({ variables: {
     bankName: creditPayForm.value.bankName, accountName: creditPayForm.value.accountName,
-    amountPaid: creditPayForm.value.amountPaid,
+    amountPaid: num(creditPayForm.value.amountPaid),
     sourceBank: creditPayForm.value.sourceBank || null, sourceAccount: creditPayForm.value.sourceAccount || null,
     paymentDate: creditPayForm.value.paymentDate || null,
-  }}), 'markCreditPaymentPaid', { failMessage: 'Failed to mark credit payment as paid' })
+  }}), 'markCreditPaymentPaid', { failMessage: 'Failed to mark credit payment as paid' }))
   if (!ok) return
   showCreditPayModal.value = false
   refetch()
@@ -983,11 +1002,11 @@ function openGroupPay(g: BillGroup) {
 
 async function markGroupPaid() {
   const f = groupPayForm.value
-  const ok = await runMutation(() => doMarkGroupPaid({ variables: {
-    groupName: f.groupName, amountPaid: f.amountPaid,
+  const ok = await guarded(() => runMutation(() => doMarkGroupPaid({ variables: {
+    groupName: f.groupName, amountPaid: num(f.amountPaid),
     sourceBank: f.sourceBank || null, sourceAccount: f.sourceAccount || null,
     paymentDate: f.paymentDate || null,
-  }}), 'markBillGroupPaid', { failMessage: 'Failed to mark group as paid' })
+  }}), 'markBillGroupPaid', { failMessage: 'Failed to mark group as paid' }))
   if (!ok) return
   showGroupPayModal.value = false
   refetchGroups()

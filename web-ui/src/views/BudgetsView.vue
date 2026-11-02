@@ -7,7 +7,7 @@
       </div>
       <div class="month-nav">
         <button class="btn btn-outline btn-sm" aria-label="Previous month" @click="shiftMonth(-1)"><Icon name="chevronLeft" :size="16" /></button>
-        <input v-model="month" type="month" />
+        <input v-model="month" type="month" :max="thisMonth" />
         <button class="btn btn-outline btn-sm" :disabled="isCurrentMonth" aria-label="Next month" @click="shiftMonth(1)"><Icon name="chevronRight" :size="16" /></button>
       </div>
     </div>
@@ -232,7 +232,7 @@
 
 <script setup lang="ts">
 import Icon from '../components/Icon.vue'
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
 import {
   GET_BUDGET_STATUS, GET_CATEGORIES, GET_CATEGORY_RULES, SAVE_CATEGORY, DELETE_CATEGORY,
@@ -253,6 +253,8 @@ function monthKey(d: Date): string {
 
 const thisMonth = monthKey(new Date())
 const month = ref(thisMonth)
+// Clearing the month box (or typing a future month) goes back to this month
+watch(month, m => { if (!/^\d{4}-\d{2}$/.test(m) || m > thisMonth) month.value = thisMonth })
 const isCurrentMonth = computed(() => month.value >= thisMonth)
 const monthLabel = computed(() => {
   const [y, m] = month.value.split('-').map(Number)
