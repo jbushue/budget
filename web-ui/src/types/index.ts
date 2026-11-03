@@ -61,6 +61,9 @@ export interface CreditAccount {
   statementDate: number | null
   status: CreditStatus
   minimumPayment?: number | null
+  /** How the minimum is worked out (null: the default rule) */
+  minRule?: Record<string, number | boolean> | string | null
+  minRuleLabel?: string | null
   promoOffers: PromoOffer[]
 }
 

@@ -108,8 +108,8 @@ class TestCreditCardAccount:
         card.make_purchase(2000.00)
         min_payment = card.calculate_minimum_payment()
 
-        # Should be at least 2% of balance or $25, whichever is greater
-        expected_min = max(2000.00 * 0.02, 25.00)
+        # Default: 1% of the balance plus a month's interest, at least $25
+        expected_min = round(max(2000.00 * 0.01 + 2000.00 * 18.5 / 100 / 12, 25.00), 2)
         assert min_payment == expected_min
 
     def test_credit_available_credit(self):

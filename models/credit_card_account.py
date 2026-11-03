@@ -108,6 +108,8 @@ class CreditAccount:
         self.status = status
 
         self.minimum_payment = 0.0
+        # How the issuer works out the minimum (see models/min_payment.py); None = the default
+        self.min_rule: dict | None = None
         self.transaction_history: list[dict] = []
         self.payment_history: list[dict] = []
 
@@ -240,7 +242,9 @@ class CreditAccount:
         """
         Calculate minimum payment due.
 
-        Standard minimum: 2% of balance or $25, whichever is greater.
+        The issuer's minimum comes from the card's rule (``min_rule``, matched
+        to a statement), else the default: 1% of the balance plus the month's
+        interest, at least $25. See models/min_payment.py.
 
         Promo payoff: For each active promo with a remaining balance, add
         enough monthly payment to fully pay it off before expiration.
@@ -253,15 +257,21 @@ class CreditAccount:
         if self.balance <= 0:
             return 0.0
 
+        from .min_payment import amount, monthly_interest
+
         ref = reference_date or date.today()
+        rule = getattr(self, "min_rule", None)
+        interest = monthly_interest(self.regular_balance, self.interest_rate)  # promo balances accrue none
 
-        # Standard minimum on the regular (non-promo) balance
-        standard_min = max(0.02 * self.regular_balance, 25.0) if self.regular_balance > 0 else 0.0
+        # What the issuer asks for, on the whole balance
+        total = amount(rule, self.balance, interest)
 
-        # Plus each promo's share, so it's paid off before it expires
+        # Each promo's share, so it's paid off before it expires, on top of
+        # the minimum on the regular (non-promo) balance
         promo_monthly = sum(self.promo_installments(ref).values())
-
-        total = standard_min + promo_monthly
+        if promo_monthly > 0:
+            regular_min = amount(rule, self.regular_balance, interest) if self.regular_balance > 0 else 0.0
+            total = max(total, regular_min + promo_monthly)
 
         # Never exceed total balance
         return min(round(total, 2), self.balance)

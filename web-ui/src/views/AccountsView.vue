@@ -98,6 +98,7 @@
                   <th>Due day</th>
                   <th style="text-align:right">Balance</th>
                   <th style="text-align:right">Limit</th>
+                  <th style="text-align:right">Minimum</th>
                   <th>Utilization</th>
                   <th></th>
                 </tr>
@@ -117,6 +118,12 @@
                   <td>{{ cc.paymentDueDate ?? '-' }}</td>
                   <td style="text-align:right;font-weight:600;color:var(--danger)">{{ currency(cc.balance) }}</td>
                   <td style="text-align:right">{{ currency(cc.creditLimit) }}</td>
+                  <td style="text-align:right">
+                    <button class="link-btn" :title="`${cc.minRuleLabel ?? ''}. Click to match your statement.`" @click="minTarget = { bankName: bank.name, card: cc }">
+                      {{ currency(cc.minimumPayment ?? 0) }}
+                    </button>
+                    <div class="min-rule">{{ cc.minRule ? 'from statement' : 'estimated' }}{{ owesPromo(cc) ? ' + promo payoff' : '' }}</div>
+                  </td>
                   <td style="width:120px">
                     <div class="progress-bar">
                       <div class="fill" :style="{ width: utilPct(cc) + '%', background: utilColor(cc) }"></div>
@@ -131,6 +138,7 @@
                         { label: 'Balance history', icon: 'history', action: () => openHistory(bank.name, cc.accountName, 'credit') },
                         { label: 'SimpleFIN transactions', icon: 'transactions', hidden: !isSynced(bank.name, cc.accountName), action: () => openTransactions(bank.name, cc.accountName) },
                         { label: 'Promo offers', icon: 'tag', action: () => openPromos(bank.name, cc) },
+                        { label: 'Match minimum payment', icon: 'banknote', action: () => minTarget = { bankName: bank.name, card: cc } },
                         { label: 'Convert to HELOC', icon: 'home', action: () => openConvertToHELOC(bank.name, cc) },
                         { label: 'Delete account', icon: 'trash', danger: true, divider: true, action: () => deleteAccount(bank.name, cc.accountName, 'credit') },
                       ]" />
@@ -718,6 +726,8 @@
       </div>
     </div>
 
+    <MinPaymentDialog v-if="minTarget" :bank-name="minTarget.bankName" :card="minTarget.card"
+                      @close="minTarget = null" @done="refetch()" />
     <TransferDialog :open="showTransfer" :banks="banks" @close="showTransfer = false" @done="refetch()" />
     <BalanceCheckIn :open="showCheckIn" :banks="banks" @close="showCheckIn = false" @done="refetch()" />
     <MortgageTools :open="!!mortgageTarget" :bank-name="mortgageTarget?.bank ?? ''" :account-name="mortgageTarget?.account ?? ''"
@@ -758,6 +768,7 @@ import { GROUP_BADGE, KIND_GROUPS, isBankKind, kindInfo, rateLabel } from '../ut
 import AccountExtrasFields, { type AccountExtras } from '../components/AccountExtrasFields.vue'
 import { runMutation } from '../utils/mutation'
 import EditAccountModal, { type AccountKind, type AnyAccount } from '../components/EditAccountModal.vue'
+import MinPaymentDialog from '../components/MinPaymentDialog.vue'
 import type { Bank, BankAccount, CreditAccount, BalanceHistoryEntry, SimplefinSyncedAccount, SimplefinTransaction, PromoOffer, MutationPayload } from '../types'
 import { ask, notify } from '../utils/dialog'
 
@@ -1064,6 +1075,11 @@ async function openHistory(bankName: string, accountName: string, accountType: s
 }
 
 // ── Helpers
+/** A promo still owing: the minimum shown includes what clears it before it expires. */
+function owesPromo(cc: CreditAccount) {
+  return (cc.promoOffers ?? []).some(p => (p.promoBalance ?? 0) > 0.005 && !p.interestCharged)
+}
+
 function utilPct(cc: CreditAccount) {
   return cc.creditLimit > 0 ? (cc.balance / cc.creditLimit) * 100 : 0
 }
@@ -1156,6 +1172,8 @@ async function openTransactions(bankName: string, accountName: string) {
 
 // ── Promo Offers management
 const showPromosModal = ref(false)
+// Card whose minimum payment is being matched to a statement
+const minTarget = ref<{ bankName: string; card: CreditAccount } | null>(null)
 const showAddPromo = ref(false)
 const editingPromo = ref(false)
 const promoTarget = ref({ bankName: '', accountName: '', balance: 0, regularBalance: 0, promos: [] as PromoOffer[] })
@@ -1317,6 +1335,8 @@ function refreshPromoTarget() {
 </script>
 
 <style scoped>
+.link-btn { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0; text-decoration: underline dotted; }
+.min-rule { font-size: 0.7rem; color: var(--text-muted); }
 .restricted-note { margin-left: 0.35rem; font-size: 0.7rem; color: var(--text-light); white-space: nowrap; }
 .acct-details { font-size: 0.8rem; color: var(--text-muted); max-width: 300px; }
 .sync-indicator {

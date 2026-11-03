@@ -135,6 +135,8 @@ export const GET_ALL_BANKS = gql`
         statementDate
         status
         minimumPayment
+        minRule
+        minRuleLabel
         promoOffers {
           promoName
           monthsInterestFree
@@ -1293,5 +1295,22 @@ export const REMOVE_PROMO_OFFER = gql`
       accountName: $accountName
       promoName: $promoName
     ) { success message }
+  }
+`
+
+export const MINIMUM_PAYMENT_MATCH = gql`
+  query MinimumPaymentMatch($bankName: String!, $accountName: String!, $minimumPayment: Float!,
+                            $statementBalance: Float, $interestCharged: Float) {
+    minimumPaymentMatch(bankName: $bankName, accountName: $accountName, minimumPayment: $minimumPayment,
+                        statementBalance: $statementBalance, interestCharged: $interestCharged) {
+      best bestLabel ambiguous message balanceUsed interestUsed interestEstimated currentRuleLabel currentMinimum
+      matches { rule label amount }
+    }
+  }
+`
+
+export const SET_MINIMUM_PAYMENT_RULE = gql`
+  mutation SetMinimumPaymentRule($bankName: String!, $accountName: String!, $rule: JSONString) {
+    setMinimumPaymentRule(bankName: $bankName, accountName: $accountName, rule: $rule) { success message }
   }
 `

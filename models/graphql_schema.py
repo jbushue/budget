@@ -5,6 +5,7 @@ Provides a GraphQL API for React Native and other web clients.
 
 import graphene
 from models.gql_ext import ExtQuery, ExtMutation
+from models.min_payment import describe as describe_min_rule
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from models.finance_manager import FinanceManager
@@ -75,6 +76,8 @@ class CreditAccountType(graphene.ObjectType):
     statement_date = graphene.Int()
     status = graphene.String()
     minimum_payment = graphene.Float()
+    min_rule = graphene.JSONString(description="How the minimum is worked out (null: the default rule)")
+    min_rule_label = graphene.String(description="The minimum payment rule in words")
     promo_offers = graphene.List(PromoOfferType)
 
 
@@ -174,6 +177,9 @@ class BankType(graphene.ObjectType):
                 statement_date=acc.statement_date,
                 status=acc.status.value,
                 minimum_payment=acc.calculate_minimum_payment(),
+                min_rule=getattr(acc, "min_rule", None),
+                min_rule_label=describe_min_rule(getattr(acc, "min_rule", None))
+                + ("" if getattr(acc, "min_rule", None) else " (default)"),
                 promo_offers=promos,
             ))
         return results

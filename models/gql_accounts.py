@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import graphene
 
-from models import account_edit
+from models import account_edit, min_payment
 
 
 class EditResult(graphene.ObjectType):
@@ -97,6 +97,95 @@ class UpdateBank(graphene.Mutation):
         return EditResult(success=True, message=f"Saved {name}", name=name)
 
 
+class MinRuleOption(graphene.ObjectType):
+    rule = graphene.JSONString()
+    label = graphene.String()
+    amount = graphene.Float(description="The minimum this rule gives on the statement entered")
+
+
+class MinPaymentMatch(graphene.ObjectType):
+    best = graphene.JSONString(description="The rule to use (null: none can be told from this statement)")
+    best_label = graphene.String()
+    matches = graphene.List(MinRuleOption, description="Every rule that gives this minimum, best first")
+    ambiguous = graphene.Boolean(description="More than one rule fits; another statement can tell them apart")
+    message = graphene.String()
+    balance_used = graphene.Float()
+    interest_used = graphene.Float()
+    interest_estimated = graphene.Boolean()
+    current_rule_label = graphene.String()
+    current_minimum = graphene.Float(description="What the current rule gives on this statement")
+
+
+def _card(manager, bank_name, account_name):
+    bank = next((b for b in manager.banks if b.name == bank_name), None)
+    card = bank.credit_accounts.get(account_name) if bank else None
+    if card is None:
+        raise account_edit.EditError(f"Card '{account_name}' not found in {bank_name}")
+    return card
+
+
+class AccountsQuery(graphene.ObjectType):
+    minimum_payment_match = graphene.Field(
+        MinPaymentMatch, bank_name=graphene.String(required=True), account_name=graphene.String(required=True),
+        minimum_payment=graphene.Float(required=True),
+        statement_balance=graphene.Float(description="Default: the card's balance now"),
+        interest_charged=graphene.Float(description="Interest on the statement. Default: estimated from the APR"),
+        description="Which minimum payment rules give the minimum on a statement (nothing is saved)")
+
+    def resolve_minimum_payment_match(self, info, bank_name, account_name, minimum_payment,
+                                      statement_balance=None, interest_charged=None):
+        card = _card(info.context['manager'], bank_name, account_name)
+        balance = card.balance if statement_balance is None else float(statement_balance)
+        estimated = interest_charged is None
+        if estimated:
+            promo = sum(card.promo_balance.values())
+            interest = round(min_payment.monthly_interest(balance - promo, card.interest_rate), 2)
+        else:
+            interest = max(0.0, float(interest_charged))
+        try:
+            found = min_payment.match(float(minimum_payment), balance, interest, interest_known=not estimated)
+        except ValueError as e:
+            raise account_edit.EditError(str(e)) from None
+        current = getattr(card, "min_rule", None)
+        return MinPaymentMatch(
+            best=found["best"], best_label=min_payment.describe(found["best"]) if found["best"] else None,
+            matches=[MinRuleOption(rule=m["rule"], label=m["label"], amount=m["amount"]) for m in found["matches"]],
+            ambiguous=found["ambiguous"], message=found["message"], balance_used=balance,
+            interest_used=interest, interest_estimated=estimated,
+            current_rule_label=min_payment.describe(current) + ("" if current else " (default)"),
+            current_minimum=min_payment.amount(current, balance, interest))
+
+
+class SetMinimumPaymentRule(graphene.Mutation):
+    """Use a minimum payment rule for a card (from minimumPaymentMatch); no rule = the default."""
+
+    class Arguments:
+        bank_name = graphene.String(required=True)
+        account_name = graphene.String(required=True)
+        rule = graphene.JSONString(description='e.g. {"pct": 1, "interest": true, "floor": 25} or {"fixed": 75}')
+
+    Output = EditResult
+
+    def mutate(self, info, bank_name, account_name, rule=None):
+        manager = info.context.get('manager')
+        if not manager:
+            return EditResult(success=False, message="Manager not available")
+        try:
+            card = _card(manager, bank_name, account_name)
+        except account_edit.EditError as e:
+            return EditResult(success=False, message=str(e))
+        clean = min_payment.normalize(rule) if rule else None
+        if rule and clean is None:
+            return EditResult(success=False, message="That isn't a valid minimum payment rule")
+        card.min_rule = clean
+        if not manager.save_to_database():
+            return EditResult(success=False, message="Changed, but saving to the database failed")
+        return EditResult(success=True, name=account_name,
+                          message=f"{account_name}: minimum is {min_payment.describe(clean)}"
+                                  f"{'' if clean else ' (default)'} — now {card.calculate_minimum_payment():,.2f}")
+
+
 class AccountsMutation(graphene.ObjectType):
     update_account = UpdateAccount.Field()
     update_bank = UpdateBank.Field()
+    set_minimum_payment_rule = SetMinimumPaymentRule.Field()

@@ -74,6 +74,20 @@ def _log_from(text) -> list[dict]:
     return entries
 
 
+def _min_rule_to_db(account) -> str | None:
+    from models.min_payment import normalize
+    rule = normalize(getattr(account, "min_rule", None))
+    return json.dumps(rule) if rule else None
+
+
+def _min_rule_from_db(text) -> dict | None:
+    from models.min_payment import normalize
+    try:
+        return normalize(json.loads(text)) if text else None
+    except (TypeError, ValueError):
+        return None
+
+
 class DatabaseRepository:
     """Handles all database operations for the financial system."""
 
@@ -156,6 +170,7 @@ class DatabaseRepository:
                 )
                 credit.balance = db_credit.balance
                 credit.regular_balance = db_credit.regular_balance
+                credit.min_rule = _min_rule_from_db(db_credit.min_rule)
 
                 # Load promotional offers
                 for db_promo in db_credit.promos:
@@ -268,6 +283,7 @@ class DatabaseRepository:
             db_account.interest_rate = account.interest_rate
             db_account.payment_due_date = account.payment_due_date
             db_account.statement_date = account.statement_date
+            db_account.min_rule = _min_rule_to_db(account)
             db_account.status = account.status
         else:
             db_account = CreditAccountModel(
@@ -279,6 +295,7 @@ class DatabaseRepository:
                 interest_rate=account.interest_rate,
                 payment_due_date=account.payment_due_date,
                 statement_date=account.statement_date,
+                min_rule=_min_rule_to_db(account),
                 status=account.status,
             )
             self.session.add(db_account)

@@ -113,6 +113,7 @@ class CreditAccountModel(Base):
     interest_rate = Column(Float, nullable=False, default=0.0)  # APR as percentage
     payment_due_date = Column(Integer, nullable=True)  # Day of month (1-31)
     statement_date = Column(Integer, nullable=True)  # Day of month (1-31)
+    min_rule = Column(Text, nullable=True)  # JSON: how the minimum payment is worked out (min_payment.py)
     status = Column(Enum(CreditAccountStatusEnum), nullable=False, default=CreditAccountStatusEnum.ACTIVE)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
@@ -822,6 +823,12 @@ def _run_migrations():
                                ("offsets_everyday", "BOOLEAN NOT NULL DEFAULT 0")):
                 if name not in columns:
                     conn.execute(text(f"ALTER TABLE bank_accounts ADD COLUMN {name} {kind}"))
+
+    # Migration: each card's minimum payment rule
+    if "credit_accounts" in inspector.get_table_names():
+        if "min_rule" not in [col["name"] for col in inspector.get_columns("credit_accounts")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE credit_accounts ADD COLUMN min_rule TEXT"))
 
     # Migration: flag accounts still using a generated password
     if "users" in inspector.get_table_names():

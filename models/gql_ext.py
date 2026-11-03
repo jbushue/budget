@@ -11,7 +11,7 @@ from __future__ import annotations
 import graphene
 
 from models import app_settings
-from models.gql_accounts import AccountsMutation
+from models.gql_accounts import AccountsMutation, AccountsQuery
 from models.gql_bills import BillsMutation, BillsQuery
 from models.gql_goals import GoalsMutation, GoalsQuery
 from models.gql_ledger import LedgerMutation, LedgerQuery
@@ -180,7 +180,7 @@ class SendTestPush(graphene.Mutation):
 #  Roots
 # ─────────────────────────────────────────────────────────────────────────
 
-class ExtQuery(LedgerQuery, GoalsQuery, PlanningQuery, ToolsQuery, BillsQuery, graphene.ObjectType):
+class ExtQuery(LedgerQuery, GoalsQuery, PlanningQuery, ToolsQuery, BillsQuery, AccountsQuery, graphene.ObjectType):
     settings = graphene.JSONString(description="App settings (secrets omitted)")
     dashboard_summary = graphene.Field(DashboardSummaryType)
     alerts = graphene.List(AlertType, include_dismissed=graphene.Boolean())

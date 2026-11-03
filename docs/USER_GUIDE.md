@@ -141,7 +141,12 @@ These follow their account: change the card's due day and the bill's due day cha
 
 ### Credit card minimum payments
 
-The minimum payment is **2% of the regular (non-promo) balance, or $25, whichever is greater**, **plus** for each active 0% promo, enough to pay that promo balance off before it expires (promo balance ÷ months remaining). This is deliberately conservative: it keeps you from being hit by deferred interest.
+Card issuers each use their own formula: a percentage of the balance, often plus the month's interest, never less than a floor (and never more than the balance). Installment financing asks a fixed amount.
+
+- **Match it to your statement** (Accounts → the card's **Minimum** figure, or ⋯ → **Match minimum payment**): enter the minimum from your latest statement, and optionally the statement balance and interest charged. The app tries the usual formulas (1%–5% of the balance, with or without interest, with floors from $10 to $50, allowing for statements that round to whole dollars) and shows every one that gives that amount, most common first. Pick one and the card follows it in every projection. If none fit, it's treated as a fixed monthly payment. If the balance is small enough that only the floor applies, the app can tell the floor but not the percentage, and says so; check again with a later statement.
+- **Until you do**, a card uses **1% of the balance plus the month's interest, at least $25**, the most common formula. (A flat 2% is less than the interest on cards above 24% APR, which would never pay the balance down.)
+
+The column says *from statement* or *estimated*. **On top of** the issuer's minimum, each active 0% promo gets enough to be paid off before it expires (promo balance ÷ payments remaining), shown as *+ promo payoff*. That keeps you from being hit by deferred interest.
 
 ### 0% promotional offers and deferred interest
 
@@ -336,7 +341,7 @@ Actions:
 
 ### Credit Accounts table
 
-Columns: **Account** (🏷️ N = number of promos), **Status** (active / closed / frozen), **APR**, **Due Day**, **Balance**, **Limit**, **Utilization** (balance ÷ limit; green ≤ 50%, amber ≤ 80%, red above).
+Columns: **Account** (🏷️ N = number of promos), **Status** (active / closed / frozen), **APR**, **Due Day**, **Balance**, **Limit**, **Minimum** (the payment the plan makes; click it to match your statement, see §2), **Utilization** (balance ÷ limit; green ≤ 50%, amber ≤ 80%, red above).
 
 Actions: **Edit** (name, bank, APR, limit, due and statement days, status), **Update** (new balance owed), **Hist**, **Txns**, **Promos**, **→ HELOC**, **Del**.
 
@@ -1104,7 +1109,7 @@ The virtual environment was built with a Python version that has since been unin
 On that day, no checking account had enough money for it. Look at the Timeline calendar for that day, then add income, move money, or change the payment's source.
 
 **Why is my credit card "minimum payment" higher than my statement says?**
-It includes enough to pay off each 0% promo before it expires (see §2). Pay at least your statement minimum in real life; the app's figure is what keeps you clear of deferred interest.
+It includes enough to pay off each 0% promo before it expires (see §2). Pay at least your statement minimum in real life; the app's figure is what keeps you clear of deferred interest. If the card has no promo and the figure is still off, use **Match minimum payment** so the app uses your issuer's formula.
 
 **I marked something paid by mistake.**
 On Bills → **By month**, find the due date and choose ⋯ → **Undo payment**. If the app took the money out, it's put back.

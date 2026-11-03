@@ -183,7 +183,8 @@ class TestReportCopies:
         bills = [AccountLinkedBill(cc, "B", "credit"), Bill("Rent", 1000, 15)]
         rep = FinancialReport([b], [], bills)
         r = rep.projection_report(date(2026, 1, 1), date(2026, 1, 31), include_optimization=False)["result"]
-        assert r["credit_final_balances"]["B:Card"] == pytest.approx(3000 - 60)
+        # The default minimum: 1% of $3,000 (0% APR, so no interest), at least $25
+        assert r["credit_final_balances"]["B:Card"] == pytest.approx(3000 - 30)
         # Real objects untouched
         assert cc.balance == 3000 and b.accounts["chk"].balance == 5000
 
