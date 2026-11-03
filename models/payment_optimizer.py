@@ -426,14 +426,18 @@ class PaymentOptimizer:
         """
         base = self._evaluate(baseline)
         floor = max(0.0, buffer)
+        # Runs already simulated, keyed by the objects in them. The entry keeps
+        # those objects alive: once one is freed, Python can give its id to a
+        # new move, and a different plan would get this plan's result.
         cache: dict = {}
 
         def run(strat, injected):
+            events = [e for evts in injected.values() for e in evts]
             key = (id(strat), tuple(sorted((d, id(e)) for d, evts in injected.items() for e in evts)))
             if key not in cache:
                 result = self._run_simulation(start_date, end_date, strat, injected_events=injected)
-                cache[key] = self._evaluate(result)
-            return cache[key]
+                cache[key] = (self._evaluate(result), strat, events)
+            return cache[key][0]
 
         def by_type(*types):
             out = defaultdict(list)

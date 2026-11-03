@@ -101,6 +101,7 @@ class MinRuleOption(graphene.ObjectType):
     rule = graphene.JSONString()
     label = graphene.String()
     amount = graphene.Float(description="The minimum this rule gives on the statement entered")
+    off = graphene.Float(description="How far that is from the statement's minimum (close matches only)")
 
 
 class MinPaymentMatch(graphene.ObjectType):
@@ -108,6 +109,7 @@ class MinPaymentMatch(graphene.ObjectType):
     best_label = graphene.String()
     matches = graphene.List(MinRuleOption, description="Every rule that gives this minimum, best first")
     ambiguous = graphene.Boolean(description="More than one rule fits; another statement can tell them apart")
+    close = graphene.Boolean(description="No rule fits exactly; best is the nearest one")
     message = graphene.String()
     balance_used = graphene.Float()
     interest_used = graphene.Float()
@@ -149,8 +151,9 @@ class AccountsQuery(graphene.ObjectType):
         current = getattr(card, "min_rule", None)
         return MinPaymentMatch(
             best=found["best"], best_label=min_payment.describe(found["best"]) if found["best"] else None,
-            matches=[MinRuleOption(rule=m["rule"], label=m["label"], amount=m["amount"]) for m in found["matches"]],
-            ambiguous=found["ambiguous"], message=found["message"], balance_used=balance,
+            matches=[MinRuleOption(rule=m["rule"], label=m["label"], amount=m["amount"], off=m.get("off"))
+                     for m in found["matches"]],
+            ambiguous=found["ambiguous"], close=found.get("close", False), message=found["message"], balance_used=balance,
             interest_used=interest, interest_estimated=estimated,
             current_rule_label=min_payment.describe(current) + ("" if current else " (default)"),
             current_minimum=min_payment.amount(current, balance, interest))
@@ -182,7 +185,7 @@ class SetMinimumPaymentRule(graphene.Mutation):
             return EditResult(success=False, message="Changed, but saving to the database failed")
         return EditResult(success=True, name=account_name,
                           message=f"{account_name}: minimum is {min_payment.describe(clean)}"
-                                  f"{'' if clean else ' (default)'} — now {card.calculate_minimum_payment():,.2f}")
+                                  f"{'' if clean else ' (default)'} — now ${card.calculate_minimum_payment():,.2f}")
 
 
 class AccountsMutation(graphene.ObjectType):

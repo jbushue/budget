@@ -34,6 +34,9 @@ FORMULAS = [(1.0, True), (2.0, False), (3.0, False), (2.0, True), (2.5, False), 
 FLOORS = [25.0, 35.0, 40.0, 30.0, 20.0, 15.0, 27.0, 29.0, 50.0, 10.0, 0.0]
 # Slack for the balance itself (statements are to the cent)
 TOLERANCE = 0.01
+# With no exact match, the nearest formula is used if it's at least this close
+CLOSE_PCT = 0.05
+CLOSE_DOLLARS = 3.0
 
 
 def normalize(rule) -> dict | None:
@@ -153,7 +156,7 @@ def match(minimum: float, balance: float, interest: float, interest_known: bool 
         message = (f"Matches {describe(best)}." if not ambiguous else
                    f"{len(unique)} formulas give this minimum at this balance; {describe(best)} is the most "
                    "common. Pick another if you know your card's terms, or check again with a later statement.")
-        return {"best": best, "matches": rows(unique), "ambiguous": ambiguous, "message": message}
+        return {"best": best, "matches": rows(unique), "ambiguous": ambiguous, "close": False, "message": message}
 
     if by_floor and minimum < balance - 1.0:
         floor = by_floor[0][0]["floor"]
@@ -165,16 +168,42 @@ def match(minimum: float, balance: float, interest: float, interest_known: bool 
             if r["floor"] == floor and (r["pct"], r["interest"]) not in [(f["rule"]["pct"], f["rule"]["interest"]) for f in floors]:
                 floors.append({"rule": r, "label": describe(r), "amount": got})
         return {"best": best, "matches": [{"rule": best, "label": describe(best), "amount": amount(best, balance, interest)}]
-                + [f for f in floors if f["rule"] != best][:4], "ambiguous": True, "message": message}
+                + [f for f in floors if f["rule"] != best][:4], "ambiguous": True, "close": False, "message": message}
 
     if minimum >= balance - 1.0:
-        return {"best": None, "matches": [], "ambiguous": True,
+        return {"best": None, "matches": [], "ambiguous": True, "close": False,
                 "message": "The minimum is the whole balance, so it doesn't show the card's formula. "
                            "Try again with a statement that has a larger balance."}
 
     fixed = {"fixed": round(minimum, 2)}
-    return {"best": fixed, "matches": [{"rule": fixed, "label": describe(fixed), "amount": round(minimum, 2)}],
-            "ambiguous": False,
+    fixed_row = {"rule": fixed, "label": describe(fixed), "amount": round(minimum, 2)}
+    near = closest(minimum, balance, interest)
+    limit = max(CLOSE_DOLLARS, minimum * CLOSE_PCT)
+    if near and abs(near[0]["amount"] - minimum) <= limit:
+        best = near[0]["rule"]
+        off = near[0]["amount"] - minimum
+        return {"best": best, "matches": near + [fixed_row], "ambiguous": True, "close": True,
+                "message": f"No formula gives exactly {_money(minimum)}. The closest, {describe(best)}, gives "
+                           f"{_money(near[0]['amount'])} ({_money(abs(off))} {'more' if off > 0 else 'less'}) and "
+                           "will be used as it is. Pick another, adjust it below, or use the fixed amount."}
+    return {"best": fixed, "matches": [fixed_row] + near, "ambiguous": False, "close": False,
             "message": "No percentage formula gives this minimum, so it's treated as a fixed monthly payment "
                        "(usual for installment financing). If that's wrong, check the statement balance and "
-                       "interest charged."}
+                       "interest charged, or adjust the formula below."}
+
+
+def closest(minimum: float, balance: float, interest: float, limit: int = 3) -> list[dict]:
+    """The formulas nearest to ``minimum`` (one per percentage formula), nearest first, with how far off each is."""
+    best: dict = {}
+    for pct, plus_interest in FORMULAS:
+        if plus_interest and interest <= 0.005:
+            continue
+        for floor in FLOORS:
+            rule = {"pct": pct, "interest": plus_interest, "floor": floor}
+            got = amount(rule, balance, interest)
+            off = abs(got - minimum)
+            key = (pct, plus_interest)
+            if key not in best or off < best[key][0] - 0.005:
+                best[key] = (off, rule, got)
+    ranked = sorted(best.values(), key=lambda x: x[0])[:limit]
+    return [{"rule": r, "label": describe(r), "amount": got, "off": round(got - minimum, 2)} for _, r, got in ranked]

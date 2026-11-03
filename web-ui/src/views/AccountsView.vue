@@ -122,7 +122,7 @@
                     <button class="link-btn" :title="`${cc.minRuleLabel ?? ''}. Click to match your statement.`" @click="minTarget = { bankName: bank.name, card: cc }">
                       {{ currency(cc.minimumPayment ?? 0) }}
                     </button>
-                    <div class="min-rule">{{ cc.minRule ? 'from statement' : 'estimated' }}{{ owesPromo(cc) ? ' + promo payoff' : '' }}</div>
+                    <div class="min-rule">{{ cc.minRule ? 'your formula' : 'estimated' }}{{ owesPromo(cc) ? ' + promo payoff' : '' }}</div>
                   </td>
                   <td style="width:120px">
                     <div class="progress-bar">

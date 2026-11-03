@@ -1303,8 +1303,8 @@ export const MINIMUM_PAYMENT_MATCH = gql`
                             $statementBalance: Float, $interestCharged: Float) {
     minimumPaymentMatch(bankName: $bankName, accountName: $accountName, minimumPayment: $minimumPayment,
                         statementBalance: $statementBalance, interestCharged: $interestCharged) {
-      best bestLabel ambiguous message balanceUsed interestUsed interestEstimated currentRuleLabel currentMinimum
-      matches { rule label amount }
+      best bestLabel ambiguous close message balanceUsed interestUsed interestEstimated currentRuleLabel currentMinimum
+      matches { rule label amount off }
     }
   }
 `

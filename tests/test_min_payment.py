@@ -51,8 +51,14 @@ class TestMatching:
         assert "only the $35 minimum applies" in found["message"]
 
     def test_installment_is_a_fixed_amount(self):
-        found = match(178.09, 8900, 200)
-        assert found["best"] == {"fixed": 178.09}
+        found = match(75.0, 8900, 0)  # nowhere near any percentage
+        assert found["best"] == {"fixed": 75.0} and not found["close"]
+
+    def test_close_formula_is_used_as_it_is(self):
+        found = match(143.0, 4000, 0)  # 3.5% gives $140
+        assert found["close"] and found["best"] == {"pct": 3.5, "interest": False, "floor": 25.0}
+        assert found["matches"][0]["off"] == -3.0
+        assert {"fixed": 143.0} in [m["rule"] for m in found["matches"]]  # still offered
 
     def test_bad_input(self):
         with pytest.raises(ValueError):

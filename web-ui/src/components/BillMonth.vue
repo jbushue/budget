@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery } from '@vue/apollo-composable'
 import Icon from './Icon.vue'
@@ -204,10 +204,8 @@ function changed() {
   emit('changed')
 }
 
-// Payments made elsewhere (dashboard, bank matches) show up here too
-function onBudgetChanged() { refetch() }
-onMounted(() => window.addEventListener('budget:changed', onBudgetChanged))
-onUnmounted(() => window.removeEventListener('budget:changed', onBudgetChanged))
+// Payments made elsewhere (dashboard, bank matches) show up through the
+// app-wide refresh (utils/refresh.ts)
 
 defineExpose({ refetch })
 </script>
