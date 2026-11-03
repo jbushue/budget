@@ -219,19 +219,19 @@ One line, colored by how things look:
 
 ### 💵 Safe to spend — how much can I spend?
 
-Safe to spend looks **past your next paycheck**: by default 90 days ahead (Settings → Planning → *Look ahead*), following your plan. If a bill or promo payment after payday needs some of the money you have today, because the paychecks before it won't cover it on their own, that money is held back. The card tells you how much is kept and for which bills. Bills the plan can't pay on time anywhere in that window are held back too. Money the plan only parks (savings, a HELOC) still counts as yours, and so do the optimizer's early card payments under *Most cash*. Under *Least interest* or *Pay off a card*, those payments are spoken for.
+Safe to spend looks **past your next paycheck**: by default 90 days ahead (Settings → Planning → *Look ahead*), following your plan. If a bill or promo payment after payday needs some of the money you have today, because the paychecks before it won't cover it on their own, that money is held back. The card tells you how much is kept and for which bills. Bills the plan can't pay on time are paid late, and count as owed until they are. Money the plan only parks (savings, a HELOC) still counts as yours, and so do the optimizer's early card payments under *Most cash*. Under *Least interest* or *Pay off a card*, those payments are spoken for.
 
 The extra you can spend **on top of** your usual everyday spending without missing a bill or dipping into your cushion:
 
 ```
-Safe to spend = lowest projected checking balance, through your second payday
-                (after every bill on its due date and your everyday spending)
+Safe to spend = lowest projected checking balance over the look-ahead
+                (after every bill and your everyday spending, less any
+                bills owed but not paid yet)
               − your cushion
-              − bills that can't be covered
               − money set aside in checking for goals
 ```
 
-Overdue bills are paid on the projection's first day, so they're already out of the lowest point. It's the *lowest* point that matters, not a total: a dollar spent today lowers every later day's balance too. Below it, **$/day** spreads it over the days until your next paycheck. *How this is worked out* shows each line, including how much of the lowest point is money the plan keeps in savings or pays toward debt early (still yours). If everyday spending isn't set, a warning says so — the number would assume you spend nothing besides bills.
+Overdue bills are paid on the projection's first day, so they're already out of the lowest point. A bill there isn't enough money for on its due date is paid as soon as there is (usually your next payday), with its late fee. Until then it's owed, so its money never counts as yours, in Safe to spend or on the *Checking* chart. It's the *lowest* point that matters, not a total: a dollar spent today lowers every later day's balance too. Below it, **$/day** spreads it over the days until your next paycheck. *How this is worked out* shows each line, including how much of the lowest point is money the plan keeps in savings or pays toward debt early (still yours). If everyday spending isn't set, a warning says so — the number would assume you spend nothing besides bills.
 
 ### 🧾 Bills before your next paycheck
 
@@ -808,7 +808,7 @@ The page has four tabs (the one you pick is remembered and kept in the address, 
 | Interest charged / earned | On cards and HELOCs / on savings and checking. |
 | Late & overdraft fees | Shown when either plan would pay any (rates from Settings → Planning and each bill's late fee). |
 | Deferred promo interest at risk | Shown only when a 0% promo still has money owed at the end. It's the most that could be charged if that balance isn't paid before the promo expires. If the card has another payment due before the promo ends, that payment can still clear it, so it's a risk rather than a cost. If not, the interest is counted in the bottom line. |
-| Unpaid bills | Shown when a bill can't be paid in the period. It's still owed, so it counts against the bottom line. Skipping a bill isn't saving money. |
+| Unpaid bills | Shown when a bill can't be paid by the end of the period. It's still owed, so it counts against the bottom line. Skipping a bill isn't saving money. (A bill that can't be paid on its due date is paid late, once there's money; the plan avoids that whenever it can.) |
 | **Overall** | **The bottom line:** cash − debt − unpaid bills (and promo interest no payment is left to prevent). Moving cash onto a debt lowers both cash and debt, so judge the plan by this row. It's never lower for the plan. |
 
 **🔧 Plan checks** (collapsed): the plan's raw technical messages (❌ problems, ⚠ warnings, ⓘ notes) for anyone who wants the detail.

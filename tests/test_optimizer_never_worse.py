@@ -128,7 +128,10 @@ class TestMoves:
         out = a.analyze()
         base, opt = out["comparison"]["on_due_date"], out["comparison"]["optimized"]
         assert [p["name"] for p in base["late_payments"]] == ["Roof"]
-        assert base["unpaid_bills"] == 2500
+        # Paying on due dates pays Roof late, once the paycheck arrives
+        late = [cf for cf in a.baseline["cash_flow"] if cf.get("late")]
+        assert [(cf["description"], cf["amount"]) for cf in late] == [("Roof", -2500)]
+        assert base["unpaid_bills"] == 0
         assert opt["late_payments"] == [] and opt["unpaid_bills"] == 0
         assert any(cf["type"] == "HELOC_RECALL" for cf in a.optimized["cash_flow"])
         assert out["comparison"]["net_benefit"] > 0

@@ -1251,6 +1251,9 @@ class Query(ExtQuery, graphene.ObjectType):
             if cf.get('overdue') and cf.get('due'):
                 # An earlier due date that wasn't paid: the plan pays it first
                 description = f"{description} (overdue, was due {cf['due']:%b} {cf['due'].day})"
+            elif cf.get('late') and cf.get('due'):
+                # Couldn't be paid on its due date: paid once there's money
+                description = f"{description} (late, was due {cf['due']:%b} {cf['due'].day})"
             events_by_date[cf_date].append(CalendarEventType(
                 event_type=cf['type'],
                 description=description,

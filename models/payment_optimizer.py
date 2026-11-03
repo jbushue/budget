@@ -86,8 +86,22 @@ UNPAID_TYPES = ("BILL_DEFERRED", "MORTGAGE_DEFERRED")
 
 
 def unpaid_bills(result: dict) -> float:
-    """Total of the bills a simulation couldn't pay (they're still owed)."""
-    return sum(-cf['amount'] for cf in result['cash_flow'] if cf.get('type') in UNPAID_TYPES)
+    """Total of the bills a simulation couldn't pay by the end of the window (still owed)."""
+    missed = sum(-cf['amount'] for cf in result['cash_flow'] if cf.get('type') in UNPAID_TYPES)
+    settled = sum(cf['settles'] for cf in result['cash_flow'] if cf.get('late_for') in UNPAID_TYPES)
+    return max(0.0, missed - settled)
+
+
+def owed_by_day(cash_flow: list[dict]) -> dict:
+    """{date: change in bills owed but not yet paid}: + when a payment is
+    missed, − when it's paid late."""
+    out: dict = {}
+    for cf in cash_flow:
+        if cf.get('type', '').endswith('_DEFERRED'):
+            out[cf['date']] = out.get(cf['date'], 0.0) + abs(cf['amount'])
+        elif cf.get('settles'):
+            out[cf['date']] = out.get(cf['date'], 0.0) - cf['settles']
+    return out
 
 
 def imminent_promo_interest(result: dict) -> float:
@@ -440,7 +454,13 @@ class PaymentOptimizer:
                 candidates.append((strat, injected, run(strat, injected)))
 
         def better(ev, than):
-            return self._acceptable(ev, base, floor) and ev["score"] > than["score"] + self.MIN_GAIN
+            # Fewer late payments first (a late payment costs more than its
+            # fee), then the better bottom line
+            if not self._acceptable(ev, base, floor):
+                return False
+            if ev["late"] != than["late"]:
+                return ev["late"] < than["late"]
+            return ev["score"] > than["score"] + self.MIN_GAIN
 
         best_strat, best_events, best = candidates[0]
         for strat, injected, ev in candidates[1:]:
@@ -455,7 +475,8 @@ class PaymentOptimizer:
                 trial = {k: [x for x in v if x is not e] for k, v in best_events.items()}
                 trial = {k: v for k, v in trial.items() if v}
                 ev = run(best_strat, trial)
-                if self._acceptable(ev, base, floor) and ev["score"] >= best["score"] - 0.005:
+                if (self._acceptable(ev, base, floor) and ev["late"] <= best["late"]
+                        and ev["score"] >= best["score"] - 0.005):
                     best_events, best = trial, ev
 
         # Greedily add the move that helps most, found from the current best
@@ -480,7 +501,7 @@ class PaymentOptimizer:
         """Which account paid each bill occurrence, keyed like _create_payment_strategy."""
         strategy = {}
         for cf in result['cash_flow']:
-            if cf.get('type') in ('BILL_PAYMENT', 'CREDIT_PAYMENT', 'MORTGAGE_PAYMENT', 'HELOC_PAYMENT'):
+            if cf.get('type') in ('BILL_PAYMENT', 'CREDIT_PAYMENT', 'MORTGAGE_PAYMENT', 'HELOC_PAYMENT')                     and not cf.get('late'):
                 name = cf['description']
                 strategy[f"{name}_{cf['date'].isoformat()}"] = {
                     "bank": cf.get('bank'), "account": cf.get('account'), "date": cf['date'],

@@ -171,9 +171,10 @@ class TestDashboard:
         m = self._manager(checking=300, cushion=0, bills=[Bill("Roof", 2000, _day_in(2), start_date=TODAY)])
         d = build_dashboard(m)
         assert d["status"] == "danger" and "Roof" in d["status_title"]
-        # The unpaid Roof money is still in checking but it isn't spendable
+        # Roof is owed until there's money for it, so nothing is spendable.
+        # Paying it late (once paychecks build up) leaves next month's short too.
         assert d["safe_to_spend"] == 0
-        assert d["short_total"] == 2000
+        assert d["short_total"] == 4000
         roof = next(b for b in d["bills_this_period"] if b["name"] == "Roof")
         assert roof["status"] == "short"
 

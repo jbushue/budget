@@ -332,8 +332,7 @@ def purchase_planner(manager, amount: float = 0.0, days: int = 60) -> dict:
     Today's figure is the dashboard's Safe to spend.
     """
     from models.dashboard import held_back, safe_window, spendable_series
-    from models.payment_insights import summarize_simulation
-    from models.plan import plan_runs, slice_result
+    from models.plan import plan_runs
 
     if amount < 0:
         raise ValueError("Amount can't be negative")
@@ -341,10 +340,9 @@ def purchase_planner(manager, amount: float = 0.0, days: int = 60) -> dict:
     window, _, _ = safe_window(manager, today)
     runs = plan_runs(manager)
     series = spendable_series(manager, runs.optimized, runs.goal)
-    late = summarize_simulation(slice_result(runs.optimized, today + timedelta(days=window), manager.banks),
-                                manager.banks)["late_payments"]
-    held = held_back(manager, late, today)
-    off = held["cushion"] + held["overdue_total"] + held["short_total"] + held["reserves"]
+    # Overdue and late bills are already out of the series (paid, or owed)
+    held = held_back(manager, [], today)
+    off = held["cushion"] + held["reserves"]
     values = [v for _, v in series]
     can_spend = []
     for i, (d, _) in enumerate(series[:days + 1]):

@@ -146,7 +146,7 @@ def summarize_simulation(result: dict, banks) -> dict:
         elif t == "EVERYDAY_SPENDING":
             spending += -cf["amount"]
         elif t in PAID_TYPES:
-            paid_count += 1
+            paid_count += 0 if cf.get("late") else 1
         elif t in DEFERRED_TYPES:
             late.append({"date": cf["date"].isoformat(),
                          "name": _base_name(cf["description"]),

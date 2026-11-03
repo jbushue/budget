@@ -11,14 +11,16 @@ Spending a dollar today lowers your checking balance on every later day, so
 the amount you can safely spend is set by your *lowest* projected checking
 balance — not by a total:
 
-    safe to spend = lowest projected checking balance (through your second
-                    upcoming payday, paying bills on their due dates and
-                    including your everyday spending allowance)
+    safe to spend = lowest projected checking balance (over the look-ahead,
+                    following the plan and including your everyday
+                    spending allowance), less any bills owed but not yet paid
                   − your cushion
                   − money set aside in checking for goals
 
 Bills that are overdue (a due date passed without being marked paid) are paid
-on the projection's first day, so they come out of the lowest point too.
+on the projection's first day. A bill there isn't money for on its due date
+is paid as soon as there is (with its late fee); until then it's owed, so it
+doesn't count as yours.
 
 The projection already subtracts your usual everyday spending, so this is
 what you can spend *on top of* it.
@@ -31,6 +33,7 @@ from datetime import date, timedelta
 from . import occurrences as occ
 from .fixed_bill import AccountLinkedBill, GroupLinkedBill
 from .payment_insights import PaymentInsightsAnalyzer, checking_keys, _r, _money, _day
+from .payment_optimizer import owed_by_day
 
 # Look at least this far ahead for the bills status
 MIN_DAYS = 31
@@ -206,14 +209,18 @@ def spendable_series(manager, optimized: dict, goal: str) -> list[tuple[date, fl
     """
     Checking at the end of each day of the plan, plus money the plan only
     parks (savings sweeps, HELOC parking, and early debt payments under
-    "most cash") — that money is still yours to spend.
+    "most cash") — that money is still yours to spend — less bills owed but
+    not paid yet (missed for lack of money; the plan pays them once it can).
     """
     keys = checking_keys(manager.banks)
     parked_by_day = _parked_by_day(optimized["cash_flow"], goal)
-    series, parked = [], 0.0
+    owed_changes = owed_by_day(optimized["cash_flow"])
+    series, parked, owed = [], 0.0, 0.0
     for snap in optimized["snapshots"]:
         parked += parked_by_day.get(snap["date"], 0.0)
-        series.append((snap["date"], sum(bal for key, bal in snap["balances"].items() if key in keys) + parked))
+        owed = max(0.0, owed + owed_changes.get(snap["date"], 0.0))
+        series.append((snap["date"], sum(bal for key, bal in snap["balances"].items() if key in keys)
+                       + parked - owed))
     return series
 
 
@@ -221,8 +228,8 @@ def held_back(manager, late_payments: list[dict], today: date) -> dict:
     """What comes off the lowest point before money counts as safe to spend."""
     overdue = overdue_bills(manager, today)
     return {"overdue": overdue, "overdue_total": sum(o["amount"] for o in overdue),
-            # Bills the plan can't pay on time leave their money sitting in
-            # checking in the projection — that money is owed, not spendable
+            # Bills the plan can't pay on time (informational: the
+            # spendable series already treats their money as owed)
             "short_total": sum(p["amount"] for p in late_payments),
             "reserves": _goal_reserves(manager), "cushion": manager.cushion}
 
@@ -266,7 +273,7 @@ def build_dashboard(manager, today: date | None = None) -> dict:
     overdue, overdue_total, short_total = held["overdue"], held["overdue_total"], held["short_total"]
     reserves, cushion = held["reserves"], held["cushion"]
     # Overdue bills are already paid out of the projection on its first day
-    safe = max(0.0, lowest - cushion - short_total - reserves)
+    safe = max(0.0, lowest - cushion - reserves)
     days_to_payday = max(1, (next_payday - today).days) if next_payday else 14
     per_day = safe / days_to_payday
 

@@ -305,6 +305,8 @@ class TimelineSimulator:
         self._start_balances = {key: bal for key, (bal, _) in self._interest_balances().items()}
         self._interest_days = {key: day for key, (_, day) in self._interest_balances().items()}
         self._cycled = set()
+        # Bills that couldn't be paid on their due date: (bill, due, amount, deferred type)
+        self._owed = []
 
         # The accounts don't change during a run, so the per-day work below
         # walks flat lists built once instead of every bank's dicts every day
@@ -476,7 +478,7 @@ class TimelineSimulator:
                                     **self._linked_bill_names(bill),
                                     **overdue_info,
                                 })
-                                self._charge_late_fee(bill, current_date, cash_flow)
+                                self._defer(bill, due, bill_amount, current_date, cash_flow)
                                 break
 
                             try:
@@ -563,7 +565,7 @@ class TimelineSimulator:
                                     **self._linked_bill_names(bill),
                                     **overdue_info,
                                 })
-                                self._charge_late_fee(bill, current_date, cash_flow)
+                                self._defer(bill, due, bill_amount, current_date, cash_flow)
                             break
 
                 elif event.event_type == "INTEREST":
@@ -681,7 +683,7 @@ class TimelineSimulator:
                                         "bank": source_bank.name if source_bank else "(none)",
                                         "error": str(e)
                                     })
-                                    self._charge_late_fee(bill, current_date, cash_flow)
+                                    self._defer(bill, due, bill_amount, current_date, cash_flow)
                             else:
                                 cash_flow.append({
                                     "date": current_date,
@@ -692,7 +694,7 @@ class TimelineSimulator:
                                     "bank": source_bank.name if source_bank else "(none)",
                                     "error": "No account has sufficient funds",
                                 })
-                                self._charge_late_fee(bill, current_date, cash_flow)
+                                self._defer(bill, due, bill_amount, current_date, cash_flow)
                             break
 
                 # ── Optimization event processing ────────────────────────────
@@ -714,6 +716,10 @@ class TimelineSimulator:
                             "date": current_date, "type": "PURCHASE", "description": event.description,
                             "amount": -event.amount, "account": account.account_name, "bank": bank.name,
                         })
+
+            # A bill that couldn't be paid is still owed: pay it once there's money
+            if self._owed:
+                self._pay_owed(current_date, cash_flow)
 
             # Everyday spending (groceries, gas, ...) happens every day; accounts
             # like EBT pay their share first
@@ -988,6 +994,62 @@ class TimelineSimulator:
         """A card's own payment is skipped when its bill group pays it."""
         return (isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'credit'
                 and (bill.linked_bank_name, bill.linked_account.account_name) in self._grouped_account_keys)
+
+    def _defer(self, bill: Bill, due: date, amount: float, current_date: date, cash_flow: list[dict]):
+        """A payment that couldn't be made (its *_DEFERRED entry was just
+        added): it's still owed, and is charged a late fee."""
+        self._owed.append((bill, due, amount, cash_flow[-1]["type"]))
+        self._charge_late_fee(bill, current_date, cash_flow)
+
+    def _pay_owed(self, current_date: date, cash_flow: list[dict]):
+        """
+        Pay bills that couldn't be paid on their due date, oldest first, as
+        soon as an account can cover one (usually the next payday). Until
+        then the money is owed, so the projection never counts it as yours.
+        Each payment notes the amount it ``settles`` and the due date it was for.
+        """
+        still = []
+        for item in self._owed:
+            bill, due, amount, kind = item
+            name = bill.linked_group.group_name if isinstance(bill, GroupLinkedBill) else bill.bill_name
+            pay = amount
+            if isinstance(bill, AccountLinkedBill):
+                pay = min(pay, self._linked_bill_payoff_amount(bill))
+            elif isinstance(bill, GroupLinkedBill):
+                pay = min(pay, round(bill.linked_group.get_total_balance(self.banks), 2))
+            if pay <= 0.005 or occ.status(bill, due, current_date) in ("paid", "skipped"):
+                # Nothing left to pay (the debt was paid off some other way)
+                cash_flow.append({"date": current_date, "type": "DEFERRED_CLEARED", "description": name,
+                                  "amount": 0.0, "settles": amount, "late_for": kind, "due": due})
+                continue
+            bank, account_name = self._choose_payment_account(bill, None, pay, current_date)
+            if not (bank and account_name):
+                still.append(item)
+                continue
+            account = bank.accounts[account_name]
+            account.withdraw(pay, description=f"Late payment: {name}", transaction_date=current_date)
+            entry = {"date": current_date, "type": "BILL_PAYMENT", "description": name, "amount": -pay,
+                     "account": account_name, "bank": bank.name,
+                     "late": True, "due": due, "settles": amount, "late_for": kind}
+            if isinstance(bill, GroupLinkedBill):
+                subs = bill.mark_paid(bank.name, account_name, pay, current_date, banks=self.banks, due=due)
+                applied = round(sum(sp["amount"] for sp in subs), 2)
+                if pay - applied > 0.005:
+                    account.deposit(round(pay - applied, 2), description=f"Late payment refund (unapplied): {name}",
+                                    transaction_date=current_date)
+                    entry["amount"] = -applied
+                entry.update(type="BILL_GROUP_PAYMENT", sub_payments=subs)
+            elif isinstance(bill, AccountLinkedBill):
+                bill.mark_paid(bank.name, account_name, pay, current_date, due=due)
+                entry["type"] = {"credit": "CREDIT_PAYMENT", "mortgage": "MORTGAGE_PAYMENT",
+                                 "heloc": "HELOC_PAYMENT"}.get(bill.linked_account_type, "BILL_PAYMENT")
+                entry.update(self._linked_bill_names(bill))
+            elif isinstance(bill, FloatingBill):
+                bill.mark_paid(bank.name, account_name, pay, current_date, due=due, learn=False)
+            else:
+                bill.mark_paid(bank.name, account_name, pay, current_date, due=due)
+            cash_flow.append(entry)
+        self._owed = still
 
     def _charge_late_fee(self, bill: Bill, current_date: date, cash_flow: list[dict]):
         """Late fee for a payment that couldn't be made: cards add it to the balance,

@@ -68,8 +68,8 @@
                 <tr v-else><td>Lowest point ({{ fmtDateShort(dash.lowestDate) }}), after bills{{ dash.everydayWeekly > 0 ? ' and everyday spending' : '' }}</td><td style="text-align:right">{{ currency(dash.lowestBalance) }}</td></tr>
                 <tr v-if="(dash.parkedAtLowest ?? 0) > 0.5"><td style="padding-left:0.75rem">of which the plan keeps in savings or pays toward debt early (still yours)</td><td style="text-align:right">{{ currency(dash.parkedAtLowest ?? 0) }}</td></tr>
                 <tr><td>− Cushion you keep</td><td style="text-align:right">{{ currency(dash.cushion) }}</td></tr>
-                <tr v-if="dash.overdueTotal"><td>− Overdue bills not marked paid</td><td style="text-align:right">{{ currency(dash.overdueTotal) }}</td></tr>
-                <tr v-if="dash.shortTotal"><td>− Bills the plan can't pay on time</td><td style="text-align:right">{{ currency(dash.shortTotal) }}</td></tr>
+                <tr v-if="dash.overdueTotal"><td style="padding-left:0.75rem">already paid out of it: overdue bills</td><td style="text-align:right">{{ currency(dash.overdueTotal) }}</td></tr>
+                <tr v-if="dash.shortTotal"><td style="padding-left:0.75rem">already taken out of it: bills paid late (owed until there's money)</td><td style="text-align:right">{{ currency(dash.shortTotal) }}</td></tr>
                 <tr v-if="dash.goalReserves"><td>− Set aside for goals</td><td style="text-align:right">{{ currency(dash.goalReserves) }}</td></tr>
                 <tr style="font-weight:600"><td>= Safe to spend</td><td style="text-align:right">{{ currency(dash.safeToSpend) }}</td></tr>
               </table>
@@ -120,7 +120,7 @@
           </div>
           <p class="muted chart-note">
             Following your plan, after bills{{ dash.everydayWeekly > 0 ? ' and everyday spending' : '' }}. Money the plan
-            parks in savings or puts toward debt early is counted as yours. Lowest point
+            parks in savings or puts toward debt early is counted as yours; money owed for a bill that's paid late isn't. Lowest point
             {{ currency(dash.lowestBalance) }} on {{ fmtDateShort(dash.lowestDate) }}.
           </p>
         </div>

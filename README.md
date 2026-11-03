@@ -32,7 +32,7 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 
 **Dashboard**
 - A status banner (are all bills covered, and through when?)
-- **Safe to spend** — based on your *lowest* projected checking balance through your second payday, minus a cushion you choose, overdue bills, bills that can't be covered, and money set aside for goals; also shown per day until payday
+- **Safe to spend** — based on your *lowest* projected checking balance through your second payday, after overdue bills and any bill paid late (owed until it's paid), minus a cushion you choose and money set aside for goals; also shown per day until payday
 - A pay-period checklist of bills (paid / covered / short / overdue) with one-click **Mark paid**
 - Everyday spending (groceries, gas, eating out) built into every projection — enter a weekly amount or let it be learned from your transactions
 

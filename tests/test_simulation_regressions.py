@@ -559,3 +559,37 @@ def test_update_credit_balance_sets_regular_balance():
     assert cc.regular_balance == pytest.approx(1500)
     b.update_credit_balance("Card", 100)
     assert cc.regular_balance == 0
+
+
+class TestMissedBillsArePaidLate:
+    """A bill there's no money for on its due date is still owed: it's paid
+    once there is, and its money never shows as yours meanwhile."""
+
+    START = date(2026, 3, 1)
+
+    def _sim(self):
+        bank = Bank("B")
+        bank.add_account("checking", "Chk", 300)
+        income = [IncomeSource("Job", 3000, IncomeFrequency.MONTHLY, pay_date=[10], distribution={"Chk": None})]
+        return TimelineSimulator([bank], income, [Bill("Rent", 1000, 5)])
+
+    def test_paid_on_the_next_payday(self):
+        r = self._sim().project_balances(self.START, self.START + timedelta(days=20))
+        flows = [(cf["date"].day, cf["type"], cf["amount"]) for cf in r["cash_flow"]
+                 if cf["type"] in ("BILL_DEFERRED", "BILL_PAYMENT", "INCOME")]
+        assert flows == [(5, "BILL_DEFERRED", -1000), (10, "INCOME", 3000), (10, "BILL_PAYMENT", -1000)]
+        late = next(cf for cf in r["cash_flow"] if cf.get("late"))
+        assert late["due"] == date(2026, 3, 5) and late["settles"] == 1000
+        assert r["final_balances"]["B:Chk"] == pytest.approx(300 + 3000 - 1000)
+        from models.payment_optimizer import unpaid_bills
+        assert unpaid_bills(r) == 0
+
+    def test_owed_money_is_not_spendable(self):
+        from models.finance_manager import FinanceManager
+        from models.dashboard import spendable_series
+        sim = self._sim()
+        r = sim.project_balances(self.START, self.START + timedelta(days=20))
+        m = FinanceManager(sim.banks, [], [])
+        by_day = dict(spendable_series(m, r, "maximize_discretionary"))
+        assert by_day[date(2026, 3, 6)] == pytest.approx(300 - 1000)  # Rent owed
+        assert by_day[date(2026, 3, 11)] == pytest.approx(2300)       # paid, nothing owed
