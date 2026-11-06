@@ -114,6 +114,7 @@ class CreditAccountModel(Base):
     payment_due_date = Column(Integer, nullable=True)  # Day of month (1-31)
     statement_date = Column(Integer, nullable=True)  # Day of month (1-31)
     min_rule = Column(Text, nullable=True)  # JSON: how the minimum payment is worked out (min_payment.py)
+    payment_order = Column(String(20), nullable=True)  # regular_first (default) | regular_last: promo balances
     status = Column(Enum(CreditAccountStatusEnum), nullable=False, default=CreditAccountStatusEnum.ACTIVE)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
@@ -847,6 +848,9 @@ def _run_migrations():
         if "min_rule" not in [col["name"] for col in inspector.get_columns("credit_accounts")]:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE credit_accounts ADD COLUMN min_rule TEXT"))
+        if "payment_order" not in [col["name"] for col in inspector.get_columns("credit_accounts")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE credit_accounts ADD COLUMN payment_order VARCHAR(20)"))
 
     # Migration: flag accounts still using a generated password
     if "users" in inspector.get_table_names():

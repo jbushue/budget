@@ -182,6 +182,7 @@ class DatabaseRepository:
                 credit.balance = db_credit.balance
                 credit.regular_balance = db_credit.regular_balance
                 credit.min_rule = _min_rule_from_db(db_credit.min_rule)
+                credit.payment_order = db_credit.payment_order or "regular_first"
 
                 # Load promotional offers
                 for db_promo in db_credit.promos:
@@ -302,6 +303,7 @@ class DatabaseRepository:
             db_account.payment_due_date = account.payment_due_date
             db_account.statement_date = account.statement_date
             db_account.min_rule = _min_rule_to_db(account)
+            db_account.payment_order = getattr(account, "payment_order", "regular_first")
             db_account.status = account.status
         else:
             db_account = CreditAccountModel(
@@ -314,6 +316,7 @@ class DatabaseRepository:
                 payment_due_date=account.payment_due_date,
                 statement_date=account.statement_date,
                 min_rule=_min_rule_to_db(account),
+                payment_order=getattr(account, "payment_order", "regular_first"),
                 status=account.status,
             )
             self.session.add(db_account)

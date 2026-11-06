@@ -474,8 +474,8 @@ class AccountLinkedBill(Bill):
         # Call the linked account's make_payment
         if amount_paid > 0:
             if self.linked_account_type == 'credit':
-                # Each 0% promo gets its share first so it's paid off before it
-                # expires; the rest goes to the regular balance
+                # Split over the regular and promo balances the card's way
+                # (regular first or last; promos soonest-expiring first)
                 pay = getattr(self.linked_account, "pay_with_promo_plan", None)
                 if pay is not None:
                     pay(amount_paid, description=f"Bill payment: {self.bill_name}",

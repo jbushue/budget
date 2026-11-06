@@ -12,6 +12,8 @@ from models.credit_card_account import PromoOffer
 from models.dashboard import build_dashboard
 from models.finance_manager import FinanceManager
 from models.fixed_bill import Bill
+from tests.test_graphql_api import api  # noqa: F401  (fixture)
+from tests.test_persistence import temp_db  # noqa: F401  (fixture)
 from models.income_source import IncomeSource, IncomeFrequency
 from models.timeline_simulator import TimelineSimulator
 from models.types import BillFrequency
@@ -47,14 +49,41 @@ class TestPromos:
         assert 4 <= n <= 6
         assert card.promo_installments(TODAY)["Couch"] == round(1200 / n, 2)
 
-    def test_payment_gives_promo_its_share_first(self):
+    def test_regular_minimum_first_then_promo(self):
         _, card, _ = card_with_promo()
-        need = card.promo_installments(TODAY)["Couch"]
-        applied = card.pay_with_promo_plan(need + 100, transaction_date=TODAY)
-        assert applied == {"Couch": need}
-        assert card.promo_balance["Couch"] == pytest.approx(1200 - need)
-        assert card.regular_balance == pytest.approx(1900)
-        assert card.balance == pytest.approx(3100 - need)
+        regular_min = card.regular_minimum(TODAY)
+        applied = card.pay_with_promo_plan(regular_min + 300, transaction_date=TODAY)
+        assert applied == {"Couch": 300}
+        assert card.promo_balance["Couch"] == pytest.approx(900)
+        assert card.regular_balance == pytest.approx(2000 - regular_min)
+        assert card.balance == pytest.approx(3200 - regular_min - 300)
+
+    def test_promos_paid_soonest_expiring_first_then_regular(self):
+        _, card, _ = card_with_promo(promo=300)
+        later = PromoOffer("TV", 18, start_date=TODAY, end_date=TODAY + timedelta(days=400))
+        card.active_promos.insert(0, later)  # listed first, but expires later
+        card.promo_balance = {"TV": 500.0, "Couch": 300.0}
+        card.balance = 2800.0
+        regular_min = card.regular_minimum(TODAY)
+        applied = card.make_payment(regular_min + 600, transaction_date=TODAY)
+        assert applied == {"Couch": 300, "TV": 300}  # Couch paid off before TV gets anything
+        assert card.promo_balance == {"TV": 200, "Couch": 0}
+        card.make_payment(regular_min + 900, transaction_date=TODAY)
+        assert card.promo_balance["TV"] == 0
+        assert card.regular_balance == pytest.approx(2000 - 2 * regular_min - 700)
+
+    def test_regular_last(self):
+        _, card, _ = card_with_promo(promo=300)
+        card.payment_order = "regular_last"
+        assert card.make_payment(250, transaction_date=TODAY) == {"Couch": 250}
+        assert card.regular_balance == 2000
+        card.make_payment(150, transaction_date=TODAY)
+        assert card.promo_balance["Couch"] == 0 and card.regular_balance == 1900
+
+    def test_targeted_promo_payment_still_goes_to_that_promo(self):
+        _, card, _ = card_with_promo()
+        card.make_payment(400, transaction_date=TODAY, promo_name="Couch")
+        assert card.promo_balance["Couch"] == 800 and card.regular_balance == 2000
 
     def test_promo_paid_off_before_it_expires_even_with_a_regular_balance(self):
         bank, card, p = card_with_promo(ends_in=150)
@@ -145,3 +174,26 @@ def test_off_track_promo_raises_an_alert(temp_db):  # noqa: F811
     alerts = build_alerts(m)
     promo = [a for a in alerts if a["key"].startswith("promo:")]
     assert promo and promo[0]["severity"] == "danger" and "Couch" in promo[0]["title"]
+
+
+class TestPaymentOrderSetting:
+
+    def test_saved_through_the_api_and_used(self, api):  # noqa: F811
+        api('mutation { createAccount(bankName: "B", accountName: "Visa", accountType: "credit", balance: 1500, '
+            'interestRate: 20, creditLimit: 5000, paymentDueDate: 12) { success } }')
+        api('mutation { addPromoOffer(bankName: "B", accountName: "Visa", promoName: "0%", monthsInterestFree: 12, '
+            'promoBalance: 500) { success } }')
+        out = api('mutation { updateAccount(bankName: "B", accountName: "Visa", accountType: "credit", '
+                  'paymentOrder: "regular_last") { success message } }')["updateAccount"]
+        assert out["success"], out
+        bad = api('mutation { updateAccount(bankName: "B", accountName: "Visa", accountType: "credit", '
+                  'paymentOrder: "sideways") { success message } }')["updateAccount"]
+        assert not bad["success"]
+        m = FinanceManager([], [], [])
+        assert m.load_from_database()
+        card = m.banks[0].credit_accounts["Visa"]
+        assert card.payment_order == "regular_last"
+        assert api('{ allBanks { creditAccounts { paymentOrder } } }')["allBanks"][0]["creditAccounts"][0] == \
+            {"paymentOrder": "regular_last"}
+        card.make_payment(200)
+        assert card.promo_balance["0%"] == 300 and card.regular_balance == 1000

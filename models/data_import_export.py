@@ -62,6 +62,7 @@ SHEET_COLUMNS: dict[str, list[tuple[str, bool, str]]] = {
         ("interest_rate", True, "APR %"),
         ("payment_due_date", False, "Day of month (1-31)"),
         ("statement_date", False, "Day of month (1-31)"),
+        ("payment_order", False, "With promos: regular_first (default: the regular balance's minimum first) or regular_last"),
         ("status", False, "active, closed, or frozen (default active)"),
     ],
     "Mortgages": [
@@ -666,6 +667,9 @@ class DataImportExport:
                     payment_due_date=_to_int(row.get("payment_due_date")),
                     statement_date=_to_int(row.get("statement_date")),
                 )
+                order = (_to_str(row.get("payment_order")) or "").lower()
+                if order in ("regular_first", "regular_last"):
+                    credit.payment_order = order
 
                 balance = _to_float(row.get("balance"), 0.0)
                 credit.balance = balance
@@ -1055,6 +1059,7 @@ class DataImportExport:
                     "payment_due_date": credit.payment_due_date,
                     "statement_date": credit.statement_date,
                     "status": _enum_value(getattr(credit, "status", None)),
+                    "payment_order": getattr(credit, "payment_order", "regular_first"),
                 })
                 for promo in credit.active_promos:
                     rows["Promo_Offers"].append({

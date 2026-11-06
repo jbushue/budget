@@ -156,7 +156,14 @@ The column says *your formula* or *estimated*. **On top of** the issuer's minimu
 
 ### 0% promotional offers and deferred interest
 
-Every card payment in the plan gives each 0% promo its share first: what's left on the promo divided by the payments remaining before it ends (all of it on the last one). The rest goes to the regular balance. That way a promo is always paid off by the payment before it expires, even when the card also carries a regular balance. When you record a card payment in the app, it's split the same way. (Ask your card issuer to apply the extra to the promo; many let you choose.) The promo deadlines on the Plan page (Debt tab) show whether each promo is on track, and you get an alert if the plan can't pay one off in time.
+A card's minimum payment in the plan includes each 0% promo's share: what's left on the promo divided by the payments remaining before it ends (all of it on the last one), on top of the minimum on the regular balance. That way a promo is paid off by the payment before it expires, even when the card also carries a regular balance.
+
+How each payment is split depends on the card's **Payments go to** setting (in the card's **Promo offers** dialog, or **Edit details**). Set it to match how your card issuer applies payments:
+
+- **Regular balance's minimum first** (the default) — the regular balance gets its own minimum, then the promo balances, then whatever is left goes back to the regular balance.
+- **Promos first, regular balance last** — everything goes to the promo balances until they're paid off; the regular balance only gets what's left.
+
+Either way, promo balances are paid **soonest-expiring first**: each one is paid off before the next gets anything. Whenever an even split would pay every promo off in time, so does this. The same split is used everywhere a card is paid: its payment bill, loan group payments, extra payments in the plan, and payments you record. (A payment you aim at one promo, like **Pay down** on a promo, still goes to that promo first.) The promo deadlines on the Plan page (Debt tab) show whether each promo is on track, and you get an alert if the plan can't pay one off in time.
 
 A promo carves out part of the card's existing balance as interest-free until the promo's end date. Interest is only charged on the **regular** balance. If a promo **expires with a balance remaining**, the app charges **deferred (retroactive) interest** as if the promo never existed — `remaining × ((1 + APR/12)^months − 1)` — and the leftover amount becomes regular, interest-bearing debt. Projections apply this on the simulated expiry date, so you can see the hit coming.
 

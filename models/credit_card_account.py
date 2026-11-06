@@ -117,6 +117,8 @@ class CreditAccount:
         self.active_promos: list[PromoOffer] = []
         self.promo_balance: dict[str, float] = {}  # {promo_name: amount}
         self.regular_balance: float = 0.0  # Balance not on promo
+        # How a payment is split (see apply_payment): "regular_first" or "regular_last"
+        self.payment_order: str = "regular_first"
 
     def make_purchase(self, amount: float, description: str = "Purchase", transaction_date: date = None, promo_name: str = None) -> None:
         """Record a purchase (increases balance owed).
@@ -162,10 +164,11 @@ class CreditAccount:
         Record a payment to this credit account.
         Optionally withdraws from a source bank account.
 
-        By default the payment reduces the regular balance first, then promo
-        balances. When ``promo_name`` is given the payment is applied to that
-        promotional balance first (e.g. paying a promo off before it expires),
-        with any excess going to the regular balance and then other promos.
+        The payment is split over the regular and promo balances the way the
+        card's ``payment_order`` says (see apply_payment). When ``promo_name``
+        is given the payment goes to that promotional balance first (e.g.
+        paying a promo off before it expires), and any excess is split as usual.
+        Returns {promo name: amount applied}.
         """
         if amount <= 0:
             raise ValueError("Payment amount must be positive.")
@@ -184,29 +187,8 @@ class CreditAccount:
             )
 
         self.balance -= amount
-
-        # Reduce sub-balances: apply payment to regular balance first,
-        # then promo balances.  This keeps the sub-balance tracking in sync
-        # with the overall balance so interest calculations stay accurate.
-        remaining = amount
-        if promo_name and self.promo_balance.get(promo_name, 0.0) > 0:
-            applied = min(remaining, self.promo_balance[promo_name])
-            self.promo_balance[promo_name] -= applied
-            remaining -= applied
-        if remaining > 0 and self.regular_balance > 0:
-            applied = min(remaining, self.regular_balance)
-            self.regular_balance -= applied
-            remaining -= applied
-        if remaining > 0:
-            # Apply remainder to promo balances (oldest/smallest first)
-            for promo_name in list(self.promo_balance.keys()):
-                if remaining <= 0:
-                    break
-                promo_bal = self.promo_balance[promo_name]
-                if promo_bal > 0:
-                    applied = min(remaining, promo_bal)
-                    self.promo_balance[promo_name] -= applied
-                    remaining -= applied
+        # Keep the sub-balances in sync with the total so interest stays right
+        applied = self.apply_payment(amount, transaction_date, promo_name)
 
         self._record_transaction("PAYMENT", -amount, description, transaction_date)
 
@@ -215,6 +197,63 @@ class CreditAccount:
             "amount": amount,
             "balance_after": self.balance
         })
+        return applied
+
+    def regular_minimum(self, reference_date: date = None) -> float:
+        """The issuer's minimum on the regular (non-promo) balance alone."""
+        if self.regular_balance <= 0.005:
+            return 0.0
+        from .min_payment import amount, monthly_interest
+        interest = monthly_interest(self.regular_balance, self.interest_rate)
+        return min(round(amount(getattr(self, "min_rule", None), self.regular_balance, interest), 2),
+                   self.regular_balance)
+
+    def promos_by_expiry(self) -> list[str]:
+        """Promo balances still owed, the one that expires first first."""
+        ends = {p.promo_name: p.end_date for p in self.active_promos}
+        owed = [n for n, b in self.promo_balance.items() if b > 0.005]
+        return sorted(owed, key=lambda n: ends.get(n, date.max))
+
+    def apply_payment(self, amount: float, transaction_date: date = None, promo_name: str = None) -> dict:
+        """
+        Take ``amount`` off the sub-balances (the total is the caller's job).
+
+        * regular_first: the regular balance's own minimum first, then each
+          promo balance in order of expiry (the soonest paid off before the
+          next gets anything), then whatever is left to the regular balance
+        * regular_last: the promo balances in order of expiry first, then
+          the regular balance
+
+        Paying promos soonest-expiring first gets each one paid off in time
+        whenever splitting the payment evenly would. Returns {promo name:
+        amount applied}.
+        """
+        left = amount
+        applied: dict[str, float] = {}
+
+        def to_promo(name, cap=None):
+            nonlocal left
+            give = min(left, self.promo_balance.get(name, 0.0), left if cap is None else cap)
+            if give > 0:
+                self.promo_balance[name] = round(self.promo_balance[name] - give, 2)
+                applied[name] = round(applied.get(name, 0.0) + give, 2)
+                left -= give
+
+        def to_regular(cap=None):
+            nonlocal left
+            give = min(left, max(0.0, self.regular_balance), left if cap is None else cap)
+            if give > 0:
+                self.regular_balance = round(self.regular_balance - give, 2)
+                left -= give
+
+        if promo_name:
+            to_promo(promo_name)
+        if getattr(self, "payment_order", "regular_first") != "regular_last":
+            to_regular(self.regular_minimum(transaction_date))
+        for name in self.promos_by_expiry():
+            to_promo(name)
+        to_regular()
+        return applied
 
     def _record_transaction(self, trans_type: str, amount: float, description: str, trans_date: date = None):
         """Record a transaction in history."""
@@ -270,8 +309,7 @@ class CreditAccount:
         # the minimum on the regular (non-promo) balance
         promo_monthly = sum(self.promo_installments(ref).values())
         if promo_monthly > 0:
-            regular_min = amount(rule, self.regular_balance, interest) if self.regular_balance > 0 else 0.0
-            total = max(total, regular_min + promo_monthly)
+            total = max(total, self.regular_minimum(ref) + promo_monthly)
 
         # Never exceed total balance
         return min(round(total, 2), self.balance)
@@ -313,37 +351,15 @@ class CreditAccount:
     def pay_with_promo_plan(self, amount: float, description: str = "Payment",
                             transaction_date: date = None) -> dict:
         """
-        Pay the card the way a promo is paid off on time: each promo gets its
-        installment first (see promo_installments), the rest goes to the
-        regular balance, then to any promo balance left. Returns
-        {promo name: amount applied}.
+        A payment of up to the balance (a cent over is forgiven), split the
+        card's way (see apply_payment). Returns {promo name: amount applied}.
         """
         if amount <= 0:
             raise ValueError("Payment amount must be positive.")
         if amount > self.balance + 0.005:
             raise ValueError(f"Payment exceeds balance owed. Balance: {self.balance:.2f}, Requested: {amount:.2f}")
-        amount = min(amount, self.balance)
-        applied = {}
-        left = amount
-        for name, need in sorted(self.promo_installments(transaction_date).items(),
-                                 key=lambda kv: next((p.end_date for p in self.active_promos
-                                                      if p.promo_name == kv[0]), date.max)):
-            give = min(left, need, self.promo_balance.get(name, 0.0))
-            if give <= 0:
-                continue
-            self.promo_balance[name] -= give
-            applied[name] = round(give, 2)
-            left -= give
-        self.balance -= (amount - left)
-        if left > 0.0001:
-            # make_payment applies the rest (regular first) and records it
-            self.make_payment(left, description=description, transaction_date=transaction_date)
-            self.payment_history[-1]["amount"] = amount
-        else:
-            self._record_transaction("PAYMENT", -amount, description, transaction_date)
-            self.payment_history.append({"date": transaction_date or date.today(), "amount": amount,
-                                         "balance_after": self.balance})
-        return applied
+        return self.make_payment(min(amount, self.balance), description=description,
+                                 transaction_date=transaction_date)
 
     def calculate_monthly_payment(self, months: int) -> float:
         """

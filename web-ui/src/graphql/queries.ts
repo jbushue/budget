@@ -139,6 +139,7 @@ export const GET_ALL_BANKS = gql`
         statementDate
         status
         minimumPayment
+        paymentOrder
         minRule
         minRuleLabel
         promoOffers {
@@ -1291,7 +1292,7 @@ export const UPDATE_ACCOUNT = gql`
     $newName: String, $newBankName: String, $newAccountType: String,
     $interestRate: Float, $interestAccrualDate: Int,
     $refillAmount: Float, $refillDay: Int, $weeklySpending: Float, $offsetsEveryday: Boolean,
-    $creditLimit: Float, $paymentDueDate: Int, $statementDate: Int, $status: String,
+    $creditLimit: Float, $paymentDueDate: Int, $statementDate: Int, $status: String, $paymentOrder: String,
     $originalPrincipal: Float, $currentPrincipal: Float, $loanTermMonths: Int, $startDate: String,
     $escrowPropertyTax: Float, $escrowInsurance: Float, $escrowPmi: Float, $escrowHoa: Float, $escrowOther: Float,
     $marketValue: Float, $preferredSourceBank: String, $preferredSourceAccount: String,
@@ -1306,6 +1307,7 @@ export const UPDATE_ACCOUNT = gql`
       refillAmount: $refillAmount, refillDay: $refillDay, weeklySpending: $weeklySpending,
       offsetsEveryday: $offsetsEveryday,
       creditLimit: $creditLimit, paymentDueDate: $paymentDueDate, statementDate: $statementDate, status: $status,
+      paymentOrder: $paymentOrder,
       originalPrincipal: $originalPrincipal, currentPrincipal: $currentPrincipal,
       loanTermMonths: $loanTermMonths, startDate: $startDate,
       escrowPropertyTax: $escrowPropertyTax, escrowInsurance: $escrowInsurance, escrowPmi: $escrowPmi,

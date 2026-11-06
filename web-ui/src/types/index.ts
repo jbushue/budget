@@ -64,6 +64,7 @@ export interface CreditAccount {
   /** How the minimum is worked out (null: the default rule) */
   minRule?: Record<string, number | boolean> | string | null
   minRuleLabel?: string | null
+  paymentOrder?: 'regular_first' | 'regular_last'
   promoOffers: PromoOffer[]
 }
 

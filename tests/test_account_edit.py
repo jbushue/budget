@@ -114,9 +114,9 @@ class TestCards:
             assert (card.credit_limit, card.interest_rate, card.payment_due_date, card.statement_date) == \
                    (9000, 24.99, 20, 14)
             assert card.status.value == "frozen"
-            # The $50 payment gave the promo its share first ($500 over 12 payments)
-            assert card.balance == 2000 and card.promo_balance == {"0% BT": 458.33}
-            assert card.regular_balance == pytest.approx(1541.67)
+            # The $50 payment covered the regular balance's minimum first, the rest went to the promo
+            assert card.balance == 2000 and card.promo_balance == {"0% BT": 476.67}
+            assert card.regular_balance == pytest.approx(1523.33)
             bills = [b for b in m.bills if isinstance(b, AccountLinkedBill)]
             assert [b.bill_name for b in bills] == ["[Auto] Sapphire Payment"]
             # The payment bill kept its own settings and history, and follows the new due day;

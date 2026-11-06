@@ -358,6 +358,9 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
                 status = CreditAccountStatus[str(c["status"]).upper()]
             except KeyError:
                 raise EditError("Status must be active, closed or frozen") from None
+        order = c.get("payment_order")
+        if order is not None and order not in ("regular_first", "regular_last"):
+            raise EditError("Payment order must be regular_first or regular_last")
         promo_total = sum(acc.promo_balance.values())
         if "balance" in c:
             balance = float(c["balance"])
@@ -374,6 +377,8 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
             acc.statement_date = statement or None
         if status is not None:
             acc.status = status
+        if order is not None:
+            acc.payment_order = order
 
     elif kind == "mortgage":
         original = c.get("original_principal", acc.original_principal)

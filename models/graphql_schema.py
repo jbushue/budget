@@ -78,6 +78,7 @@ class CreditAccountType(graphene.ObjectType):
     minimum_payment = graphene.Float()
     min_rule = graphene.JSONString(description="How the minimum is worked out (null: the default rule)")
     min_rule_label = graphene.String(description="The minimum payment rule in words")
+    payment_order = graphene.String(description="regular_first | regular_last: where payments go on a card with promos")
     promo_offers = graphene.List(PromoOfferType)
 
 
@@ -190,6 +191,7 @@ class BankType(graphene.ObjectType):
                 min_rule=getattr(acc, "min_rule", None),
                 min_rule_label=describe_min_rule(getattr(acc, "min_rule", None))
                 + ("" if getattr(acc, "min_rule", None) else " (default)"),
+                payment_order=getattr(acc, "payment_order", "regular_first"),
                 promo_offers=promos,
             ))
         return results

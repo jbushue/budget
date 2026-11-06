@@ -72,6 +72,19 @@
             <option value="closed">Closed</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Payments on a card with promos</label>
+          <select v-model="form.paymentOrder">
+            <option value="regular_first">Regular balance's minimum first, then promos</option>
+            <option value="regular_last">Promos first, regular balance last</option>
+          </select>
+          <small class="hint">
+            Promo balances are paid soonest-expiring first: each is paid off before the next gets anything.
+            <template v-if="form.paymentOrder === 'regular_first'">The regular balance gets its own minimum first, and whatever is left after the promos.</template>
+            <template v-else>The regular balance only gets what's left once every promo is paid off.</template>
+            Match how your card issuer applies payments.
+          </small>
+        </div>
         <p class="help">Promo offers are edited with the card's <strong>Promos</strong> button.</p>
       </template>
 
@@ -245,6 +258,7 @@ const form = reactive({
   paymentDueDate: (a.paymentDueDate ?? null) as Num,
   statementDate: (a.statementDate ?? null) as Num,
   status: (a.status as string) ?? 'active',
+  paymentOrder: a.paymentOrder ?? 'regular_first',
   originalPrincipal: (a.originalPrincipal ?? null) as Num,
   currentPrincipal: (a.currentPrincipal ?? null) as Num,
   termYears: years(a.loanTermMonths) as Num,
@@ -336,7 +350,7 @@ async function save() {
     })
   } else if (props.kind === 'credit') {
     Object.assign(v, { creditLimit: num(form.creditLimit), paymentDueDate: day(form.paymentDueDate),
-      statementDate: day(form.statementDate) ?? 0, status: form.status })
+      statementDate: day(form.statementDate) ?? 0, status: form.status, paymentOrder: form.paymentOrder })
   } else if (props.kind === 'mortgage') {
     const k = form.loanKind
     Object.assign(v, {
@@ -377,5 +391,6 @@ async function save() {
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.75rem; }
 .sub { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-muted); gap: 0.2rem; margin-bottom: 0.5rem; }
 .problem { color: var(--danger); font-size: 0.85rem; margin: 0.25rem 0 0; }
+.hint { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem; line-height: 1.4; }
 @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
 </style>

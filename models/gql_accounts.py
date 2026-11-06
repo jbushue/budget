@@ -42,6 +42,7 @@ class UpdateAccount(graphene.Mutation):
         payment_due_date = graphene.Int()
         statement_date = graphene.Int()
         status = graphene.String(description="Cards: active | closed | frozen")
+        payment_order = graphene.String(description="Cards with promos: regular_first | regular_last")
         original_principal = graphene.Float()
         current_principal = graphene.Float()
         loan_term_months = graphene.Int()

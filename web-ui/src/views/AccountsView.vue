@@ -681,9 +681,17 @@
           · Balance: <strong>{{ currency(promoTarget.balance) }}</strong>
           · Regular: <strong>{{ currency(promoTarget.regularBalance) }}</strong>
         </p>
-        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem">
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem">
           Promos allocate portions of the existing balance for special financing. They do not add to the total balance.
         </p>
+        <div class="form-group pay-order">
+          <label for="pay-order">Payments go to</label>
+          <select id="pay-order" :value="promoTarget.paymentOrder" :disabled="savingOrder" @change="setPaymentOrder(($event.target as HTMLSelectElement).value)">
+            <option value="regular_first">The regular balance's minimum first, then the promos, then the rest of the regular balance</option>
+            <option value="regular_last">The promos first, the regular balance last</option>
+          </select>
+          <small>Promos are paid soonest-expiring first; each one is paid off before the next gets anything. Pick the order your card issuer uses.</small>
+        </div>
 
         <div v-if="promoTarget.promos.length === 0" class="empty-state" style="padding:1rem">
           <p>No promo offers yet. Add one to track a special financing rate.</p>
@@ -806,7 +814,7 @@ import {
   CREATE_MORTGAGE_ACCOUNT,
   GET_SIMPLEFIN_TRANSACTIONS,
   ADD_PROMO_OFFER, UPDATE_PROMO_OFFER, REMOVE_PROMO_OFFER,
-  UPDATE_BANK,
+  UPDATE_BANK, UPDATE_ACCOUNT,
 } from '../graphql/queries'
 import { apolloClient } from '../graphql/client'
 import { currency, pct, fmtDate, statusBadge, todayISO, accountTypeLabel, num } from '../utils/format'
@@ -1261,7 +1269,19 @@ const showPromosModal = ref(false)
 const minTarget = ref<{ bankName: string; card: CreditAccount } | null>(null)
 const showAddPromo = ref(false)
 const editingPromo = ref(false)
-const promoTarget = ref({ bankName: '', accountName: '', balance: 0, regularBalance: 0, promos: [] as PromoOffer[] })
+const promoTarget = ref({ bankName: '', accountName: '', balance: 0, regularBalance: 0, promos: [] as PromoOffer[],
+  paymentOrder: 'regular_first' as string })
+const savingOrder = ref(false)
+const { mutate: doUpdateAccount } = useMutation<{ updateAccount: MutationPayload }>(UPDATE_ACCOUNT)
+async function setPaymentOrder(order: string) {
+  const t = promoTarget.value
+  savingOrder.value = true
+  const ok = await runMutation(() => doUpdateAccount({ variables: {
+    bankName: t.bankName, accountName: t.accountName, accountType: 'credit', paymentOrder: order,
+  }}), 'updateAccount', { failMessage: 'Failed to save the payment order', showSuccess: true })
+  savingOrder.value = false
+  if (ok) t.paymentOrder = order
+}
 const newPromo = ref({
   promoName: '',
   monthsInterestFree: 12,
@@ -1287,7 +1307,7 @@ watch(banks, list => {
   if (!showPromosModal.value) return
   const cc = list.find(b => b.name === promoTarget.value.bankName)?.creditAccounts
     .find(c => c.accountName === promoTarget.value.accountName)
-  if (cc) Object.assign(promoTarget.value, { balance: cc.balance, regularBalance: cc.regularBalance, promos: cc.promoOffers ?? [] })
+  if (cc) Object.assign(promoTarget.value, { balance: cc.balance, regularBalance: cc.regularBalance, promos: cc.promoOffers ?? [], paymentOrder: cc.paymentOrder ?? 'regular_first' })
 })
 
 // Open a dialog from a link elsewhere (e.g. the command palette): /accounts?action=transfer
@@ -1313,6 +1333,7 @@ function openPromos(bankName: string, cc: CreditAccount) {
     balance: cc.balance,
     regularBalance: cc.regularBalance,
     promos: cc.promoOffers ?? [],
+    paymentOrder: cc.paymentOrder ?? 'regular_first',
   }
   showAddPromo.value = false
   editingPromo.value = false
@@ -1423,6 +1444,8 @@ function refreshPromoTarget() {
 <style scoped>
 .link-btn { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0; text-decoration: underline dotted; }
 .min-rule { font-size: 0.7rem; color: var(--text-muted); font-weight: 400; }
+.pay-order select { width: 100%; }
+.pay-order small { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem; }
 .loan-kind { margin-left: 0.35rem; font-size: 0.68rem; vertical-align: middle; }
 .restricted-note { margin-left: 0.35rem; font-size: 0.7rem; color: var(--text-light); white-space: nowrap; }
 .acct-details { font-size: 0.8rem; color: var(--text-muted); max-width: 300px; }
