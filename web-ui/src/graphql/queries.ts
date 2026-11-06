@@ -52,6 +52,10 @@ export const GET_SNAPSHOT = gql`
           preferredSourceBank
           preferredSourceAccount
           status
+          loanKind
+          kindLabel
+          inDeferment
+          paymentsStart
         }
         helocAccounts {
           id
@@ -173,6 +177,16 @@ export const GET_ALL_BANKS = gql`
         escrowPmi
         escrowHoa
         escrowOther
+        loanKind
+        kindLabel
+        paymentOverride
+        vehicleValue
+        valueAsOf
+        depreciationRate
+        paymentsStart
+        subsidized
+        inDeferment
+        remainingMonths
       }
       helocAccounts {
         id
@@ -302,6 +316,7 @@ export const GET_PROJECTION = gql`
           sourceBank
           sourceAccount
           status
+          kindLabel
         }
         balances
         creditBalances
@@ -607,7 +622,7 @@ export const GET_BILL_MONTH = gql`
       overdueBefore
       totals { due paid remaining overdue }
       occurrences {
-        billName displayName kind dueDate amount paid remaining status paidOn
+        billName displayName kind kindLabel dueDate amount paid remaining status paidOn
         sourceBank sourceAccount isFloating hasActualAmount estimatedAmount
         bankName accountName groupName balanceOwed
         payments { date amount sourceBank sourceAccount movedMoney }
@@ -1143,6 +1158,11 @@ export const CREATE_MORTGAGE_ACCOUNT = gql`
     $marketValue: Float
     $preferredSourceBank: String
     $preferredSourceAccount: String
+    $loanKind: String
+    $paymentOverride: Float
+    $depreciationRate: Float
+    $paymentsStart: String
+    $subsidized: Boolean
   ) {
     createMortgageAccount(
       bankName: $bankName
@@ -1161,7 +1181,24 @@ export const CREATE_MORTGAGE_ACCOUNT = gql`
       marketValue: $marketValue
       preferredSourceBank: $preferredSourceBank
       preferredSourceAccount: $preferredSourceAccount
+      loanKind: $loanKind
+      paymentOverride: $paymentOverride
+      depreciationRate: $depreciationRate
+      paymentsStart: $paymentsStart
+      subsidized: $subsidized
     ) { success message }
+  }
+`
+
+export const CONVERT_CREDIT_TO_LOAN = gql`
+  mutation ConvertCreditToLoan(
+    $bankName: String!, $accountName: String!, $loanKind: String,
+    $termMonths: Int, $paymentsStart: String, $subsidized: Boolean
+  ) {
+    convertCreditToLoan(
+      bankName: $bankName, accountName: $accountName, loanKind: $loanKind,
+      termMonths: $termMonths, paymentsStart: $paymentsStart, subsidized: $subsidized
+    ) { success message name }
   }
 `
 
@@ -1258,7 +1295,9 @@ export const UPDATE_ACCOUNT = gql`
     $originalPrincipal: Float, $currentPrincipal: Float, $loanTermMonths: Int, $startDate: String,
     $escrowPropertyTax: Float, $escrowInsurance: Float, $escrowPmi: Float, $escrowHoa: Float, $escrowOther: Float,
     $marketValue: Float, $preferredSourceBank: String, $preferredSourceAccount: String,
-    $drawPeriodMonths: Int, $totalTermMonths: Int
+    $drawPeriodMonths: Int, $totalTermMonths: Int,
+    $loanKind: String, $paymentOverride: Float, $valueAsOf: String, $depreciationRate: Float,
+    $paymentsStart: String, $subsidized: Boolean
   ) {
     updateAccount(
       bankName: $bankName, accountName: $accountName, accountType: $accountType,
@@ -1273,7 +1312,9 @@ export const UPDATE_ACCOUNT = gql`
       escrowHoa: $escrowHoa, escrowOther: $escrowOther,
       marketValue: $marketValue, preferredSourceBank: $preferredSourceBank,
       preferredSourceAccount: $preferredSourceAccount,
-      drawPeriodMonths: $drawPeriodMonths, totalTermMonths: $totalTermMonths
+      drawPeriodMonths: $drawPeriodMonths, totalTermMonths: $totalTermMonths,
+      loanKind: $loanKind, paymentOverride: $paymentOverride, valueAsOf: $valueAsOf,
+      depreciationRate: $depreciationRate, paymentsStart: $paymentsStart, subsidized: $subsidized
     ) { success message name }
   }
 `

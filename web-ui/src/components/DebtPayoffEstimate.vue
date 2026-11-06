@@ -2,7 +2,7 @@
   <div>
     <div class="payoff-head">
       <p class="muted payoff-note">
-        Until every card and loan is paid off (mortgages aren't included). A month-by-month estimate at your
+        Until every card and loan is paid off (mortgages aren't included; student loans count once payments start). A month-by-month estimate at your
         current minimums plus the extra below. The plan above is worked out day by day for the next year.
       </p>
       <label class="payoff-slider">

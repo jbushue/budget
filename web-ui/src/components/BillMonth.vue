@@ -56,7 +56,7 @@
                 <td style="white-space:nowrap">{{ fmtDateShort(o.dueDate) }}</td>
                 <td>
                   <div style="font-weight:500">{{ o.displayName }}</div>
-                  <div class="muted" style="font-size:0.72rem">{{ KIND_LABELS[o.kind] }}<template v-if="o.sourceAccount"> · from {{ o.sourceAccount }}</template></div>
+                  <div class="muted" style="font-size:0.72rem">{{ o.kindLabel || KIND_LABELS[o.kind] }}<template v-if="o.sourceAccount"> · from {{ o.sourceAccount }}</template></div>
                 </td>
                 <td style="text-align:right;white-space:nowrap">
                   <div style="font-weight:600">{{ currency(o.amount) }}</div>

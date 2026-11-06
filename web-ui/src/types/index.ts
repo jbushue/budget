@@ -90,7 +90,19 @@ export interface MortgageAccount {
   escrowPmi: number
   escrowHoa: number
   escrowOther: number
+  loanKind?: LoanKind
+  kindLabel?: string
+  paymentOverride?: number | null
+  vehicleValue?: number | null
+  valueAsOf?: string | null
+  depreciationRate?: number | null
+  paymentsStart?: string | null
+  subsidized?: boolean
+  inDeferment?: boolean
+  remainingMonths?: number
 }
+
+export type LoanKind = 'mortgage' | 'auto' | 'student' | 'personal' | 'other'
 
 export interface HELOCAccount {
   id: string
@@ -210,6 +222,7 @@ export interface CalendarEvent {
   sourceBank: string
   sourceAccount: string
   status: string
+  kindLabel?: string | null
 }
 
 export interface CalendarDay {
@@ -370,6 +383,7 @@ export interface BillOccurrence {
   billName: string
   displayName: string
   kind: 'bill' | 'floating' | 'credit' | 'mortgage' | 'heloc' | 'group'
+  kindLabel?: string | null
   dueDate: string
   amount: number
   paid: number
@@ -566,6 +580,7 @@ export interface Insight {
 export interface BillTiming {
   name: string
   kind: 'bill' | 'floating' | 'credit' | 'mortgage' | 'heloc' | 'group'
+  kindLabel?: string | null
   dueDate: string
   amount: number
   estimated: boolean
@@ -869,7 +884,7 @@ export interface NetWorthBreakdown {
   totalDebt: number
   netWorth: number
   assets: Asset[]
-  homes: { name: string; bank: string; value: number; owed: number }[]
+  homes: { name: string; bank: string; value: number; owed: number; kind?: string }[]
 }
 
 export interface MonthlyPlan {

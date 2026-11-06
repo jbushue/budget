@@ -86,9 +86,9 @@
               <tr v-for="h in nw.homes" :key="h.bank + h.name">
                 <td>
                   <div style="font-weight:500">{{ h.name }}</div>
-                  <div class="sub">Market value from the mortgage on the Accounts page</div>
+                  <div class="sub">{{ h.kind === 'Vehicle' ? 'Value from the auto loan on the Accounts page, losing value each year' : 'Market value from the mortgage on the Accounts page' }}</div>
                 </td>
-                <td class="muted">Property</td>
+                <td class="muted">{{ h.kind ?? 'Property' }}</td>
                 <td style="text-align:right;font-weight:600">{{ currency(h.value) }}</td>
                 <td style="text-align:right">{{ currency(h.owed) }}</td>
                 <td style="text-align:right" :class="h.value - h.owed >= 0 ? 'positive' : 'negative'">{{ currency(h.value - h.owed) }}</td>
@@ -196,7 +196,7 @@ const change = computed(() => {
 
 const loanOptions = computed(() => (banksResult.value?.allBanks ?? []).flatMap(b => [
   ...b.creditAccounts.map(a => ({ value: `${b.name}:${a.accountName}`, label: `${b.name} / ${a.accountName} (${currency(a.balance)} owed)` })),
-  ...b.mortgageAccounts.map(a => ({ value: `${b.name}:${a.accountName}`, label: `${b.name} / ${a.accountName} (mortgage)` })),
+  ...b.mortgageAccounts.map(a => ({ value: `${b.name}:${a.accountName}`, label: `${b.name} / ${a.accountName} (${(a.kindLabel ?? 'Mortgage').toLowerCase()})` })),
   ...b.helocAccounts.map(a => ({ value: `${b.name}:${a.accountName}`, label: `${b.name} / ${a.accountName} (HELOC)` })),
 ]))
 

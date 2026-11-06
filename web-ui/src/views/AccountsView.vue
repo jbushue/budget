@@ -139,6 +139,7 @@
                         { label: 'SimpleFIN transactions', icon: 'transactions', hidden: !isSynced(bank.name, cc.accountName), action: () => openTransactions(bank.name, cc.accountName) },
                         { label: 'Promo offers', icon: 'tag', action: () => openPromos(bank.name, cc) },
                         { label: 'Match minimum payment', icon: 'banknote', action: () => minTarget = { bankName: bank.name, card: cc } },
+                        { label: 'Convert to loan', icon: 'loans', action: () => loanTarget = { bankName: bank.name, card: cc } },
                         { label: 'Convert to HELOC', icon: 'home', action: () => openConvertToHELOC(bank.name, cc) },
                         { label: 'Delete account', icon: 'trash', danger: true, divider: true, action: () => deleteAccount(bank.name, cc.accountName, 'credit') },
                       ]" />
@@ -150,9 +151,9 @@
           </div>
         </div>
 
-        <!-- Mortgage accounts -->
+        <!-- Loans: mortgages, auto, student, personal, other -->
         <div v-if="bank.mortgageAccounts && bank.mortgageAccounts.length" style="margin-top:1rem">
-          <h4>Mortgages</h4>
+          <h4>{{ bank.mortgageAccounts.every(m => (m.loanKind ?? 'mortgage') === 'mortgage') ? 'Mortgages' : 'Loans' }}</h4>
           <div class="table-wrap">
             <table>
               <thead>
@@ -164,7 +165,7 @@
                   <th style="text-align:right">Principal</th>
                   <th style="text-align:right">Monthly payment</th>
                   <th style="text-align:right">P &amp; I</th>
-                  <th style="text-align:right">Escrow</th>
+                  <th v-if="hasEscrow(bank)" style="text-align:right">Escrow</th>
                   <th></th>
                 </tr>
               </thead>
@@ -172,20 +173,25 @@
                 <tr v-for="m in bank.mortgageAccounts" :key="m.id">
                   <td style="font-weight:500">
                     {{ m.accountName }}
+                    <span v-if="(m.loanKind ?? 'mortgage') !== 'mortgage'" class="badge badge-info loan-kind">{{ m.kindLabel }}</span>
                     <span v-if="isSynced(bank.name, m.accountName)" class="sync-indicator" :title="syncTooltip(bank.name, m.accountName)">
                       <span class="sync-label">SimpleFIN</span>
                     </span>
+                    <div v-if="loanNote(m)" class="min-rule">{{ loanNote(m) }}</div>
                   </td>
                   <td><span class="badge cap" :class="m.status === 'active' ? 'badge-success' : 'badge-warning'">{{ m.status }}</span></td>
                   <td>{{ pct(m.interestRate) }}</td>
                   <td>{{ m.paymentDueDate }}</td>
                   <td style="text-align:right;font-weight:600;color:var(--danger)">{{ currency(m.currentPrincipal) }}</td>
-                  <td style="text-align:right;font-weight:600">{{ currency(m.totalMonthlyPayment) }}</td>
+                  <td style="text-align:right;font-weight:600">
+                    {{ currency(m.totalMonthlyPayment) }}
+                    <div v-if="m.paymentOverride" class="min-rule">from your statement</div>
+                  </td>
                   <td style="text-align:right;font-size:0.8rem">
                     <div>P: {{ currency(m.monthlyPrincipal) }}</div>
                     <div>I: {{ currency(m.monthlyInterest) }}</div>
                   </td>
-                  <td style="text-align:right">{{ currency(m.escrowMonthly) }}</td>
+                  <td v-if="hasEscrow(bank)" style="text-align:right">{{ (m.loanKind ?? 'mortgage') === 'mortgage' ? currency(m.escrowMonthly) : '—' }}</td>
                   <td style="text-align:right;white-space:nowrap">
                     <div class="row-actions">
                       <button class="btn btn-outline btn-sm" @click="openUpdateLoan(bank.name, m.accountName, m.currentPrincipal, 'mortgage')">Update</button>
@@ -339,17 +345,18 @@
         </div>
         <div class="form-group">
           <label>Account type</label>
-          <select v-model="newAccount.type">
+          <select v-model="typeChoice">
             <optgroup v-for="g in KIND_GROUPS" :key="g.group" :label="g.label">
               <option v-for="k in g.kinds" :key="k.value" :value="k.value">{{ k.label }}</option>
             </optgroup>
             <optgroup label="Debt">
               <option value="credit">Credit card</option>
               <option value="heloc">HELOC</option>
-              <option value="mortgage">Mortgage</option>
+              <option v-for="k in LOAN_KINDS" :key="k.value" :value="`loan:${k.value}`">{{ k.label }}</option>
             </optgroup>
           </select>
           <small v-if="isBankKind(newAccount.type)" class="muted">{{ kindInfo(newAccount.type).hint }}</small>
+          <small v-else-if="newAccount.type === 'mortgage'" class="muted">{{ LOAN_KINDS.find(k => k.value === newAccount.loanKind)?.hint }}</small>
         </div>
         <div v-if="newAccount.type === 'mortgage'" class="form-group">
           <label>Original loan amount</label>
@@ -357,7 +364,7 @@
           <small v-if="!(Number(newAccount.originalPrincipal) > 0)" style="color:var(--danger)">Original loan amount must be greater than 0.</small>
         </div>
         <div class="form-group">
-          <label>{{ newAccount.type === 'credit' ? 'Current Balance' : newAccount.type === 'heloc' ? 'Current Balance Owed' : newAccount.type === 'mortgage' ? 'Current Principal Owed (blank = original amount)' : 'Starting Balance' }}</label>
+          <label>{{ newAccount.type === 'credit' ? 'Current Balance' : newAccount.type === 'heloc' ? 'Current Balance Owed' : newAccount.type === 'mortgage' ? 'Current balance owed (blank = original amount)' : 'Starting Balance' }}</label>
           <input v-model.number="newAccount.balance" type="number" step="0.01" />
         </div>
         <div v-if="!isBankKind(newAccount.type) || kindInfo(newAccount.type).earns" class="form-group">
@@ -408,11 +415,15 @@
             <input v-model.number="newAccount.paymentDueDate" type="number" min="1" max="31" />
           </div>
         </template>
-        <!-- Mortgage-specific fields -->
+        <!-- Loan fields (mortgage, auto, student, personal, other) -->
         <template v-if="newAccount.type === 'mortgage'">
-          <div class="form-group">
+          <div v-if="newAccount.loanKind === 'mortgage'" class="form-group">
             <label>Loan term (years)</label>
             <input v-model.number="newAccount.loanTermYears" type="number" min="1" max="50" step="1" />
+          </div>
+          <div v-else class="form-group">
+            <label>Loan term (months)</label>
+            <input v-model.number="newAccount.loanTermMonths" type="number" min="1" max="600" step="1" />
           </div>
           <div class="form-group">
             <label>Loan start date (optional)</label>
@@ -423,6 +434,34 @@
             <input v-model.number="newAccount.paymentDueDate" type="number" min="1" max="31" />
           </div>
           <div class="form-group">
+            <label>Payment from your statement (optional)</label>
+            <input v-model.number="newAccount.paymentOverride" type="number" step="0.01" min="0" placeholder="blank = calculated" />
+            <small style="color:var(--text-muted)">If the lender's payment differs from the calculated one (income-driven plans, 0% installment plans).</small>
+          </div>
+          <template v-if="newAccount.loanKind === 'student'">
+            <div class="form-group">
+              <label>Payments start (optional)</label>
+              <input v-model="newAccount.paymentsStart" type="date" />
+              <small style="color:var(--text-muted)">In school, grace or deferment: nothing is due before this date.</small>
+            </div>
+            <div v-if="newAccount.paymentsStart" class="form-group">
+              <label style="display:flex;align-items:center;gap:0.4rem;font-weight:400">
+                <input v-model="newAccount.subsidized" type="checkbox" /> Subsidized (no interest until payments start)
+              </label>
+            </div>
+          </template>
+          <template v-if="newAccount.loanKind === 'auto'">
+            <div class="form-group">
+              <label>Vehicle value (optional)</label>
+              <input v-model.number="newAccount.marketValue" type="number" step="0.01" min="0" />
+              <small style="color:var(--text-muted)">Counts toward net worth. Skip it if the car is on the Net worth page already.</small>
+            </div>
+            <div v-if="optAmount(newAccount.marketValue)" class="form-group">
+              <label>Loses (% a year)</label>
+              <input v-model.number="newAccount.depreciationRate" type="number" step="0.5" min="0" max="99" />
+            </div>
+          </template>
+          <div v-if="newAccount.loanKind === 'mortgage'" class="form-group">
             <label>Monthly escrow (optional)</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
               <input v-model.number="newAccount.escrowPropertyTax" type="number" step="0.01" min="0" placeholder="Property tax" title="Property tax" />
@@ -432,7 +471,7 @@
               <input v-model.number="newAccount.escrowOther" type="number" step="0.01" min="0" placeholder="Other" title="Other" />
             </div>
           </div>
-          <div class="form-group">
+          <div v-if="newAccount.loanKind === 'mortgage'" class="form-group">
             <label>Home market value (optional)</label>
             <input v-model.number="newAccount.marketValue" type="number" step="0.01" min="0" />
             <small style="color:var(--text-muted)">Used to show equity.</small>
@@ -451,8 +490,11 @@
             </div>
           </div>
           <div v-if="mortgagePaymentEstimate" style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem">
-            Estimated payment: <strong>{{ currency(mortgagePaymentEstimate.total) }}/month</strong>
-            ({{ currency(mortgagePaymentEstimate.principalInterest) }} principal &amp; interest + {{ currency(mortgagePaymentEstimate.escrow) }} escrow)
+            {{ optAmount(newAccount.paymentOverride) ? 'Payment' : 'Estimated payment' }}: <strong>{{ currency(mortgagePaymentEstimate.total) }}/month</strong>
+            <template v-if="mortgagePaymentEstimate.escrow > 0">
+              ({{ currency(mortgagePaymentEstimate.principalInterest) }} principal &amp; interest + {{ currency(mortgagePaymentEstimate.escrow) }} escrow)
+            </template>
+            <template v-if="newAccount.loanKind === 'student' && newAccount.paymentsStart">, starting {{ fmtDate(newAccount.paymentsStart) }}</template>
           </div>
         </template>
         <div class="modal-actions">
@@ -572,10 +614,10 @@
     <!-- Update HELOC Balance Modal -->
     <div v-if="showHELOCModal" class="modal-overlay" @click.self="showHELOCModal = false">
       <div class="modal">
-        <h3>Update {{ helocTarget.accountType === 'mortgage' ? 'Mortgage Principal' : 'HELOC Balance' }}</h3>
+        <h3>Update {{ helocTarget.accountType === 'mortgage' ? 'loan balance' : 'HELOC Balance' }}</h3>
         <p style="margin-bottom:0.75rem;color:var(--text-muted)">{{ helocTarget.bankName }} / {{ helocTarget.accountName }}</p>
         <div class="form-group">
-          <label>{{ helocTarget.accountType === 'mortgage' ? 'New Principal Owed' : 'New Balance' }}</label>
+          <label>{{ helocTarget.accountType === 'mortgage' ? 'Principal owed now' : 'New Balance' }}</label>
           <input v-model.number="helocTarget.newBalance" type="number" step="0.01" />
         </div>
         <div class="modal-actions">
@@ -730,6 +772,8 @@
                       @close="minTarget = null" @done="refetch()" />
     <TransferDialog :open="showTransfer" :banks="banks" @close="showTransfer = false" @done="refetch()" />
     <BalanceCheckIn :open="showCheckIn" :banks="banks" @close="showCheckIn = false" @done="refetch()" />
+    <ConvertToLoanDialog v-if="loanTarget" :bank-name="loanTarget.bankName" :card="loanTarget.card"
+                         @close="loanTarget = null" @done="refetch()" />
     <MortgageTools :open="!!mortgageTarget" :bank-name="mortgageTarget?.bank ?? ''" :account-name="mortgageTarget?.account ?? ''"
                    :initial-tab="mortgageTarget?.tab" :banks="banks" @close="mortgageTarget = null" @done="refetch()" />
     <PromoMoneyDialog :open="!!promoMoney" :mode="promoMoney?.mode ?? 'pay'" :bank-name="promoTarget.bankName"
@@ -743,6 +787,8 @@
 import TransferDialog from '../components/TransferDialog.vue'
 import BalanceCheckIn from '../components/BalanceCheckIn.vue'
 import MortgageTools from '../components/MortgageTools.vue'
+import ConvertToLoanDialog from '../components/ConvertToLoanDialog.vue'
+import { LOAN_KINDS, amortized } from '../utils/loans'
 import PromoMoneyDialog from '../components/PromoMoneyDialog.vue'
 import { useRoute, useRouter } from 'vue-router'
 import RowMenu from '../components/RowMenu.vue'
@@ -769,7 +815,7 @@ import AccountExtrasFields, { type AccountExtras } from '../components/AccountEx
 import { runMutation } from '../utils/mutation'
 import EditAccountModal, { type AccountKind, type AnyAccount } from '../components/EditAccountModal.vue'
 import MinPaymentDialog from '../components/MinPaymentDialog.vue'
-import type { Bank, BankAccount, CreditAccount, BalanceHistoryEntry, SimplefinSyncedAccount, SimplefinTransaction, PromoOffer, MutationPayload } from '../types'
+import type { Bank, BankAccount, CreditAccount, LoanKind, MortgageAccount, BalanceHistoryEntry, SimplefinSyncedAccount, SimplefinTransaction, PromoOffer, MutationPayload } from '../types'
 import { ask, notify } from '../utils/dialog'
 
 
@@ -878,7 +924,10 @@ function emptyAccount() {
     paymentDueDate: null as number | string | null,
     statementDate: null as number | string | null,
     interestAccrualDate: null as number | string | null,
-    // Mortgage
+    // Loans (mortgage, auto, student, personal, other)
+    loanKind: 'mortgage' as LoanKind, loanTermMonths: 60 as number | string,
+    paymentOverride: null as number | string | null, paymentsStart: '', subsidized: false,
+    depreciationRate: 15 as number | string,
     originalPrincipal: 0, loanTermYears: 30,
     escrowPropertyTax: null as number | string | null,
     escrowInsurance: null as number | string | null,
@@ -891,6 +940,18 @@ function emptyAccount() {
   }
 }
 const newAccount = ref(emptyAccount())
+// The type select: bank kinds, credit, heloc, or loan:<kind> (all loans are type 'mortgage' with a loanKind)
+const typeChoice = computed({
+  get: () => (newAccount.value.type === 'mortgage' ? `loan:${newAccount.value.loanKind}` : newAccount.value.type),
+  set: (v: string) => {
+    if (v.startsWith('loan:')) {
+      const kind = v.slice(5) as LoanKind
+      newAccount.value.type = 'mortgage'
+      newAccount.value.loanKind = kind
+      newAccount.value.loanTermMonths = LOAN_KINDS.find(k => k.value === kind)?.term ?? 60
+    } else newAccount.value.type = v
+  },
+})
 // Pick a bank so the form can be saved right away
 watch([showAccountModal, banks], ([open]) => {
   if (open && !newAccount.value.bankName && banks.value.length) newAccount.value.bankName = banks.value[0].name
@@ -922,14 +983,28 @@ const mortgageSourceAccounts = computed(() =>
 const mortgagePaymentEstimate = computed(() => {
   const a = newAccount.value
   const principal = Number(a.originalPrincipal)
-  const months = Math.round(Number(a.loanTermYears) * 12)
+  const months = loanMonths(a)
   if (!(principal > 0) || !(months > 0)) return null
-  const r = Number(a.interestRate || 0) / 100 / 12
-  const pi = r === 0 ? principal / months : principal * (r * (1 + r) ** months) / ((1 + r) ** months - 1)
-  const escrow = [a.escrowPropertyTax, a.escrowInsurance, a.escrowPmi, a.escrowHoa, a.escrowOther]
+  const pi = optAmount(a.paymentOverride) || amortized(principal, Number(a.interestRate || 0), months)
+  const escrow = a.loanKind !== 'mortgage' ? 0 : [a.escrowPropertyTax, a.escrowInsurance, a.escrowPmi, a.escrowHoa, a.escrowOther]
     .reduce<number>((sum, v) => sum + (optAmount(v) ?? 0), 0)
   return { principalInterest: pi, escrow, total: pi + escrow }
 })
+
+function loanMonths(a: ReturnType<typeof emptyAccount>): number {
+  return a.loanKind === 'mortgage' ? Math.round((num(a.loanTermYears) ?? 30) * 12) : Math.trunc(num(a.loanTermMonths) ?? 60)
+}
+
+function hasEscrow(bank: Bank): boolean {
+  return bank.mortgageAccounts.some(m => (m.loanKind ?? 'mortgage') === 'mortgage')
+}
+
+/** Under a loan's name: deferment, vehicle value. */
+function loanNote(m: MortgageAccount): string {
+  if (m.inDeferment && m.paymentsStart) return `nothing due until ${fmtDate(m.paymentsStart)}${m.subsidized ? ' (subsidized)' : ''}`
+  if (m.loanKind === 'auto' && m.vehicleValue) return `vehicle worth ${currency(m.vehicleValue)}`
+  return ''
+}
 
 /** Optional day-of-month input -> integer or null (empty inputs give ''). */
 function optDay(v: number | string | null | undefined): number | null {
@@ -967,18 +1042,25 @@ async function createAccount() {
       originalPrincipal: num(a.originalPrincipal),
       currentPrincipal: optAmount(a.balance) || null,
       interestRate: num(a.interestRate) ?? 0,
-      loanTermMonths: Math.round((num(a.loanTermYears) ?? 30) * 12),
+      loanTermMonths: loanMonths(a),
       paymentDueDate: optDay(a.paymentDueDate) ?? 1,
       startDate: a.startDate || null,
-      escrowPropertyTax: optAmount(a.escrowPropertyTax),
-      escrowInsurance: optAmount(a.escrowInsurance),
-      escrowPmi: optAmount(a.escrowPmi),
-      escrowHoa: optAmount(a.escrowHoa),
-      escrowOther: optAmount(a.escrowOther),
-      marketValue: optAmount(a.marketValue),
+      ...(a.loanKind === 'mortgage' ? {
+        escrowPropertyTax: optAmount(a.escrowPropertyTax),
+        escrowInsurance: optAmount(a.escrowInsurance),
+        escrowPmi: optAmount(a.escrowPmi),
+        escrowHoa: optAmount(a.escrowHoa),
+        escrowOther: optAmount(a.escrowOther),
+      } : {}),
+      marketValue: ['mortgage', 'auto'].includes(a.loanKind) ? optAmount(a.marketValue) : null,
       preferredSourceBank: a.sourceBank || null,
       preferredSourceAccount: a.sourceAccount || null,
-    }}), 'createMortgageAccount', { failMessage: 'Failed to create mortgage' })
+      loanKind: a.loanKind,
+      paymentOverride: optAmount(a.paymentOverride),
+      depreciationRate: a.loanKind === 'auto' ? optAmount(a.depreciationRate) : null,
+      paymentsStart: a.loanKind === 'student' && a.paymentsStart ? a.paymentsStart : null,
+      subsidized: a.loanKind === 'student' && !!a.paymentsStart && a.subsidized,
+    }}), 'createMortgageAccount', { failMessage: 'Failed to create the loan' })
   } else {
     const isCredit = a.type === 'credit'
     const x = a.extras
@@ -1089,6 +1171,9 @@ function utilColor(cc: CreditAccount) {
   if (u > 50) return 'var(--warning)'
   return 'var(--success)'
 }
+
+// ── Convert a card-style loan to a loan
+const loanTarget = ref<{ bankName: string; card: CreditAccount } | null>(null)
 
 // ── Convert Credit to HELOC
 const showConvertModal = ref(false)
@@ -1215,6 +1300,7 @@ watch(() => route.query.action, action => {
     // /accounts?action=add&q=ebt opens the form with that kind picked
     const kind = typeof route.query.q === 'string' ? route.query.q : ''
     newAccount.value = { ...emptyAccount(), type: isBankKind(kind) || ['credit', 'heloc', 'mortgage'].includes(kind) ? kind : 'checking' }
+    if (LOAN_KINDS.some(k => k.value === kind)) typeChoice.value = `loan:${kind}`
     showAccountModal.value = true
   } else return
   router.replace({ query: { ...route.query, action: undefined, q: undefined } })
@@ -1336,7 +1422,8 @@ function refreshPromoTarget() {
 
 <style scoped>
 .link-btn { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0; text-decoration: underline dotted; }
-.min-rule { font-size: 0.7rem; color: var(--text-muted); }
+.min-rule { font-size: 0.7rem; color: var(--text-muted); font-weight: 400; }
+.loan-kind { margin-left: 0.35rem; font-size: 0.68rem; vertical-align: middle; }
 .restricted-note { margin-left: 0.35rem; font-size: 0.7rem; color: var(--text-light); white-space: nowrap; }
 .acct-details { font-size: 0.8rem; color: var(--text-muted); max-width: 300px; }
 .sync-indicator {

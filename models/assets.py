@@ -4,8 +4,9 @@ retirement accounts, property, valuables. Each has a value you update now
 and then (with history) and, optionally, the loan against it (a card/loan
 account, mortgage or HELOC) so its equity can be shown.
 
-Net worth = cash in bank accounts + assets + home values (a mortgage's
-market value, unless a property asset is linked to that mortgage) − debts.
+Net worth = cash in bank accounts + assets + loan collateral (a mortgage's
+home value or an auto loan's vehicle value, after depreciation, unless an
+asset is linked to that loan) − debts.
 """
 
 from __future__ import annotations
@@ -134,24 +135,55 @@ def asset_history(asset_id: int) -> list[dict]:
         session.close()
 
 
-def home_values(manager) -> list[dict]:
-    """Mortgages' market values that count as assets (those not covered by a linked property asset)."""
-    covered = {(a["linked_bank"], a["linked_account"]) for a in list_assets() if a["kind"] == "property"}
+def _covered(assets: list[dict]) -> set:
+    """Loans whose home or vehicle is already entered as a linked asset (so not counted twice)."""
+    return {(a["linked_bank"], a["linked_account"]) for a in assets
+            if a["kind"] in ("property", "vehicle") and a["linked_account"]}
+
+
+def _collateral(manager, covered: set, day: date = None) -> list[dict]:
     out = []
     for bank in manager.banks:
         for name, m in bank.mortgage_accounts.items():
-            if m.market_value and (bank.name, name) not in covered:
-                out.append({"name": name, "bank": bank.name, "value": round(m.market_value, 2),
-                            "owed": round(m.current_principal, 2)})
+            value = m.value_on(day) if hasattr(m, "value_on") else m.market_value
+            if value and (bank.name, name) not in covered:
+                is_home = getattr(m, "kind", "mortgage") == "mortgage"
+                out.append({"name": name, "bank": bank.name, "value": round(value, 2),
+                            "owed": round(m.current_principal, 2),
+                            "kind": "Property" if is_home else "Vehicle",
+                            "loan_kind": getattr(m, "kind", "mortgage")})
     return out
 
 
-def other_assets_total(manager) -> float:
-    """Assets and home values, i.e. everything net worth counts besides cash in bank accounts."""
+def home_values(manager, day: date = None) -> list[dict]:
+    """
+    Loan collateral that counts as an asset: a mortgage's home value, an auto
+    loan's vehicle value (depreciated to ``day``), unless an asset linked to
+    that loan already covers it.
+    """
+    return _collateral(manager, _covered(list_assets()), day)
+
+
+loan_collateral = home_values
+
+
+def other_assets_on(manager):
+    """
+    A function day -> assets + loan collateral on that day (vehicles keep
+    depreciating), for projected net worth. Reads the database once.
+    """
     try:
-        return round(sum(a["value"] for a in list_assets()) + sum(h["value"] for h in home_values(manager)), 2)
+        assets = list_assets()
     except Exception:  # noqa: BLE001 - no database (plain library use)
-        return 0.0
+        assets = []
+    fixed = sum(a["value"] for a in assets)
+    covered = _covered(assets)
+    return lambda day=None: round(fixed + sum(c["value"] for c in _collateral(manager, covered, day)), 2)
+
+
+def other_assets_total(manager, day: date = None) -> float:
+    """Assets and loan collateral, i.e. everything net worth counts besides cash in bank accounts."""
+    return other_assets_on(manager)(day)
 
 
 def net_worth_breakdown(manager) -> dict:
@@ -162,13 +194,17 @@ def net_worth_breakdown(manager) -> dict:
     by_kind: dict = {}
     for a in assets:
         by_kind[a["kind_label"]] = by_kind.get(a["kind_label"], 0.0) + a["value"]
-    if homes:
-        by_kind["Property"] = by_kind.get("Property", 0.0) + sum(h["value"] for h in homes)
-    debts = {
-        "Credit cards & loans": sum(c.balance for b in manager.banks for c in b.credit_accounts.values()),
-        "Mortgages": sum(m.current_principal for b in manager.banks for m in b.mortgage_accounts.values()),
-        "HELOCs": sum(h.balance for b in manager.banks for h in b.heloc_accounts.values()),
-    }
+    for h in homes:
+        by_kind[h["kind"]] = by_kind.get(h["kind"], 0.0) + h["value"]
+    debts = {"Credit cards": sum(c.balance for b in manager.banks for c in b.credit_accounts.values())}
+    loan_groups = {"mortgage": "Mortgages", "auto": "Auto loans", "student": "Student loans"}
+    for kind in ("Mortgages", "Auto loans", "Student loans", "Other loans"):
+        debts[kind] = 0.0
+    for b in manager.banks:
+        for m in b.mortgage_accounts.values():
+            group = loan_groups.get(getattr(m, "kind", "mortgage"), "Other loans")
+            debts[group] += m.current_principal
+    debts["HELOCs"] = sum(h.balance for b in manager.banks for h in b.heloc_accounts.values())
     total_assets = cash + sum(by_kind.values())
     total_debt = sum(debts.values())
     return {

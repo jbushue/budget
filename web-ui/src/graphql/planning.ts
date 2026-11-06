@@ -9,7 +9,7 @@ export const GET_NET_WORTH = gql`
       assetsByKind { kind value }
       debts { kind value }
       assets { ${ASSET_FIELDS} }
-      homes { name bank value owed }
+      homes { name bank value owed kind }
     }
     assetKinds { kind label }
     netWorthHistory(limit: 365) { snapshotDate netWorth totalAssets totalLiabilities }

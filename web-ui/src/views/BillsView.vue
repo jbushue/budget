@@ -609,7 +609,7 @@ const unifiedRows = computed<UnifiedRow[]>(() => {
         key: `mortgage-${b.id}`,
         kind: 'mortgage',
         name: `${b.linkedBankName} · ${b.linkedAccountName}`,
-        typeLabel: 'Mortgage',
+        typeLabel: md?.kindLabel ?? 'Mortgage',
         typeBadgeClass: 'badge-info',
         frequencyLabel: 'Monthly',
         dueDay: b.dueDate,

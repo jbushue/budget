@@ -418,6 +418,10 @@ class AccountLinkedBill(Bill):
             except TypeError:
                 return account.calculate_minimum_payment()
         elif account_type == 'mortgage':
+            # Any kind of loan; a student loan owes nothing before repayment starts
+            in_deferment = getattr(account, "in_deferment", None)
+            if in_deferment is not None and in_deferment(reference_date):
+                return 0.0
             return account.total_monthly_payment
         elif account_type == 'heloc':
             # HELOCAccount.calculate_minimum_payment accepts as_of (phase depends on date)

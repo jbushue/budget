@@ -275,14 +275,15 @@ const allRemovablePayments = computed<RemovablePayment[]>(() => {
       }
     }
 
-    // Mortgage payments
+    // Loan payments (mortgage, auto, student, ...)
     for (const m of (bank.mortgageAccounts ?? [])) {
+      const kind = m.loanKind ?? 'mortgage'
       items.push({
         key: `mortgage:${bank.name}:${m.accountName}`,
         label: `${m.accountName}`,
         detail: `${currency(m.totalMonthlyPayment)}/mo`,
-        icon: '🏠',
-        group: 'Mortgages',
+        icon: ({ mortgage: '🏠', auto: '🚗', student: '🎓' } as Record<string, string>)[kind] ?? '💵',
+        group: kind === 'mortgage' ? 'Mortgages' : 'Loans',
       })
     }
 

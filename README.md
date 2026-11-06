@@ -15,17 +15,17 @@ It runs locally: a Python GraphQL API with a SQLite database, and a Vue 3 web in
 - Each kind is treated the way it works in real life: benefits (EBT, HSA, FSA), CDs and investments never pay bills or count as spending money; investments grow at the rate you expect
 - **EBT and other benefit cards**: a monthly benefit deposit on its day, weekly grocery spending that can replace part of your everyday spending (checking takes over when the benefits run out), and the dashboard shows when they'll run out before the next deposit
 - Credit cards with APR, statement/due dates, minimum payments, and **0% promo offers** with deferred-interest tracking
-- **Mortgages** (amortization, escrow, equity) and **HELOCs** (draw and repayment phases)
-- Loan groups ("bill groups") — one payment split across several loans (e.g. student loans), proportionally, equally, or by fixed amounts
+- **Mortgages** (amortization, escrow, equity), **auto loans** (vehicle value that depreciates), **student loans** (deferment, with interest capitalized when payments start), **personal and other loans**, and **HELOCs** (draw and repayment phases). Any loan can use the payment from the lender's statement; a loan entered as a card can be converted to a real loan
+- Loan groups ("bill groups") — one payment split across several cards and loans (e.g. student loans), proportionally, equally, or by fixed amounts
 - Every setting editable later; rename an account or move it to another bank and its bills, history, transactions and links follow
 - Optional automatic balance sync through [SimpleFIN Bridge](https://bridge.simplefin.org)
 - **Update all balances** in one pass (a quick check-in from your bank apps), and **move money** between accounts at any bank
 - Promo offers: charge a purchase to a 0% promo, or **pay a promo down** from checking before it expires
-- Mortgage tools: **amortization schedule** (next 12 payments and year by year), an **early-payoff calculator** (how much sooner and how much interest an extra monthly amount saves), and one-time **extra principal** payments
+- Loan tools: **amortization schedule** (next 12 payments and year by year), an **early-payoff calculator** (how much sooner and how much interest an extra monthly amount saves), and one-time **extra principal** payments
 
 **Bills and income**
 - Fixed and variable bills; one-time, weekly, bi-weekly, monthly, quarterly, semi-annual, and yearly schedules
-- Card, mortgage, HELOC, and loan-group payments are created automatically as bills
+- Card, loan, HELOC, and loan-group payments are created automatically as bills
 - Pay bills month by month (from checking, savings, or a card): pay ahead, catch up on a missed month, skip one, partial payments, undo, and payment history
 - Income sources with flexible schedules and per-account distribution — dollar amounts or percentages, plus "the rest"
 - Variable bills keep their **amount history** (average, low, high) and go back to the estimate after they're paid — or on demand

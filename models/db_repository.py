@@ -74,6 +74,17 @@ def _log_from(text) -> list[dict]:
     return entries
 
 
+def _save_loan_fields(row, loan) -> None:
+    """The kind of loan and its kind-specific settings."""
+    row.loan_kind = getattr(loan, "loan_kind", "mortgage") or "mortgage"
+    row.payment_override = getattr(loan, "payment_override", None)
+    row.value_as_of = getattr(loan, "value_as_of", None)
+    row.depreciation_rate = getattr(loan, "depreciation_rate", None)
+    row.payments_start = getattr(loan, "payments_start", None)
+    row.subsidized = bool(getattr(loan, "subsidized", False))
+    row.capitalized = bool(getattr(loan, "capitalized", False))
+
+
 def _min_rule_to_db(account) -> str | None:
     from models.min_payment import normalize
     rule = normalize(getattr(account, "min_rule", None))
@@ -209,7 +220,14 @@ class DatabaseRepository:
                     preferred_source_bank=db_mortgage.preferred_source_bank,
                     preferred_source_account=db_mortgage.preferred_source_account,
                     market_value=getattr(db_mortgage, 'market_value', None),
+                    loan_kind=db_mortgage.loan_kind or "mortgage",
+                    payment_override=db_mortgage.payment_override,
+                    value_as_of=db_mortgage.value_as_of,
+                    depreciation_rate=db_mortgage.depreciation_rate,
+                    payments_start=db_mortgage.payments_start,
+                    subsidized=bool(db_mortgage.subsidized),
                 )
+                mortgage.capitalized = bool(db_mortgage.capitalized)
                 mortgage.escrow_balance = db_mortgage.escrow_balance
                 if db_mortgage.status is not None:
                     mortgage.status = db_mortgage.status
@@ -342,6 +360,7 @@ class DatabaseRepository:
             db_account.preferred_source_bank = account.preferred_source_bank
             db_account.preferred_source_account = account.preferred_source_account
             db_account.market_value = account.market_value
+            _save_loan_fields(db_account, account)
         else:
             db_account = MortgageAccountModel(
                 bank_id=bank_id,
@@ -363,6 +382,7 @@ class DatabaseRepository:
                 market_value=account.market_value,
                 status=account.status,
             )
+            _save_loan_fields(db_account, account)
             self.session.add(db_account)
 
         self.session.commit()

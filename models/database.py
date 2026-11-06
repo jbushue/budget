@@ -195,7 +195,16 @@ class MortgageAccountModel(Base):
     preferred_source_account = Column(String(100), nullable=True)
     
     # Property value tracking
-    market_value = Column(Float, nullable=True)  # Current market value of the property
+    market_value = Column(Float, nullable=True)  # Current market value of the property (or vehicle)
+
+    # Kind of loan and its kind-specific settings (see mortgage_account.py)
+    loan_kind = Column(String(20), nullable=False, default="mortgage")
+    payment_override = Column(Float, nullable=True)
+    value_as_of = Column(Date, nullable=True)
+    depreciation_rate = Column(Float, nullable=True)
+    payments_start = Column(Date, nullable=True)
+    subsidized = Column(Boolean, nullable=False, default=False)
+    capitalized = Column(Boolean, nullable=False, default=False)
     
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
@@ -734,6 +743,15 @@ def _run_migrations():
                 conn.execute(text(
                     "ALTER TABLE mortgage_accounts ADD COLUMN market_value FLOAT"
                 ))
+        # Migration: auto, student, personal and other loans
+        with engine.begin() as conn:
+            for name, kind in (("loan_kind", "VARCHAR(20) NOT NULL DEFAULT 'mortgage'"),
+                               ("payment_override", "FLOAT"), ("value_as_of", "DATE"),
+                               ("depreciation_rate", "FLOAT"), ("payments_start", "DATE"),
+                               ("subsidized", "BOOLEAN NOT NULL DEFAULT 0"),
+                               ("capitalized", "BOOLEAN NOT NULL DEFAULT 0")):
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE mortgage_accounts ADD COLUMN {name} {kind}"))
 
     # Migration: add linked bill columns to bills table
     if "bills" in inspector.get_table_names():

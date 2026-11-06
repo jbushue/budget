@@ -38,6 +38,14 @@ class BillGroupMember:
         )
 
 
+def _pay_member(acc, amount: float, day: date) -> None:
+    """Apply a member's share: loans take (amount, payment_date), cards (amount, transaction_date)."""
+    if hasattr(acc, "current_principal"):
+        acc.make_payment(amount=amount, payment_date=day)
+    else:
+        acc.make_payment(amount, transaction_date=day)
+
+
 class BillGroup:
     """
     Groups multiple credit/loan accounts into a single bundled payment.
@@ -174,7 +182,7 @@ class BillGroup:
             # Round to cents but never exceed the member's balance
             actual = min(round(amount, 2), acc.balance)
             if actual > 0:
-                acc.make_payment(actual, transaction_date=payment_date)
+                _pay_member(acc, actual, payment_date)
                 results.append({
                     "bank_name": member.bank_name,
                     "account_name": member.account_name,
@@ -294,10 +302,11 @@ class BillGroup:
     # ── Utility ──
 
     def _resolve_account(self, member: BillGroupMember, banks: list):
-        """Find the CreditAccount for a member."""
+        """The member's account: a card-style account or a loan (student, personal, ...)."""
         for bank in banks:
             if bank.name == member.bank_name:
-                return bank.credit_accounts.get(member.account_name)
+                return (bank.credit_accounts.get(member.account_name)
+                        or bank.mortgage_accounts.get(member.account_name))
         return None
 
     def get_grouped_account_keys(self) -> set[tuple[str, str]]:

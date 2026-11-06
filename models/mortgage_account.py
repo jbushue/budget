@@ -1,5 +1,20 @@
 """
-Mortgage Account model for tracking home loans with escrow support.
+Installment loans: mortgages, auto, student, personal and other loans.
+
+One class for every amortizing loan (``loan_kind`` says which); the name is
+historical. What differs by kind:
+
+* mortgage - escrow (taxes, insurance, PMI) on top of principal & interest,
+  and the home's value counts toward net worth
+* auto     - the vehicle's value counts toward net worth, losing
+  ``depreciation_rate`` % a year
+* student  - nothing is due before ``payments_start`` (school, grace period,
+  deferment); unsubsidized loans accrue interest meanwhile, added to the
+  principal when repayment starts
+* personal / other - plain amortizing loans (0% installment plans: APR 0)
+
+Any kind can take the payment from the lender's statement
+(``payment_override``) when it differs from the amortized amount.
 """
 
 from datetime import date, timedelta
@@ -32,6 +47,13 @@ class EscrowBreakdown:
         )
 
 
+LOAN_KINDS = ("mortgage", "auto", "student", "personal", "other")
+KIND_LABELS = {"mortgage": "Mortgage", "auto": "Auto loan", "student": "Student loan",
+               "personal": "Personal loan", "other": "Loan"}
+# A car loses about this much of its value a year
+DEFAULT_DEPRECIATION = {"auto": 15.0}
+
+
 class MortgageAccount:
     """
     Represents a mortgage loan account with principal, interest, and escrow tracking.
@@ -56,7 +78,13 @@ class MortgageAccount:
         escrow: EscrowBreakdown = None,
         preferred_source_bank: str = None,
         preferred_source_account: str = None,
-        market_value: float = None,  # Current market value of the property
+        market_value: float = None,  # Current market value of the property (or vehicle)
+        loan_kind: str = "mortgage",
+        payment_override: float = None,  # The lender's monthly payment, if it differs from the amortized one
+        value_as_of: date = None,  # When market_value was right (depreciation counts from here)
+        depreciation_rate: float = None,  # % of value lost a year (default: 15 for auto, else 0)
+        payments_start: date = None,  # Student loans: first payment (after school / deferment)
+        subsidized: bool = False,  # Student loans: no interest before payments_start
     ):
         """
         Args:
@@ -81,6 +109,12 @@ class MortgageAccount:
             raise ValueError("Loan term must be positive.")
         if not (1 <= payment_due_date <= 31):
             raise ValueError("Payment due date must be between 1 and 31.")
+        if loan_kind not in LOAN_KINDS:
+            raise ValueError(f"Loan kind must be one of: {', '.join(LOAN_KINDS)}")
+        if payment_override is not None and payment_override < 0:
+            raise ValueError("Payment cannot be negative.")
+        if depreciation_rate is not None and not 0 <= depreciation_rate < 100:
+            raise ValueError("Depreciation must be between 0 and 100% a year.")
 
         self.account_name = account_name
         self.original_principal = original_principal
@@ -102,6 +136,76 @@ class MortgageAccount:
         self.is_paid_this_period = False
         self.status = MortgageStatus.ACTIVE
         self.market_value: float | None = market_value  # Current market value of property
+        self.loan_kind = loan_kind
+        self.payment_override = payment_override or None
+        self.value_as_of = value_as_of or (date.today() if market_value else None)
+        self.depreciation_rate = (DEFAULT_DEPRECIATION.get(loan_kind, 0.0)
+                                  if depreciation_rate is None else depreciation_rate)
+        self.payments_start = payments_start
+        self.subsidized = bool(subsidized)
+        self.capitalized = False  # deferment interest added to the principal yet
+
+    # -- Kind --
+
+    @property
+    def kind(self) -> str:
+        return getattr(self, "loan_kind", "mortgage") or "mortgage"
+
+    @property
+    def kind_label(self) -> str:
+        return KIND_LABELS.get(self.kind, "Loan")
+
+    @property
+    def is_mortgage(self) -> bool:
+        return self.kind == "mortgage"
+
+    @property
+    def balance(self) -> float:
+        """What's owed (same as current_principal), so loans work wherever cards do."""
+        return self.current_principal
+
+    @balance.setter
+    def balance(self, value: float):
+        self.current_principal = value
+
+    def value_on(self, day: date = None) -> float | None:
+        """The home's / vehicle's value on ``day``, after depreciation (None if not set)."""
+        if not self.market_value:
+            return None
+        rate = getattr(self, "depreciation_rate", 0.0) or 0.0
+        since = getattr(self, "value_as_of", None)
+        day = day or date.today()
+        if rate <= 0 or since is None or day <= since:
+            return round(self.market_value, 2)
+        years = (day - since).days / 365.25
+        return round(self.market_value * (1 - rate / 100) ** years, 2)
+
+    def in_deferment(self, day: date = None) -> bool:
+        """A student loan before its first payment: nothing is due yet."""
+        start = getattr(self, "payments_start", None)
+        return start is not None and (day or date.today()) < start
+
+    def deferred_interest(self, day: date = None, since: date = None) -> float:
+        """
+        Interest an unsubsidized student loan accrues from ``since`` (default
+        today: the balance entered is what's owed now) until repayment
+        begins; added to the principal once, at the first payment.
+        """
+        start = getattr(self, "payments_start", None)
+        if start is None or getattr(self, "subsidized", False) or getattr(self, "capitalized", False):
+            return 0.0
+        end = min(day or start, start)
+        days = max(0, (end - (since or date.today())).days)
+        return round(self.current_principal * self.interest_rate / 100 * days / 365, 2)
+
+    def _capitalize_if_due(self, day: date):
+        """On the first payment of repayment, add the interest accrued during deferment."""
+        if getattr(self, "payments_start", None) is None or getattr(self, "capitalized", False):
+            return
+        if day >= self.payments_start:
+            since = getattr(self, "deferment_from", None)
+            self.current_principal = round(self.current_principal + self.deferred_interest(day, since), 2)
+            self.capitalized = True
 
     @property
     def monthly_interest_rate(self) -> float:
@@ -116,7 +220,10 @@ class MortgageAccount:
         """
         if self.current_principal <= 0:
             return 0.0
-        
+        override = getattr(self, "payment_override", None)
+        if override:
+            return round(override, 2)
+
         r = self.monthly_interest_rate
         if r == 0:
             # No interest - the scheduled payment is the original loan spread
@@ -153,7 +260,7 @@ class MortgageAccount:
             # No interest - remaining principal divided by the scheduled
             # payment (original principal / term), rounded up to whole months
             import math
-            payment = self.original_principal / max(1, self.loan_term_months)
+            payment = getattr(self, "payment_override", None) or self.original_principal / max(1, self.loan_term_months)
             if payment <= 0:
                 return self.loan_term_months
             return max(1, math.ceil(round(self.current_principal / payment, 6)))
@@ -219,6 +326,7 @@ class MortgageAccount:
             Dictionary with payment breakdown
         """
         payment_date = payment_date or date.today()
+        self._capitalize_if_due(payment_date)
         amount = amount or self.total_monthly_payment
         
         # Apply the payment in order: interest -> escrow -> principal.
@@ -429,7 +537,7 @@ class MortgageAccount:
 
     def __repr__(self):
         return (
-            f"MortgageAccount({self.account_name}, "
+            f"MortgageAccount({self.account_name}, {self.kind}, "
             f"principal=${self.current_principal:,.2f}, "
             f"rate={self.interest_rate}%, "
             f"payment=${self.total_monthly_payment:,.2f}/mo)"

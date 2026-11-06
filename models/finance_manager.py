@@ -127,6 +127,7 @@ class FinanceManager:
         for group in self.bill_groups:
             for member in group.members:
                 grouped_credit_keys.add(f"credit:{member.bank_name}:{member.account_name}")
+                grouped_credit_keys.add(f"mortgage:{member.bank_name}:{member.account_name}")
 
         # First, deduplicate any existing linked bills
         seen_keys = set()
@@ -162,6 +163,8 @@ class FinanceManager:
             # Mortgage accounts
             for name, mortgage_account in bank.mortgage_accounts.items():
                 link_key = f"mortgage:{bank.name}:{name}"
+                if link_key in grouped_credit_keys:
+                    continue  # A loan in a loan group: the group pays it
                 if link_key not in seen_keys:
                     linked_bill = AccountLinkedBill(
                         linked_account=mortgage_account,
@@ -222,6 +225,7 @@ class FinanceManager:
         for group in self.bill_groups:
             for member in group.members:
                 grouped_credit_keys.add(f"credit:{member.bank_name}:{member.account_name}")
+                grouped_credit_keys.add(f"mortgage:{member.bank_name}:{member.account_name}")
 
         # Reconnect existing linked bills loaded from DB, deduplicating
         reconnected_keys = set()
@@ -386,7 +390,8 @@ class FinanceManager:
         for group in self.bill_groups:
             group.members = [
                 m for m in group.members
-                if any(b.name == m.bank_name and m.account_name in b.credit_accounts for b in self.banks)
+                if any(b.name == m.bank_name and (m.account_name in b.credit_accounts
+                                                  or m.account_name in b.mortgage_accounts) for b in self.banks)
             ]
         self._rebuild_linked_bills()
         self._update_managers()

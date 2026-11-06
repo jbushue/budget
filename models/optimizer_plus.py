@@ -117,7 +117,7 @@ def _debt_list(manager) -> list[dict]:
         for n, m in b.mortgage_accounts.items():
             if m.current_principal > 0.005:
                 out.append({"bank": b.name, "account": n, "kind": "mortgage", "balance": _r(m.current_principal),
-                            "rate": m.interest_rate})
+                            "rate": m.interest_rate, "loan_kind": getattr(m, "kind", "mortgage")})
     return out
 
 

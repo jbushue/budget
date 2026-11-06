@@ -98,7 +98,7 @@
               <span class="ev-icon"><Icon :name="eventIcon(e.eventType)" :size="15" /></span>
               <span class="ev-desc">
                 {{ billName(e.description) }}
-                <small>{{ eventTypeLabel(e.eventType) }}<template v-if="e.sourceAccount"> · {{ e.sourceAccount }}</template><template v-if="e.status === 'deferred'"> · can't be paid yet</template></small>
+                <small>{{ e.kindLabel && e.eventType === 'MORTGAGE_PAYMENT' ? `${e.kindLabel} payment` : eventTypeLabel(e.eventType) }}<template v-if="e.sourceAccount"> · {{ e.sourceAccount }}</template><template v-if="e.status === 'deferred'"> · can't be paid yet</template></small>
               </span>
               <span class="ev-amt" :class="e.eventType === 'INCOME' ? 'positive' : ''">{{ e.eventType === 'INCOME' ? '+' : '' }}{{ currency(Math.abs(e.amount)) }}</span>
             </div>

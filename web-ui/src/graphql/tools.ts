@@ -41,7 +41,7 @@ export const RESET_BILL_TO_ESTIMATE = gql`
 export const GET_MORTGAGE_DETAILS = gql`
   query GetMortgageDetails($bankName: String!, $accountName: String!, $extraMonthly: Float) {
     mortgageDetails(bankName: $bankName, accountName: $accountName, extraMonthly: $extraMonthly) {
-      balance rate monthlyPayment principalAndInterest escrow nextInterest nextPrincipal
+      kindLabel paymentsStart balance rate monthlyPayment principalAndInterest escrow nextInterest nextPrincipal
       remainingMonths payoffDate interestRemaining equity ltv marketValue
       extraMonthly monthsSaved interestSaved newPayoffDate
       schedule { month date payment principal interest escrow principalRemaining }

@@ -82,7 +82,7 @@ class CreditAccountType(graphene.ObjectType):
 
 
 class MortgageAccountType(graphene.ObjectType):
-    """Represents a mortgage account in GraphQL."""
+    """A loan: mortgage, auto, student, personal or other (loanKind)."""
     id = graphene.String()
     account_name = graphene.String()
     original_principal = graphene.Float()
@@ -106,6 +106,16 @@ class MortgageAccountType(graphene.ObjectType):
     escrow_pmi = graphene.Float(description="Monthly")
     escrow_hoa = graphene.Float(description="Monthly")
     escrow_other = graphene.Float(description="Monthly")
+    loan_kind = graphene.String(description="mortgage | auto | student | personal | other")
+    kind_label = graphene.String(description="Mortgage, Auto loan, Student loan, ...")
+    payment_override = graphene.Float(description="The lender's monthly payment, when set (else calculated)")
+    vehicle_value = graphene.Float(description="Home/vehicle value today, after depreciation")
+    value_as_of = graphene.String()
+    depreciation_rate = graphene.Float(description="% of the value lost a year")
+    payments_start = graphene.String(description="Student loans: first payment")
+    subsidized = graphene.Boolean()
+    in_deferment = graphene.Boolean(description="No payment due yet (student loan before payments start)")
+    remaining_months = graphene.Int()
 
 
 class HELOCAccountType(graphene.ObjectType):
@@ -214,6 +224,16 @@ class BankType(graphene.ObjectType):
                 escrow_pmi=m.escrow.pmi_monthly,
                 escrow_hoa=m.escrow.hoa_monthly,
                 escrow_other=m.escrow.other_monthly,
+                loan_kind=m.kind,
+                kind_label=m.kind_label,
+                payment_override=m.payment_override,
+                vehicle_value=m.value_on(),
+                value_as_of=m.value_as_of.isoformat() if m.value_as_of else None,
+                depreciation_rate=m.depreciation_rate,
+                payments_start=m.payments_start.isoformat() if m.payments_start else None,
+                subsidized=m.subsidized,
+                in_deferment=m.in_deferment(),
+                remaining_months=m.remaining_months,
             )
             for name, m in mortgage_dict.items()
         ]
@@ -515,6 +535,7 @@ class CalendarEventType(graphene.ObjectType):
     source_bank = graphene.String()
     source_account = graphene.String()
     status = graphene.String()              # ok, deferred, insufficient_funds
+    kind_label = graphene.String()          # Loan payments: Mortgage, Auto loan, Student loan, ...
 
 
 class CalendarDayType(graphene.ObjectType):
@@ -1219,8 +1240,8 @@ class Query(ExtQuery, graphene.ObjectType):
         end_date = date.today() + timedelta(days=days)
         start_bank_total = sum(acc.balance for bank in manager.banks for acc in bank.get_all_accounts())
         result = manager.project_balances(end_date=end_date)
-        from models.assets import other_assets_total
-        assets_total = other_assets_total(manager)
+        from models.assets import other_assets_on
+        assets_on = other_assets_on(manager)  # vehicles depreciate over the projection
 
         snapshots = []
         for snap in result['snapshots']:
@@ -1228,7 +1249,7 @@ class Query(ExtQuery, graphene.ObjectType):
             credit_total = sum(snap.get('credit_balances', {}).values())
             mortgage_total = sum(snap.get('mortgage_balances', {}).values())
             heloc_total = sum(snap.get('heloc_balances', {}).values())
-            net = bank_total - credit_total - mortgage_total - heloc_total + assets_total
+            net = bank_total - credit_total - mortgage_total - heloc_total + assets_on(snap['date'])
             snapshots.append(BalanceSnapshotType(
                 date=snap['date'].isoformat(),
                 balances=snap['balances'],
@@ -1241,6 +1262,8 @@ class Query(ExtQuery, graphene.ObjectType):
 
         # Build calendar days: group cash_flow events by date and pair with balances
         from collections import defaultdict
+        from models.mortgage_account import KIND_LABELS
+        loan_labels = {name: m.kind_label for b in manager.banks for name, m in b.mortgage_accounts.items()}
         events_by_date = defaultdict(list)
         for cf in result['cash_flow']:
             cf_date = cf['date'].isoformat() if hasattr(cf['date'], 'isoformat') else str(cf['date'])
@@ -1260,6 +1283,10 @@ class Query(ExtQuery, graphene.ObjectType):
             elif cf.get('late') and cf.get('due'):
                 # Couldn't be paid on its due date: paid once there's money
                 description = f"{description} (late, was due {cf['due']:%b} {cf['due'].day})"
+            kind_label = None
+            if cf['type'].startswith('MORTGAGE'):
+                kind_label = (KIND_LABELS.get(cf['loan_kind']) if cf.get('loan_kind')
+                              else loan_labels.get(cf.get('mortgage_name')))
             events_by_date[cf_date].append(CalendarEventType(
                 event_type=cf['type'],
                 description=description,
@@ -1267,6 +1294,7 @@ class Query(ExtQuery, graphene.ObjectType):
                 source_bank=source_bank,
                 source_account=source_account,
                 status=status,
+                kind_label=kind_label,
             ))
 
         # Build a snapshot lookup by date
@@ -1284,7 +1312,7 @@ class Query(ExtQuery, graphene.ObjectType):
                 credit_total = sum(snap.get('credit_balances', {}).values())
                 mortgage_total = sum(snap.get('mortgage_balances', {}).values())
                 heloc_total = sum(snap.get('heloc_balances', {}).values())
-                net = bank_total - credit_total - mortgage_total - heloc_total + assets_total
+                net = bank_total - credit_total - mortgage_total - heloc_total + assets_on(snap['date'])
                 calendar_days.append(CalendarDayType(
                     date=snap_date,
                     events=day_events,
@@ -1313,7 +1341,7 @@ class Query(ExtQuery, graphene.ObjectType):
         total_heloc = sum(final_heloc.values())
         # Net worth the same way as the Net worth page: plus homes, cars, ...
         from models.plan import checking_keys, checking_series
-        other_assets = assets_total
+        other_assets = assets_on(result['end_date'])
         net_final = total_bank - total_credit - total_mortgage - total_heloc + other_assets
         # Change in cash (checking + savings). Summing cash-flow entries would
         # count internal transfers (sweeps, HELOC parking) as income.
@@ -1532,7 +1560,17 @@ class Query(ExtQuery, graphene.ObjectType):
                     interest_rate=credit.interest_rate,
                     minimum_payment=credit.calculate_minimum_payment()
                 ))
-            # Exclude mortgages — 30-year terms break the estimator
+            # Auto, student and other loans count; mortgages don't (30-year terms break the estimator)
+            for name, loan in bank.mortgage_accounts.items():
+                if (getattr(loan, "kind", "mortgage") == "mortgage" or loan.current_principal <= 0
+                        or (bank.name, name) in grouped_keys or loan.in_deferment()):
+                    continue
+                debts.append(DebtInfo(
+                    name=f"{bank.name}:{name}",
+                    balance=loan.current_principal,
+                    interest_rate=loan.interest_rate,
+                    minimum_payment=loan.total_monthly_payment
+                ))
             for heloc in bank.get_all_heloc_accounts():
                 if heloc.balance > 0 and not getattr(heloc, 'is_paid_this_period', False):
                     debts.append(DebtInfo(
@@ -2901,8 +2939,8 @@ class AddBillGroupMember(graphene.Mutation):
         if not group:
             return AddBillGroupMember(success=False, message=f"Bill group '{group_name}' not found")
         bank = _find_bank(manager, bank_name)
-        if not bank or account_name not in bank.credit_accounts:
-            return AddBillGroupMember(success=False, message=f"Credit account '{account_name}' not found at '{bank_name}'")
+        if not bank or (account_name not in bank.credit_accounts and account_name not in bank.mortgage_accounts):
+            return AddBillGroupMember(success=False, message=f"Card or loan '{account_name}' not found at '{bank_name}'")
         for other in manager.bill_groups:
             if other is not group and (bank_name, account_name) in other.get_grouped_account_keys():
                 return AddBillGroupMember(success=False, message=f"'{account_name}' already belongs to group '{other.group_name}'")
@@ -3074,7 +3112,7 @@ class CreateHelocAccount(graphene.Mutation):
 
 
 class CreateMortgageAccount(graphene.Mutation):
-    """Create a new mortgage account."""
+    """Create a loan: a mortgage, or (loanKind) an auto, student, personal or other loan."""
     class Arguments:
         bank_name = graphene.String(required=True)
         account_name = graphene.String(required=True)
@@ -3089,17 +3127,24 @@ class CreateMortgageAccount(graphene.Mutation):
         escrow_pmi = graphene.Float()
         escrow_hoa = graphene.Float()
         escrow_other = graphene.Float()
-        market_value = graphene.Float()
+        market_value = graphene.Float(description="The home's (mortgage) or vehicle's (auto loan) value")
         preferred_source_bank = graphene.String()
         preferred_source_account = graphene.String()
+        loan_kind = graphene.String(description="mortgage (default) | auto | student | personal | other")
+        payment_override = graphene.Float(description="The lender's monthly payment, if it differs")
+        depreciation_rate = graphene.Float(description="Auto loans: % a year (default 15)")
+        payments_start = graphene.String(description="Student loans: first payment (YYYY-MM-DD)")
+        subsidized = graphene.Boolean(description="Student loans: no interest before payments start")
 
     success = graphene.Boolean()
     message = graphene.String()
 
     def mutate(self, info, bank_name, account_name, original_principal, current_principal=None,
-               interest_rate=0.0, loan_term_months=360, payment_due_date=1, start_date=None,
+               interest_rate=0.0, loan_term_months=None, payment_due_date=1, start_date=None,
                escrow_property_tax=0.0, escrow_insurance=0.0, escrow_pmi=0.0, escrow_hoa=0.0,
-               escrow_other=0.0, market_value=None, preferred_source_bank=None, preferred_source_account=None):
+               escrow_other=0.0, market_value=None, preferred_source_bank=None, preferred_source_account=None,
+               loan_kind="mortgage", payment_override=None, depreciation_rate=None, payments_start=None,
+               subsidized=False):
         manager = info.context.get('manager')
         if not manager:
             return CreateMortgageAccount(success=False, message="Manager not available")
@@ -3117,6 +3162,15 @@ class CreateMortgageAccount(graphene.Mutation):
                 return CreateMortgageAccount(success=False, message="Escrow amounts can't be negative")
             if market_value is not None and market_value < 0:
                 return CreateMortgageAccount(success=False, message="Market value can't be negative")
+            from models.mortgage_account import KIND_LABELS
+            loan_kind = loan_kind or "mortgage"
+            if loan_kind not in KIND_LABELS:
+                return CreateMortgageAccount(success=False, message=f"Unknown loan kind '{loan_kind}'")
+            label = KIND_LABELS[loan_kind]
+            if loan_kind != "mortgage" and any((v or 0) > 0 for v in escrow_parts):
+                return CreateMortgageAccount(success=False, message=f"Escrow is for mortgages, not a {label.lower()}")
+            if loan_kind not in ("mortgage", "auto") and market_value:
+                return CreateMortgageAccount(success=False, message="Only mortgages and auto loans have a home/vehicle value")
             if bool(preferred_source_bank) != bool(preferred_source_account):
                 return CreateMortgageAccount(success=False, message="Choose both a payment source bank and account, or neither")
             sd = _parse_date(start_date, "start date")
@@ -3124,20 +3178,27 @@ class CreateMortgageAccount(graphene.Mutation):
                 account_name=account_name,
                 original_principal=original_principal,
                 interest_rate=interest_rate or 0.0,
-                loan_term_months=loan_term_months or 360,
+                loan_term_months=loan_term_months or (360 if loan_kind == "mortgage" else 60),
                 current_principal=current_principal,
                 payment_due_date=payment_due_date or 1,
                 escrow=EscrowBreakdown(*(v or 0.0 for v in escrow_parts)),
                 preferred_source_bank=preferred_source_bank or None,
                 preferred_source_account=preferred_source_account or None,
+                market_value=market_value or None,
+                loan_kind=loan_kind,
+                payment_override=payment_override or None,
+                depreciation_rate=depreciation_rate,
+                payments_start=_parse_date(payments_start, "payments start"),
+                subsidized=bool(subsidized) and loan_kind == "student",
             )
             if sd:
                 mortgage.start_date = sd
-            mortgage.market_value = market_value
             manager.save_to_database()
+            ps = mortgage.payments_start
+            when = f", first payment {ps:%b} {ps.day}, {ps.year}" if mortgage.in_deferment() else ""
             return CreateMortgageAccount(
                 success=True,
-                message=f"Mortgage '{account_name}' created (${mortgage.total_monthly_payment:,.2f}/month)"
+                message=f"{label} '{account_name}' created (${mortgage.total_monthly_payment:,.2f}/month{when})"
             )
         except Exception as e:
             return CreateMortgageAccount(success=False, message=str(e))

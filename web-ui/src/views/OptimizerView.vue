@@ -592,7 +592,7 @@ function diffClass(row: CompRow): string {
 // ── Bill timing ───────────────────────────────────────────────────────
 
 const KIND_LABELS: Record<BillTiming['kind'], string> = {
-  bill: 'Bill', floating: 'Variable bill', credit: 'Card payment', mortgage: 'Mortgage',
+  bill: 'Bill', floating: 'Variable bill', credit: 'Card payment', mortgage: 'Loan payment',
   heloc: 'HELOC payment', group: 'Loan group',
 }
 

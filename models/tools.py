@@ -166,7 +166,7 @@ def extra_principal(manager, bank_name: str, account_name: str, amount: float,
 
 
 def mortgage_details(manager, bank_name: str, account_name: str, extra_monthly: float = 0.0) -> dict:
-    """Where a mortgage stands, its amortization schedule, and what extra monthly principal would save."""
+    """Where a loan stands, its amortization schedule, and what extra monthly principal would save."""
     _, loan = _mortgage(manager, bank_name, account_name)
     extra_monthly = max(0.0, float(extra_monthly or 0.0))
     schedule = loan.get_amortization_schedule()
@@ -179,7 +179,10 @@ def mortgage_details(manager, bank_name: str, account_name: str, extra_monthly: 
         y["escrow"] += row["escrow"]
         y["end_balance"] = row["principal_remaining"]
     payoff = loan.calculate_payoff_with_extra(extra_monthly)
+    value = loan.value_on()  # an auto loan's vehicle loses value over time
     return {
+        "kind_label": loan.kind_label,
+        "payments_start": loan.payments_start.isoformat() if loan.in_deferment() else None,
         "balance": loan.current_principal,
         "rate": loan.interest_rate,
         "monthly_payment": loan.total_monthly_payment,
@@ -190,9 +193,9 @@ def mortgage_details(manager, bank_name: str, account_name: str, extra_monthly: 
         "remaining_months": loan.remaining_months,
         "payoff_date": loan.payoff_date.isoformat() if loan.payoff_date else None,
         "interest_remaining": loan.total_interest_remaining,
-        "equity": loan.equity,
-        "ltv": loan.loan_to_value_ratio,
-        "market_value": loan.market_value,
+        "equity": round(value - loan.current_principal, 2) if value else loan.equity,
+        "ltv": round(loan.current_principal / value, 4) if value else loan.loan_to_value_ratio,
+        "market_value": value,
         "extra_monthly": extra_monthly,
         "months_saved": payoff["months_saved"],
         "interest_saved": round(payoff["interest_saved"], 2),

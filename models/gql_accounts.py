@@ -56,6 +56,12 @@ class UpdateAccount(graphene.Mutation):
         preferred_source_account = graphene.String()
         draw_period_months = graphene.Int()
         total_term_months = graphene.Int()
+        loan_kind = graphene.String(description="Loans: mortgage | auto | student | personal | other")
+        payment_override = graphene.Float(description="Loans: the lender's monthly payment; 0 = calculated")
+        value_as_of = graphene.String(description="Loans: date the home/vehicle value was right")
+        depreciation_rate = graphene.Float(description="Auto loans: % of the vehicle's value lost a year")
+        payments_start = graphene.String(description="Student loans: first payment (YYYY-MM-DD); '' clears")
+        subsidized = graphene.Boolean(description="Student loans: no interest before payments start")
 
     Output = EditResult
 
@@ -72,6 +78,41 @@ class UpdateAccount(graphene.Mutation):
         if not manager.save_to_database():
             return EditResult(success=False, message="Changed, but saving to the database failed")
         return EditResult(success=True, message=f"Saved {name}", name=name)
+
+
+class ConvertCreditToLoan(graphene.Mutation):
+    """
+    Turn a card-style account into a loan (student, auto, personal, other):
+    same name, bank, balance, APR and due day; the term keeps today's
+    minimum payment unless one is given. Loan group membership, the payment
+    bill, balance history and the SimpleFIN link carry over.
+    """
+
+    class Arguments:
+        bank_name = graphene.String(required=True)
+        account_name = graphene.String(required=True)
+        loan_kind = graphene.String(default_value="student")
+        term_months = graphene.Int()
+        payments_start = graphene.String()
+        subsidized = graphene.Boolean()
+
+    Output = EditResult
+
+    def mutate(self, info, bank_name, account_name, loan_kind="student", term_months=None,
+               payments_start=None, subsidized=False):
+        manager = info.context.get('manager')
+        if not manager:
+            return EditResult(success=False, message="Manager not available")
+        try:
+            loan = account_edit.convert_credit_to_loan(manager, bank_name, account_name, loan_kind,
+                                                       term_months, payments_start or None, bool(subsidized))
+        except account_edit.EditError as e:
+            return EditResult(success=False, message=str(e))
+        if not manager.save_to_database():
+            return EditResult(success=False, message="Changed, but saving to the database failed")
+        return EditResult(success=True, name=account_name, message=(
+            f"{account_name} is now a {loan.kind_label.lower()}: ${loan.total_monthly_payment:,.2f} a month "
+            f"for {loan.remaining_months} months"))
 
 
 class UpdateBank(graphene.Mutation):
@@ -190,5 +231,6 @@ class SetMinimumPaymentRule(graphene.Mutation):
 
 class AccountsMutation(graphene.ObjectType):
     update_account = UpdateAccount.Field()
+    convert_credit_to_loan = ConvertCreditToLoan.Field()
     update_bank = UpdateBank.Field()
     set_minimum_payment_rule = SetMinimumPaymentRule.Field()

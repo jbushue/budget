@@ -50,6 +50,8 @@ class HomeValueType(graphene.ObjectType):
     bank = graphene.String()
     value = graphene.Float()
     owed = graphene.Float()
+    kind = graphene.String(description="Property (a mortgage's home) or Vehicle (an auto loan's)")
+    loan_kind = graphene.String()
 
 
 class NetWorthBreakdownType(graphene.ObjectType):
@@ -60,7 +62,7 @@ class NetWorthBreakdownType(graphene.ObjectType):
     total_debt = graphene.Float()
     net_worth = graphene.Float()
     assets = graphene.List(AssetType)
-    homes = graphene.List(HomeValueType, description="Mortgages' market values counted as assets")
+    homes = graphene.List(HomeValueType, description="Home and vehicle values from loans, counted as assets")
 
 
 class AssetKindType(graphene.ObjectType):

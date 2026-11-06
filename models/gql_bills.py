@@ -109,22 +109,30 @@ def reverse_payment(manager, bill, entry: dict) -> list[str]:
         if hasattr(account, "regular_balance"):
             account.regular_balance = round(account.regular_balance + owed, 2)
 
+    def unpay_loan(account, paid):
+        """Put back the principal a loan payment took off (its interest was owed anyway)."""
+        record = next((r for r in reversed(getattr(account, "payment_history", []))
+                       if occ.paid_on(r) == day and abs(float(r.get("total_amount") or 0) - paid) < 0.01), None)
+        principal = record.get("principal", 0.0) if record else 0.0  # includes any extra principal
+        if principal:
+            account.current_principal = round(account.current_principal + principal, 2)
+            account.payment_history.remove(record)
+
     if isinstance(bill, AccountLinkedBill):
         account = bill.linked_account
         if bill.linked_account_type == "mortgage":
-            record = next((r for r in reversed(getattr(account, "payment_history", []))
-                           if occ.paid_on(r) == day and abs(float(r.get("total_amount") or 0) - amount) < 0.01), None)
-            principal = (record.get("principal", 0.0) + record.get("extra_principal", 0.0)) if record else 0.0
-            if principal:
-                account.current_principal = round(account.current_principal + principal, 2)
-                account.payment_history.remove(record)
+            unpay_loan(account, amount)
         else:
             owe_again(account, amount)
         done.append(f"{account.account_name} owes it again")
     elif isinstance(bill, GroupLinkedBill):
         for sub in entry.get("sub_payments") or []:
             b = _find_bank(manager, sub.get("bank_name") or "")
-            account = b.credit_accounts.get(sub.get("account_name")) if b else None
+            name = sub.get("account_name")
+            if b and name in b.mortgage_accounts:  # a loan in a loan group
+                unpay_loan(b.mortgage_accounts[name], float(sub.get("amount") or 0.0))
+                continue
+            account = b.credit_accounts.get(name) if b else None
             if account is not None:
                 owe_again(account, float(sub.get("amount") or 0.0))
         done.append(f"{bill.linked_group.group_name} owes it again")
@@ -158,6 +166,7 @@ class BillOccurrenceType(graphene.ObjectType):
     bill_name = graphene.String()
     display_name = graphene.String()
     kind = graphene.String(description="bill | floating | credit | mortgage | heloc | group")
+    kind_label = graphene.String(description="Loans: Mortgage, Auto loan, Student loan, ...")
     due_date = graphene.String()
     amount = graphene.Float(description="What the due date owes")
     paid = graphene.Float()
@@ -214,7 +223,8 @@ def _occurrence(manager, bill, due: date, today: date) -> BillOccurrenceType:
     )
     if isinstance(bill, AccountLinkedBill):
         out.update(bank_name=bill.linked_bank_name, account_name=bill.linked_account.account_name,
-                   balance_owed=round(bill.linked_account_balance, 2))
+                   balance_owed=round(bill.linked_account_balance, 2),
+                   kind_label=getattr(bill.linked_account, "kind_label", None))
     elif isinstance(bill, GroupLinkedBill):
         out.update(group_name=bill.linked_group.group_name,
                    balance_owed=round(bill.linked_group.get_total_balance(manager.banks), 2))

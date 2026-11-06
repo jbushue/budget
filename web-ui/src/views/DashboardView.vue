@@ -184,7 +184,7 @@
               </tr>
               <tr v-for="m in bank.mortgageAccounts" :key="m.id">
                 <td>{{ m.accountName }} <span v-if="isSynced(bank.name, m.accountName)" class="sync-badge" title="Synced via SimpleFIN"><Icon name="refresh" :size="12" /></span></td>
-                <td><span class="badge">Mortgage</span></td>
+                <td><span class="badge">{{ m.kindLabel ?? 'Mortgage' }}</span></td>
                 <td style="text-align:right;font-weight:600;color:var(--danger)">{{ currency(m.currentPrincipal) }}</td>
               </tr>
               <tr v-for="h in bank.helocAccounts" :key="h.id">

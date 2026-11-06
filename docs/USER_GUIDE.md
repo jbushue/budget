@@ -77,9 +77,9 @@ Everything is stored in a single SQLite file: **`~/.budget_app/finance.db`** (on
 
 Work through the pages in this order — each step builds on the previous one:
 
-1. **Accounts** → add your bank(s), then checking/savings accounts, credit cards, HELOCs, and your mortgage with their current balances.
+1. **Accounts** → add your bank(s), then checking/savings accounts, credit cards, HELOCs, and your loans (mortgage, auto, student, personal) with their current balances.
 2. **Income** → add each paycheck and (optionally) how it is split between accounts.
-3. **Bills** → add recurring bills. Credit card, mortgage, and HELOC payments are created for you automatically.
+3. **Bills** → add recurring bills. Credit card, loan, and HELOC payments are created for you automatically.
 4. **Loan Groups** → (optional) bundle loans that are paid with a single payment, such as student loans.
 5. **Settings → Planning** → set your **cushion** and your **everyday spending** (groceries, gas, eating out — anything that isn't a bill). These drive Safe to spend.
 6. **Transactions** → (optional, recommended) download them from SimpleFIN or import a CSV from your bank. Bill payments in them are recognized automatically, and everyday spending can be learned from them.
@@ -122,6 +122,11 @@ A **bank** is a container for accounts. Each bank has a type (Traditional, Credi
 | Credit card | Liability | Has a limit, APR, due day, statement day, and optional 0% promos. |
 | HELOC | Liability | Home-equity line with a draw period (interest-only minimums) followed by a repayment period. |
 | Mortgage | Liability | Fixed-rate home loan with a principal/interest/escrow breakdown. Its monthly payment is calculated for you. |
+| Auto loan | Liability | Fixed-rate car loan. The vehicle's value (optional) counts toward net worth and loses a share of its value every year (15% unless you change it). |
+| Student loan | Liability | Fixed-rate loan that can be in school, grace or deferment: nothing is due until **payments start**. An unsubsidized loan's interest from now until then is added to what you owe at the first payment; a subsidized loan's isn't. |
+| Personal loan, Other loan | Liability | Any other loan with a fixed monthly payment (a 0% installment plan is one with an APR of 0). |
+
+Every kind of loan can take the **payment from your statement** when the lender's amount differs from the calculated one (an income-driven student loan plan, for example). The payoff date and schedule then follow that payment.
 
 ### Bills, and bills that are created for you
 
@@ -133,7 +138,7 @@ A **bill** is anything you pay on a schedule. There are two kinds you create:
 And bills the app creates and maintains automatically, shown with an **`[Auto]`** name:
 
 - **`[Auto] <card> Payment`** for every credit card with a balance — the amount is the card's current **minimum payment**.
-- **`[Auto] <mortgage> Payment`** — the full monthly payment (principal + interest + escrow).
+- **`[Auto] <loan> Payment`** for every mortgage and loan — the full monthly payment (principal + interest, plus escrow for a mortgage). A student loan's is $0 until its payments start.
 - **`[Auto] <HELOC> Payment`** — the HELOC's minimum payment (interest-only during the draw period).
 - **`[Auto] <group> Payment`** for every loan group — the group's total payment.
 
@@ -297,8 +302,8 @@ The 🔔 bell at the top right of every page lists alerts (§19). **Refresh** re
 |---|---|---|
 | Bank | all | Required. |
 | Account Name | all | Required; unique within the bank. |
-| Account Type | all | Checking, Savings, Credit Card, HELOC, or Mortgage. |
-| Starting Balance / Current Balance (owed) | all | For cards, HELOCs, and mortgages this is the amount **owed**. For a mortgage it's the current principal; leave it blank (0) for a brand-new loan to use the original amount. |
+| Account Type | all | Checking, Savings, … Credit Card, HELOC, Mortgage, Auto loan, Student loan, Personal loan, or Other loan. |
+| Starting Balance / Current Balance (owed) | all | For cards, HELOCs, and loans this is the amount **owed**. For a loan it's the current principal; leave it blank (0) for a brand-new loan to use the original amount. |
 | APY % / APR % | all | Annual percentage. |
 | Interest Day (1-31, optional) | accounts that earn | Day of month interest is credited. Leave blank for the end of each month; an account that earns nothing just has an APY of 0. |
 | Money added each month + day | EBT, HSA, FSA, cash, apps, investments | A deposit that doesn't come from checking: SNAP benefits, HSA or 401(k) contributions. |
@@ -310,15 +315,18 @@ The 🔔 bell at the top right of every page lists alerts (§19). **Refresh** re
 | Draw Period (years) | HELOC | Default 15. During the draw period you can borrow and minimums are interest-only. |
 | Total Term (years) | HELOC | Default 30. Includes the draw period; the remainder is the repayment period (principal + interest). |
 | HELOC Start Date | HELOC | Optional; defaults to today. |
-| Original Loan Amount | mortgage | Required. The amount originally borrowed. |
-| Loan Term (years) | mortgage | Default 30. |
-| Loan Start Date (optional) | mortgage | When the loan began; for your records (defaults to today). |
-| Payment Due Day (1-31) | mortgage | Default 1. Sets the due day of the `[Auto]` mortgage payment bill. |
+| Original Loan Amount | loans | Required. The amount originally borrowed. |
+| Loan Term | loans | Years for a mortgage (default 30); months for other loans (auto 60, student 120, personal 36). |
+| Loan Start Date (optional) | loans | When the loan began; for your records (defaults to today). |
+| Payment Due Day (1-31) | loans | Default 1. Sets the due day of the loan's `[Auto]` payment bill. |
+| Payment from your statement (optional) | loans | The lender's monthly payment, when it isn't the calculated one. Blank = calculated. |
 | Monthly Escrow (optional) | mortgage | Property tax, homeowners insurance, PMI, HOA, and other amounts collected with each payment. |
 | Home Market Value (optional) | mortgage | Used to calculate equity (value − principal). |
-| Pay From (optional) | mortgage | Preferred bank and account for the payment. Choose both or leave both on Auto. |
+| Vehicle value + Loses (% a year) | auto loan | Optional. Counts toward net worth, losing that much each year (15% by default). Skip it if the car is already an asset on the Net worth page. |
+| Payments start + Subsidized | student loan | Optional. Nothing is due before that date; unless it's subsidized, the interest until then is added to the balance at the first payment. |
+| Pay From (optional) | loans | Preferred bank and account for the payment. Choose both or leave both on Auto. |
 
-For a mortgage, the form shows the **estimated monthly payment** as you type: the standard fixed-rate payment on the original amount over the full term (principal & interest), plus escrow. This is the amount of the `[Auto]` mortgage payment bill.
+For a loan, the form shows the **monthly payment** as you type: the standard fixed-rate payment on the original amount over the full term (principal & interest), plus escrow for a mortgage — or the payment from your statement, if you entered one. This is the amount of the loan's `[Auto]` payment bill.
 
 If anything is wrong (duplicate name, missing limit, invalid day…), you'll see an alert explaining why and nothing is created.
 
@@ -368,6 +376,10 @@ Each promo's **⋯** menu also has:
 - **Add a purchase** — charges a new purchase to the card and puts it on this promo (if the promo is still active and under its purchase limit; otherwise it goes on the regular balance).
 - **Pay down** (or the **Pay** button) — pays the promo balance from a checking or savings account. The money comes out of that account and off the promo first. The amount is capped at what's left on the promo.
 
+#### Convert to loan
+
+For a loan that was entered as a credit card (student loans often are, inside a loan group). It becomes a real loan of the kind you pick — student, auto, personal or other — with the same name, bank, balance, APR and due day. **Keep today's payment** works out the months left from the card's current minimum; or set the months yourself. A student loan can also get a payments-start date and be marked subsidized. Its loan group membership, payment bill (and the payments recorded on it), balance history and SimpleFIN link carry over; the credit limit goes away.
+
 #### Convert to HELOC (**→ HELOC**)
 
 Replaces a credit card with a HELOC, keeping its balance, APR, credit limit, and due day. You choose the draw period, total term (must be longer than the draw period), start date, and optionally a new name. The card's payment bill is replaced by the HELOC's.
@@ -378,15 +390,15 @@ Replaces a credit card with a HELOC, keeping its balance, APR, credit limit, and
 
 **Move money** records a transfer between any two checking or savings accounts — at the same bank or different ones. It won't take an account below zero.
 
-### Mortgage Accounts table
+### Loans table (mortgages, auto, student, personal and other loans)
 
-Columns: **Status**, **APR**, **Due Day**, **Principal**, **Monthly Payment** (P&I + escrow), **P & I** (this month's principal/interest split), **Escrow** (monthly taxes, insurance, PMI, HOA).
+Columns: **Status**, **APR**, **Due Day**, **Principal**, **Monthly Payment** (P&I + escrow; "from your statement" when you entered the lender's payment), **P & I** (this month's principal/interest split), and **Escrow** (monthly taxes, insurance, PMI, HOA) when the bank has a mortgage. Loans other than mortgages show their kind next to the name, and a note when a student loan has nothing due yet or an auto loan has a vehicle value.
 
-Actions: **Edit** (amounts, rate, term, start date, due day, each escrow amount, market value, pay-from account, name and bank), **Update** (set the current principal), **Hist**, **Txns**, **Del**. Mortgage payments are made from the Bills page.
+Actions: **Edit** (kind of loan, amounts, rate, term, start date, due day, payment from your statement, escrow and home value for a mortgage, vehicle value and yearly loss for an auto loan, payments start and subsidized for a student loan, pay-from account, name and bank), **Update** (set the current principal), **Hist**, **Txns**, **Del**. Loan payments are made from the Bills page.
 
-**Payoff & schedule** (in the row's ⋯ menu) opens the mortgage tools:
+**Payoff & schedule** (in the row's ⋯ menu) opens the loan tools:
 
-- The balance, monthly payment (loan + escrow), payoff month, interest still to pay and, with a market value, equity and loan-to-value.
+- The balance, monthly payment (loan + escrow), payoff month, interest still to pay and, with a home or vehicle value, equity and loan-to-value.
 - **Pay off sooner** — slide or type an extra monthly amount to see how much sooner the loan is paid off and how much interest that saves.
 - **Next 12** — the next 12 payments: date, payment, principal, interest, escrow and what's owed after each.
 - **By year** — principal and interest paid each remaining year and the balance at year end.
@@ -682,8 +694,8 @@ The cards show the monthly and yearly total. **🔁 Repeating charges that aren'
 
 **Route:** `/net-worth` · Everything you own minus everything you owe.
 
-- **What you own** – checking and savings, plus your **assets**: vehicles, investments, retirement accounts, property, cash and other savings, valuables. A mortgage's market value (Accounts page) counts as property unless you've added a property asset linked to that mortgage.
-- **What you owe** – cards and loans, mortgages, and HELOCs.
+- **What you own** – checking and savings, plus your **assets**: vehicles, investments, retirement accounts, property, cash and other savings, valuables. A mortgage's market value (Accounts page) counts as property, and an auto loan's vehicle value as a vehicle (losing value each year, in projections too), unless you've added an asset linked to that loan.
+- **What you owe** – credit cards, mortgages, auto loans, student loans, other loans, and HELOCs.
 - **+ Asset** – a name, type, and current value. Update the value now and then (**Edit**); every change is kept, and **History** shows how it has moved. Optionally link the loan against it (the car loan, the mortgage) to see your **equity** — the loan is still counted once, in debts.
 - **Net worth over time** – from the snapshot taken every day (and whenever you change an asset).
 

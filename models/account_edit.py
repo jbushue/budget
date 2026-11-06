@@ -15,14 +15,15 @@ normal save that follows updates rows in place.
 from __future__ import annotations
 
 import json
+import math
 from datetime import date
 
 from sqlalchemy import text
 
 from models import database as db
 from models.fixed_bill import AccountLinkedBill
-from models.mortgage_account import EscrowBreakdown
-from models.types import AccountType, BANK_ACCOUNT_KINDS, CreditAccountStatus
+from models.mortgage_account import KIND_LABELS, LOAN_KINDS, EscrowBreakdown, MortgageAccount
+from models.types import AccountType, BANK_ACCOUNT_KINDS, BillType, CreditAccountStatus
 
 # kind -> (Bank attribute holding these accounts, database table)
 KINDS = {
@@ -156,7 +157,7 @@ def rename_account(manager, kind: str, bank_name: str, old: str, new_name: str |
                                  "AND linked_bank_name = :ob AND linked_account_name = :oa"), p)
             session.execute(text("UPDATE ledger_transactions SET matched_bill = :nbill WHERE matched_bill = :obill"), p)
             session.execute(text("UPDATE savings_goals SET linked_bill = :nbill WHERE linked_bill = :obill"), p)
-        if kind == "credit":
+        if kind in ("credit", "mortgage"):  # cards and loans can be in loan groups
             session.execute(text("UPDATE bill_group_members SET bank_name = :nb, account_name = :na "
                                  "WHERE bank_name = :ob AND account_name = :oa"), p)
         if kind in BANK_KINDS:
@@ -194,11 +195,12 @@ def rename_account(manager, kind: str, bank_name: str, old: str, new_name: str |
         linked.bill_name = f"[Auto] {new} Payment"
         linked.linked_bank_name = target_name
         linked.account_link_key = f"{kind}:{target_name}:{new}"
-    if kind == "credit":
+    if kind in ("credit", "mortgage"):
         for group in manager.bill_groups:
             for member in group.members:
                 if member.bank_name == bank_name and member.account_name == old:
                     member.bank_name, member.account_name = target_name, new
+    if kind == "credit":
         if manager.target_credit_account == old:
             manager.target_credit_account = new
     if kind in BANK_KINDS:
@@ -303,7 +305,9 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
     current_principal, loan_term_months, start_date (ISO), escrow_property_tax,
     escrow_insurance, escrow_pmi, escrow_hoa, escrow_other, market_value
     (0 clears), preferred_source_bank / preferred_source_account ("" clears),
-    draw_period_months, total_term_months.
+    draw_period_months, total_term_months; loans also loan_kind,
+    payment_override (0 clears), value_as_of, depreciation_rate,
+    payments_start ("" clears), subsidized.
     """
     bank, acc = find_account(manager, bank_name, account_name, kind)
     c = {k: v for k, v in changes.items() if v is not None}
@@ -386,6 +390,19 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
         for key in escrow_keys:
             _non_negative(c.get(f"escrow_{key}"), "Escrow amounts")
         _non_negative(c.get("market_value"), "Market value")
+        loan_kind = c.get("loan_kind", acc.kind)
+        if loan_kind not in LOAN_KINDS:
+            raise EditError(f"Loan kind must be one of: {', '.join(LOAN_KINDS)}")
+        if loan_kind != "mortgage" and any((c.get(f"escrow_{k}") or 0) > 0 for k in escrow_keys):
+            raise EditError(f"Escrow is for mortgages; {KIND_LABELS[loan_kind].lower()}s don't have it")
+        if loan_kind not in ("mortgage", "auto") and (c.get("market_value") or 0) > 0:
+            raise EditError("Only mortgages (the home) and auto loans (the vehicle) have a value")
+        _non_negative(c.get("payment_override"), "Payment")
+        rate = c.get("depreciation_rate")
+        if rate is not None and not 0 <= rate < 100:
+            raise EditError("Depreciation must be between 0 and 100% a year")
+        value_as_of = _iso(c.get("value_as_of"), "Value date")
+        payments_start = _iso(c.get("payments_start"), "Payments start") if c.get("payments_start") else None
         src = _source(manager, c["preferred_source_bank"], c.get("preferred_source_account", "")) \
             if "preferred_source_bank" in c else None
         acc.original_principal, acc.current_principal, acc.loan_term_months = float(original), float(current), int(term)
@@ -403,9 +420,31 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
                 pmi_monthly=c.get("escrow_pmi", e.pmi_monthly), hoa_monthly=c.get("escrow_hoa", e.hoa_monthly),
                 other_monthly=c.get("escrow_other", e.other_monthly))
         if "market_value" in c:
-            acc.market_value = float(c["market_value"]) or None
+            new_value = float(c["market_value"]) or None
+            if new_value != acc.market_value and "value_as_of" not in c:
+                acc.value_as_of = date.today() if new_value else None  # depreciation counts from now
+            acc.market_value = new_value
         if src is not None:
             _set_source(manager, acc, *src)
+        if loan_kind != acc.kind:
+            acc.loan_kind = loan_kind
+            if loan_kind != "mortgage":
+                acc.escrow = EscrowBreakdown()
+            if loan_kind not in ("mortgage", "auto"):
+                acc.market_value = None
+            if "depreciation_rate" not in c:
+                acc.depreciation_rate = 15.0 if loan_kind == "auto" else 0.0
+        if "payment_override" in c:
+            acc.payment_override = float(c["payment_override"]) or None
+        if value_as_of:
+            acc.value_as_of = value_as_of
+        if rate is not None:
+            acc.depreciation_rate = float(rate)
+        if "payments_start" in c:
+            acc.payments_start = payments_start
+            acc.capitalized = False
+        if "subsidized" in c:
+            acc.subsidized = bool(c["subsidized"])
 
     elif kind == "heloc":
         limit = c.get("credit_limit", acc.credit_limit)
@@ -438,6 +477,93 @@ def update_account(manager, kind: str, bank_name: str, account_name: str, change
         name = (c.get("name") or account_name).strip()
     manager.invalidate_plan_cache()
     return name
+
+
+def _iso(value, label):
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise EditError(f"{label} must be YYYY-MM-DD") from None
+
+
+def term_for_payment(balance: float, apr: float, payment: float) -> int:
+    """Months for ``payment`` a month to pay off ``balance`` at ``apr``: n = -ln(1 - rP/M) / ln(1 + r)."""
+    if payment <= 0:
+        raise EditError("Enter a term: there's no payment to work it out from")
+    r = (apr or 0) / 1200
+    if r == 0:
+        return max(1, math.ceil(balance / payment))
+    if payment <= r * balance:
+        raise EditError(f"${payment:,.2f} a month doesn't cover the interest; enter a term")
+    return max(1, math.ceil(-math.log(1 - r * balance / payment) / math.log(1 + r)))
+
+
+def convert_credit_to_loan(manager, bank_name: str, account_name: str, loan_kind: str = "student",
+                           term_months: int | None = None, payments_start=None,
+                           subsidized: bool = False) -> MortgageAccount:
+    """
+    Turn a card-style account (often a student loan entered as a card) into a
+    loan of ``loan_kind`` with the same name, bank, balance, APR and due day.
+    The term keeps today's minimum payment unless ``term_months`` is given.
+    Its payment bill (and the payments recorded on it), balance history,
+    SimpleFIN link and loan group membership carry over.
+    """
+    bank, card = find_account(manager, bank_name, account_name, "credit")
+    if loan_kind not in LOAN_KINDS:
+        raise EditError(f"Loan kind must be one of: {', '.join(LOAN_KINDS)}")
+    if account_name in bank.mortgage_accounts:
+        raise EditError(f"A loan named '{account_name}' already exists in {bank_name}")
+    balance = round(card.balance, 2)
+    if balance <= 0:
+        raise EditError("Nothing is owed on this account, so there's no loan to make")
+    if term_months is not None and term_months <= 0:
+        raise EditError("Loan term must be at least 1 month")
+    term = term_months or term_for_payment(balance, card.interest_rate, card.calculate_minimum_payment())
+    bill = _linked_bill(manager, card)
+    loan = MortgageAccount(
+        account_name=account_name, original_principal=balance, current_principal=balance,
+        interest_rate=card.interest_rate or 0.0, loan_term_months=term,
+        payment_due_date=card.payment_due_date or 1, start_date=date.today(),
+        preferred_source_bank=bill.preferred_source_bank if bill else None,
+        preferred_source_account=bill.preferred_source_account if bill else None,
+        loan_kind=loan_kind, payments_start=_iso(payments_start, "Payments start"),
+        subsidized=bool(subsidized) and loan_kind == "student",
+    )
+
+    session = db.get_session()
+    try:
+        p = {"b": bank_name, "a": account_name}
+        session.execute(text("UPDATE bills SET linked_account_type = 'mortgage', bill_type = :bt "
+                             "WHERE linked_account_type = 'credit' AND linked_bank_name = :b "
+                             "AND linked_account_name = :a"), dict(p, bt=BillType.MORTGAGE_PAYMENT.name))
+        tables = _tables(session)
+        if "balance_history" in tables:
+            session.execute(text("UPDATE balance_history SET account_type = 'mortgage' WHERE bank_name = :b "
+                                 "AND account_name = :a AND account_type = 'credit'"), p)
+        if "simplefin_account_mappings" in tables:
+            session.execute(text("UPDATE simplefin_account_mappings SET local_account_type = 'mortgage' "
+                                 "WHERE local_bank_name = :b AND local_account_name = :a "
+                                 "AND local_account_type = 'credit'"), p)
+        session.commit()
+    finally:
+        session.close()
+
+    # In memory: the card's bill now pays the loan (keeping its payments and skips)
+    del bank.credit_accounts[account_name]
+    bank.mortgage_accounts[account_name] = loan
+    if bill:
+        bill.linked_account = loan
+        bill.linked_account_type = "mortgage"
+        bill.bill_type = BillType.MORTGAGE_PAYMENT
+        bill.account_link_key = f"mortgage:{bank_name}:{account_name}"
+    if manager.target_credit_account == account_name:
+        manager.target_credit_account = None
+    manager.invalidate_plan_cache()
+    return loan
 
 
 def _set_source(manager, account, bank_name, account_name) -> None:

@@ -991,8 +991,8 @@ class TimelineSimulator:
         return max(0.0, self.fees.get("default_late_fee", 0.0))
 
     def _grouped_card(self, bill) -> bool:
-        """A card's own payment is skipped when its bill group pays it."""
-        return (isinstance(bill, AccountLinkedBill) and bill.linked_account_type == 'credit'
+        """A card's (or loan's) own payment is skipped when its bill group pays it."""
+        return (isinstance(bill, AccountLinkedBill) and bill.linked_account_type in ('credit', 'mortgage')
                 and (bill.linked_bank_name, bill.linked_account.account_name) in self._grouped_account_keys)
 
     def _defer(self, bill: Bill, due: date, amount: float, current_date: date, cash_flow: list[dict]):
@@ -1163,6 +1163,7 @@ class TimelineSimulator:
             extra = {"linked_account": name, "linked_bank": bill.linked_bank_name}
             if bill.linked_account_type == 'mortgage':
                 extra["mortgage_name"] = name
+                extra["loan_kind"] = getattr(bill.linked_account, "kind", "mortgage")
             elif bill.linked_account_type == 'credit':
                 extra["credit_name"] = name
             elif bill.linked_account_type == 'heloc':

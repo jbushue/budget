@@ -78,11 +78,12 @@ class Bank:
         payment_due_date: int = 1,
         escrow: EscrowBreakdown = None,
         preferred_source_bank: str = None,
-        preferred_source_account: str = None
+        preferred_source_account: str = None,
+        **loan,
     ) -> MortgageAccount:
-        """Add a mortgage account."""
+        """Add a loan: a mortgage, or (loan_kind=...) an auto, student, personal or other loan."""
         if account_name in self.mortgage_accounts:
-            raise ValueError(f"Mortgage account '{account_name}' already exists in {self.name}.")
+            raise ValueError(f"A loan named '{account_name}' already exists in {self.name}.")
 
         account = MortgageAccount(
             account_name=account_name,
@@ -93,7 +94,8 @@ class Bank:
             payment_due_date=payment_due_date,
             escrow=escrow,
             preferred_source_bank=preferred_source_bank,
-            preferred_source_account=preferred_source_account
+            preferred_source_account=preferred_source_account,
+            **loan,
         )
         self.mortgage_accounts[account_name] = account
         return account

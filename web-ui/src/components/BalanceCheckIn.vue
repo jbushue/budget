@@ -45,7 +45,7 @@ interface Row { key: string; bank: string; account: string; kind: string; label:
 const rows = computed<Row[]>(() => props.banks.flatMap(b => [
   ...b.bankAccounts.map(a => ({ kind: 'bank', account: a.accountName, label: accountTypeLabel(a.accountType), original: a.balance })),
   ...b.creditAccounts.filter(a => a.status !== 'closed').map(a => ({ kind: 'credit', account: a.accountName, label: 'Owed', original: a.balance })),
-  ...b.mortgageAccounts.map(a => ({ kind: 'mortgage', account: a.accountName, label: 'Mortgage owed', original: a.currentPrincipal })),
+  ...b.mortgageAccounts.map(a => ({ kind: 'mortgage', account: a.accountName, label: `${a.kindLabel ?? 'Mortgage'} owed`, original: a.currentPrincipal })),
   ...b.helocAccounts.map(a => ({ kind: 'heloc', account: a.accountName, label: 'HELOC owed', original: a.balance })),
 ].map(r => ({ ...r, bank: b.name, key: `${b.name}\u0000${r.kind}\u0000${r.account}` }))))
 

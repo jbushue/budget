@@ -68,7 +68,7 @@ export function accountTypeLabel(type: string): string {
     retirement: 'Retirement',
     other: 'Other',
     credit: 'Credit',
-    mortgage: 'Mortgage',
+    mortgage: 'Loan',
     heloc: 'HELOC',
   }
   return map[type] || type
@@ -79,7 +79,7 @@ export function billTypeLabel(type: string): string {
     fixed: 'Fixed',
     floating: 'Variable',
     credit_payment: 'Credit Payment',
-    mortgage_payment: 'Mortgage Payment',
+    mortgage_payment: 'Loan Payment',
     heloc_payment: 'HELOC Payment',
   }
   return map[type] || type

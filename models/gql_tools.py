@@ -185,6 +185,8 @@ class AmortizationYearType(graphene.ObjectType):
 
 
 class MortgageDetailsType(graphene.ObjectType):
+    kind_label = graphene.String(description="Mortgage, Auto loan, Student loan, ...")
+    payments_start = graphene.String(description="Student loans in deferment: first payment")
     balance = graphene.Float()
     rate = graphene.Float()
     monthly_payment = graphene.Float()

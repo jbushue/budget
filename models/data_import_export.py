@@ -66,7 +66,7 @@ SHEET_COLUMNS: dict[str, list[tuple[str, bool, str]]] = {
     ],
     "Mortgages": [
         ("bank_name", True, "Lender name (will be created if not in Banks)"),
-        ("account_name", True, "Name for this mortgage"),
+        ("account_name", True, "Name for this loan"),
         ("original_principal", True, "Original loan amount"),
         ("current_principal", True, "Current principal balance"),
         ("interest_rate", True, "APR %"),
@@ -79,10 +79,16 @@ SHEET_COLUMNS: dict[str, list[tuple[str, bool, str]]] = {
         ("other_monthly", False, "Other monthly escrow amounts"),
         ("start_date", False, "Loan start date (YYYY-MM-DD)"),
         ("escrow_balance", False, "Current escrow account balance"),
-        ("market_value", False, "Current market value of the property"),
-        ("preferred_source_bank", False, "Bank to pay the mortgage from"),
-        ("preferred_source_account", False, "Account to pay the mortgage from"),
+        ("market_value", False, "Current value of the home (mortgage) or vehicle (auto loan)"),
+        ("preferred_source_bank", False, "Bank to pay the loan from"),
+        ("preferred_source_account", False, "Account to pay the loan from"),
         ("status", False, "active, paid_off, refinanced, or sold"),
+        ("loan_kind", False, "mortgage (default), auto, student, personal, or other"),
+        ("payment", False, "The lender's monthly payment, if it differs from the calculated one"),
+        ("value_as_of", False, "Date the home/vehicle value was right (YYYY-MM-DD)"),
+        ("depreciation_rate", False, "Auto loans: % of the vehicle's value lost a year (default 15)"),
+        ("payments_start", False, "Student loans: first payment after school/deferment (YYYY-MM-DD)"),
+        ("subsidized", False, "Student loans: TRUE if no interest accrues before payments start"),
     ],
     "HELOCs": [
         ("bank_name", True, "Lender name (will be created if not in Banks)"),
@@ -154,7 +160,7 @@ SHEET_DESCRIPTIONS = {
     "Banks": "Define your financial institutions",
     "Bank_Accounts": "Checking, savings, EBT, HSA, investment and other cash accounts",
     "Credit_Accounts": "Credit cards and loans",
-    "Mortgages": "Home loans with escrow details",
+    "Mortgages": "Mortgages (with escrow) and auto, student, personal and other loans",
     "HELOCs": "Home equity lines of credit",
     "Bills": "Recurring bills and expenses",
     "Income": "Income sources and pay schedules",
@@ -688,8 +694,9 @@ class DataImportExport:
                 bank = self._find_or_create_bank(bank_name, "mortgage_lender", results)
                 if account_name in bank.mortgage_accounts:
                     self._skip(results, "mortgages",
-                               f"Mortgage '{account_name}' already exists in '{bank_name}', skipping")
+                               f"Loan '{account_name}' already exists in '{bank_name}', skipping")
                     continue
+                kind = (_to_str(row.get("loan_kind")) or "mortgage").lower().replace(" loan", "")
 
                 escrow = EscrowBreakdown(
                     property_tax_monthly=_to_float(row.get("property_tax_monthly"), 0.0),
@@ -709,6 +716,11 @@ class DataImportExport:
                     escrow=escrow,
                     preferred_source_bank=_to_str(row.get("preferred_source_bank")),
                     preferred_source_account=_to_str(row.get("preferred_source_account")),
+                    loan_kind=kind,
+                    payment_override=_to_float(row.get("payment")) or None,
+                    depreciation_rate=_to_float(row.get("depreciation_rate")),
+                    payments_start=_to_date(row.get("payments_start")),
+                    subsidized=(_to_str(row.get("subsidized")) or "").lower() in ("true", "yes", "1", "y"),
                 )
 
                 start_date = _to_date(row.get("start_date"))
@@ -720,13 +732,14 @@ class DataImportExport:
                 market_value = _to_float(row.get("market_value"))
                 if market_value is not None:
                     mortgage.market_value = market_value
+                    mortgage.value_as_of = _to_date(row.get("value_as_of")) or date.today()
                 status = _to_str(row.get("status"))
                 if status:
                     mortgage.status = MortgageStatus(status.lower())
 
                 results["mortgages_created"] += 1
             except Exception as e:
-                results["errors"].append(f"Row {row_num}: Failed to create mortgage '{account_name}': {str(e)}")
+                results["errors"].append(f"Row {row_num}: Failed to create loan '{account_name}': {str(e)}")
 
     def _import_helocs(self, wb, results: dict):
         """Import HELOC accounts from the HELOCs sheet (optional sheet)."""
@@ -853,10 +866,12 @@ class DataImportExport:
                 if member_account:
                     member_bank = _to_str(row.get("member_bank"))
                     bank = self._find_bank(member_bank) if member_bank else next(
-                        (b for b in self.manager.banks if member_account in b.credit_accounts), None)
-                    if not bank or member_account not in bank.credit_accounts:
+                        (b for b in self.manager.banks
+                         if member_account in b.credit_accounts or member_account in b.mortgage_accounts), None)
+                    if not bank or (member_account not in bank.credit_accounts
+                                    and member_account not in bank.mortgage_accounts):
                         results["errors"].append(
-                            f"Row {row_num}: Group member credit account '{member_account}' not found")
+                            f"Row {row_num}: Group member card or loan '{member_account}' not found")
                         continue
                     method = _to_str(row.get("allocation_method")) or "proportional"
                     group.members.append(BillGroupMember(
@@ -1076,6 +1091,12 @@ class DataImportExport:
                     "preferred_source_bank": mortgage.preferred_source_bank,
                     "preferred_source_account": mortgage.preferred_source_account,
                     "status": _enum_value(mortgage.status),
+                    "loan_kind": mortgage.kind,
+                    "payment": mortgage.payment_override,
+                    "value_as_of": _date_str(mortgage.value_as_of),
+                    "depreciation_rate": mortgage.depreciation_rate or None,
+                    "payments_start": _date_str(mortgage.payments_start),
+                    "subsidized": bool(mortgage.subsidized) if mortgage.kind == "student" else None,
                 })
 
             for name, heloc in getattr(bank, "heloc_accounts", {}).items():

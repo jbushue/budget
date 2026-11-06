@@ -196,7 +196,7 @@
               :key="acc.accountName"
               :value="acc.accountName"
             >
-              {{ acc.accountName }} ({{ currency(acc.balance) }} @ {{ pct(acc.interestRate) }})
+              {{ acc.accountName }} ({{ acc.label ? `${acc.label}, ` : '' }}{{ currency(acc.balance) }} @ {{ pct(acc.interestRate) }})
             </option>
           </select>
         </div>
@@ -273,7 +273,7 @@ import {
 } from '../graphql/queries'
 import { currency, pct, frequencyLabel, todayISO, num } from '../utils/format'
 import { runMutation } from '../utils/mutation'
-import type { BillGroup, BillGroupMember, Bank, CreditAccount, MutationPayload } from '../types'
+import type { BillGroup, BillGroupMember, Bank, MutationPayload } from '../types'
 import { ask, notify } from '../utils/dialog'
 
 // ── Data ──
@@ -282,7 +282,7 @@ const groups = computed(() => result.value?.allBillGroups ?? [])
 
 const { result: banksResult, refetch: refetchBanks } = useQuery<{ allBanks: Bank[] }>(GET_ALL_BANKS)
 const banks = computed(() => banksResult.value?.allBanks ?? [])
-const banksWithCredit = computed(() => banks.value.filter(b => b.creditAccounts.length > 0))
+const banksWithCredit = computed(() => banks.value.filter(b => creditAccountsFor(b.name).length > 0))
 
 function bankAccountsFor(bankName: string) {
   if (!bankName) return []
@@ -291,10 +291,14 @@ function bankAccountsFor(bankName: string) {
   return bank.bankAccounts.map(a => ({ name: a.accountName, type: a.accountType }))
 }
 
-function creditAccountsFor(bankName: string): CreditAccount[] {
+/** Cards and loans (not mortgages) that can be in a loan group. */
+function creditAccountsFor(bankName: string): { accountName: string; balance: number; interestRate: number; label?: string }[] {
   if (!bankName) return []
   const bank = banks.value.find(b => b.name === bankName)
-  return bank?.creditAccounts ?? []
+  if (!bank) return []
+  const loans = (bank.mortgageAccounts ?? []).filter(m => (m.loanKind ?? 'mortgage') !== 'mortgage')
+    .map(m => ({ accountName: m.accountName, balance: m.currentPrincipal, interestRate: m.interestRate, label: m.kindLabel }))
+  return [...bank.creditAccounts, ...loans]
 }
 
 

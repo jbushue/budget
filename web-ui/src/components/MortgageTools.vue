@@ -4,7 +4,7 @@
       <div class="mt-head">
         <div>
           <h3 style="margin:0">{{ accountName }}</h3>
-          <div class="muted" style="font-size:0.85rem">{{ bankName }} · mortgage</div>
+          <div class="muted" style="font-size:0.85rem">{{ bankName }} · {{ (d?.kindLabel ?? 'Mortgage').toLowerCase() }}<template v-if="d?.paymentsStart"> · first payment {{ fmtDate(d.paymentsStart) }}</template></div>
         </div>
         <button class="btn btn-ghost btn-icon" aria-label="Close" @click="emit('close')"><Icon name="x" :size="18" /></button>
       </div>
@@ -15,10 +15,10 @@
         <div class="mt-stats">
           <div><span>Owed</span><strong>{{ currency(d.balance) }}</strong></div>
           <div><span>Monthly payment</span><strong>{{ currency(d.monthlyPayment) }}</strong>
-            <small>{{ currency(d.principalAndInterest) }} loan + {{ currency(d.escrow) }} escrow</small></div>
+            <small v-if="d.escrow > 0">{{ currency(d.principalAndInterest) }} loan + {{ currency(d.escrow) }} escrow</small></div>
           <div><span>Paid off</span><strong>{{ fmtMonth(d.payoffDate) }}</strong><small>{{ yearsMonths(d.remainingMonths) }} left</small></div>
           <div><span>Interest still to pay</span><strong>{{ currency(d.interestRemaining) }}</strong><small>at {{ pct(d.rate, 2) }}</small></div>
-          <div v-if="d.marketValue"><span>Equity</span><strong>{{ currency(d.equity) }}</strong><small>{{ pct(d.ltv * 100, 0) }} loan-to-value</small></div>
+          <div v-if="d.marketValue"><span>{{ d.kindLabel === 'Auto loan' ? 'Vehicle equity' : 'Equity' }}</span><strong>{{ currency(d.equity) }}</strong><small>{{ pct(d.ltv * 100, 0) }} loan-to-value</small></div>
         </div>
 
         <div class="tabs" role="tablist" style="margin-top:1.25rem">
@@ -132,6 +132,7 @@ watch(() => props.open, isOpen => {
 
 interface Details {
   balance: number; rate: number; monthlyPayment: number; principalAndInterest: number; escrow: number
+  kindLabel: string; paymentsStart: string | null
   remainingMonths: number; payoffDate: string; interestRemaining: number; equity: number; ltv: number
   marketValue: number | null; monthsSaved: number; interestSaved: number; newPayoffDate: string
   schedule: { month: number; date: string; payment: number; principal: number; interest: number; escrow: number; principalRemaining: number }[]
