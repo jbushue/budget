@@ -736,9 +736,17 @@
           </table>
         </div>
 
-        <!-- Add Promo Sub-form -->
-        <div v-if="showAddPromo" class="card" style="margin-top:1rem;padding:1rem;background:var(--bg-card)">
-          <h4 style="margin-bottom:0.75rem">{{ editingPromo ? 'Edit Promo Offer' : 'Add Promo Offer' }}</h4>
+        <div class="modal-actions" style="margin-top:1rem">
+          <button class="btn btn-outline" @click="showPromosModal = false">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add / edit a promo: its own dialog on top of the Promos dialog -->
+    <div v-if="showPromosModal && showAddPromo" class="modal-overlay promo-form-overlay" @click.self="closePromoForm()">
+      <div class="modal" style="max-width:520px" role="dialog" :aria-label="editingPromo ? 'Edit promo offer' : 'Add promo offer'">
+          <h3>{{ editingPromo ? `Edit promo: ${editingPromoName}` : 'Add promo offer' }}</h3>
+          <p style="margin:-0.25rem 0 0.75rem;color:var(--text-muted);font-size:0.85rem">{{ promoTarget.bankName }} / {{ promoTarget.accountName }}</p>
           <div class="form-group">
             <label>Promo name</label>
             <input v-model="newPromo.promoName" placeholder="e.g. 0% APR 12 months" />
@@ -769,11 +777,6 @@
             <button v-else class="btn btn-primary" @click="addPromo" :disabled="!newPromo.promoName || !newPromo.monthsInterestFree">Add</button>
           </div>
         </div>
-
-        <div class="modal-actions" style="margin-top:1rem">
-          <button class="btn btn-outline" @click="showPromosModal = false">Close</button>
-        </div>
-      </div>
     </div>
 
     <MinPaymentDialog v-if="minTarget" :bank-name="minTarget.bankName" :card="minTarget.card"
@@ -1444,6 +1447,7 @@ function refreshPromoTarget() {
 <style scoped>
 .link-btn { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0; text-decoration: underline dotted; }
 .min-rule { font-size: 0.7rem; color: var(--text-muted); font-weight: 400; }
+.promo-form-overlay { z-index: 120; }
 .pay-order select { width: 100%; }
 .pay-order small { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem; }
 .loan-kind { margin-left: 0.35rem; font-size: 0.68rem; vertical-align: middle; }
